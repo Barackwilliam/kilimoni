@@ -23,7 +23,6 @@ INSTALLED_APPS = [
     'admin_panel',
 ]
 
-
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -56,10 +55,38 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'mkulima_ai.wsgi.application'
 
-
+# # Database
+# DATABASE_URL = config('DATABASE_URL', default=f'sqlite:///{BASE_DIR}/db.sqlite3')
+# if DATABASE_URL.startswith('postgresql') or DATABASE_URL.startswith('postgres'):
+#     import re
+#     match = re.match(r'postgres(?:ql)?://([^:]+):([^@]+)@([^:/]+):?(\d+)?/(.+)', DATABASE_URL)
+#     if match:
+#         user, password, host, port, dbname = match.groups()
+#         DATABASES = {
+#             'default': {
+#                 'ENGINE': 'django.db.backends.postgresql',
+#                 'NAME': dbname,
+#                 'USER': 'postgres.djjshelinxxwwibfteyy',
+#                 'PASSWORD': 'Nyumbachap@123',
+#                 'HOST': 'aws-0-eu-west-1.pooler.supabase.com',
+#                 'PORT': port or '5432',
+#             }
+#         }
+# else:
+#     DATABASES = {
+#         'default': {
+#             'ENGINE': 'django.db.backends.sqlite3',
+#             'NAME': BASE_DIR / 'db.sqlite3',
+#         }
+#     }
 
 #Database from botikawilly@gmail.com
 #web hosting 
+
+
+
+
+
 
 
 
@@ -119,7 +146,6 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
 }
-
 
 CORS_ALLOWED_ORIGINS = config('CORS_ORIGINS', default='http://localhost:3000').split(',')
 CORS_ALLOW_ALL_ORIGINS = DEBUG
