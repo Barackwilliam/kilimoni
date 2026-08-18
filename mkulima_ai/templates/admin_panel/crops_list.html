@@ -1,0 +1,38 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Mazao{% endblock %}
+{% block page_title %}🌽 Mazao{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Mazao Yote ({{ crops.count }})</div>
+    <a href="{% url 'crop_add' %}" class="btn btn-primary">＋ Ongeza Zao</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Kipaumbele</th><th>Jina (Kiswahili)</th><th>Jina (English)</th><th>Kundi</th><th>Hali</th><th>Vitendo</th></tr></thead>
+      <tbody>
+        {% for crop in crops %}
+        <tr>
+          <td><span class="badge badge-gray">{{ crop.priority_level }}</span></td>
+          <td><strong>{{ crop.crop_name_sw }}</strong></td>
+          <td>{{ crop.crop_name_en }}</td>
+          <td>{{ crop.get_crop_group_display }}</td>
+          <td>
+            {% if crop.active_status == 'active' %}
+            <span class="badge badge-green">Active</span>
+            {% else %}
+            <span class="badge badge-red">Inactive</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'crop_edit' crop.pk %}" class="btn btn-secondary btn-sm">✏️ Hariri</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" style="text-align:center;padding:40px;color:#9ca3af;">Hakuna mazao. <a href="{% url 'crop_add' %}">Ongeza zao la kwanza.</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

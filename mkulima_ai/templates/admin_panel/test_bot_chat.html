@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kilimoni AI — Jaribu Bot</title>
+<style>
+/* ── Reset & Base ── */
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#0b141a;color:#e9edef;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Top Bar ── */
+.topbar{
+  background:#1f2c34;padding:10px 16px;
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid #2a3942;flex-shrink:0;z-index:10;
+  box-shadow:0 1px 3px rgba(0,0,0,0.3);
+}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.avatar{
+  width:42px;height:42px;border-radius:50%;
+  background:linear-gradient(135deg,#00a884,#006d5b);
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;flex-shrink:0;
+}
+.bot-info h2{font-size:15px;font-weight:600;color:#e9edef}
+.bot-info span{font-size:12px;color:#00a884}
+.topbar-actions{display:flex;gap:8px}
+.btn-icon{
+  background:none;border:none;cursor:pointer;
+  color:#8696a0;font-size:14px;padding:6px 12px;
+  border-radius:6px;transition:all .2s;display:flex;align-items:center;gap:5px;
+}
+.btn-icon:hover{background:#2a3942;color:#e9edef}
+.btn-icon.danger:hover{background:#3d1c1c;color:#ff6b6b}
+
+/* ── Layout ── */
+.main-layout{display:flex;flex:1;overflow:hidden}
+
+/* ── Sidebar ── */
+.sidebar{
+  width:280px;background:#111b21;border-right:1px solid #2a3942;
+  display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;
+}
+.sidebar-header{
+  padding:14px 16px;border-bottom:1px solid #2a3942;
+  font-size:12px;font-weight:600;color:#8696a0;text-transform:uppercase;letter-spacing:.5px;
+}
+.samples-list{overflow-y:auto;flex:1;padding:8px 0}
+.sample-item{
+  padding:10px 16px;cursor:pointer;border-bottom:1px solid #1a252d;
+  font-size:13px;color:#d1d7db;transition:background .15s;
+  display:flex;align-items:flex-start;gap:8px;line-height:1.4;
+}
+.sample-item:hover{background:#2a3942}
+.sample-item .qicon{color:#00a884;flex-shrink:0;margin-top:1px}
+.sidebar-footer{
+  padding:12px 16px;border-top:1px solid #2a3942;
+  font-size:11px;color:#4a5568;text-align:center;
+}
+
+/* ── Chat Area ── */
+.chat-area{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+
+/* WhatsApp bg pattern */
+.chat-bg{
+  flex:1;overflow-y:auto;padding:16px;
+  background-color:#0b141a;
+  background-image:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  scroll-behavior:smooth;
+}
+.chat-bg::-webkit-scrollbar{width:5px}
+.chat-bg::-webkit-scrollbar-track{background:transparent}
+.chat-bg::-webkit-scrollbar-thumb{background:#2a3942;border-radius:3px}
+
+/* Date divider */
+.date-divider{
+  text-align:center;margin:16px 0;
+}
+.date-divider span{
+  background:#1f2c34;color:#8696a0;font-size:11px;
+  padding:4px 12px;border-radius:10px;
+}
+
+/* ── Messages ── */
+.msg-row{display:flex;margin-bottom:4px;animation:fadeIn .2s ease}
+.msg-row.user{justify-content:flex-end}
+.msg-row.bot{justify-content:flex-start}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+.bubble{
+  max-width:68%;padding:8px 12px 20px;border-radius:8px;
+  font-size:14px;line-height:1.5;position:relative;word-break:break-word;
+  box-shadow:0 1px 2px rgba(0,0,0,0.3);
+}
+.bubble.user{
+  background:#005c4b;border-radius:8px 0 8px 8px;color:#e9edef;
+}
+.bubble.bot{
+  background:#1f2c34;border-radius:0 8px 8px 8px;color:#e9edef;
+}
+
+/* Tail */
+.bubble.user::before{
+  content:'';position:absolute;top:0;right:-8px;
+  border-left:8px solid #005c4b;border-top:8px solid transparent;
+}
+.bubble.bot::before{
+  content:'';position:absolute;top:0;left:-8px;
+  border-right:8px solid #1f2c34;border-top:8px solid transparent;
+}
+
+.bubble-time{
+  position:absolute;bottom:5px;right:10px;
+  font-size:10px;color:#8696a0;
+}
+.bubble.user .bubble-time{color:#a8c7af}
+
+/* Tick marks */
+.ticks{font-size:11px;color:#53bdeb;margin-left:3px}
+
+/* Bot typing */
+.typing-indicator{
+  display:none;align-items:center;gap:4px;
+  background:#1f2c34;border-radius:0 8px 8px 8px;
+  padding:10px 16px;max-width:80px;margin-bottom:8px;
+  box-shadow:0 1px 2px rgba(0,0,0,0.3);
+}
+.typing-indicator.visible{display:flex}
+.dot{
+  width:7px;height:7px;background:#8696a0;border-radius:50%;
+  animation:bounce .9s infinite;
+}
+.dot:nth-child(2){animation-delay:.15s}
+.dot:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+
+/* Empty state */
+.empty-state{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  color:#4a5568;text-align:center;padding:40px;
+}
+.empty-state .icon{font-size:64px;margin-bottom:16px;opacity:.5}
+.empty-state h3{font-size:18px;margin-bottom:8px;color:#6b7280}
+.empty-state p{font-size:13px;line-height:1.6}
+
+/* ── Input Bar ── */
+.input-bar{
+  background:#1f2c34;padding:10px 16px;
+  display:flex;align-items:flex-end;gap:10px;
+  border-top:1px solid #2a3942;flex-shrink:0;
+}
+.input-wrap{flex:1;background:#2a3942;border-radius:24px;padding:4px 16px;display:flex;align-items:flex-end}
+#msg-input{
+  flex:1;background:none;border:none;outline:none;
+  color:#e9edef;font-size:15px;resize:none;max-height:120px;
+  padding:8px 0;line-height:1.5;font-family:'Segoe UI',Arial,sans-serif;
+}
+#msg-input::placeholder{color:#8696a0}
+.send-btn{
+  width:46px;height:46px;border-radius:50%;background:#00a884;
+  border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:20px;flex-shrink:0;transition:background .2s;
+}
+.send-btn:hover{background:#02b197}
+.send-btn:disabled{background:#2a3942;cursor:not-allowed}
+
+/* ── Scrollbar ── */
+.samples-list::-webkit-scrollbar{width:4px}
+.samples-list::-webkit-scrollbar-thumb{background:#2a3942;border-radius:2px}
+
+/* ── Responsive ── */
+@media(max-width:600px){
+  .sidebar{display:none}
+  .bubble{max-width:85%}
+}
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="avatar">🌱</div>
+    <div class="bot-info">
+      <h2>Kilimoni AI Bot</h2>
+      <span>● Mtandaoni — Agricultural Decision Support</span>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn-icon" onclick="window.location.href='/admin/'" title="Admin">
+      ⚙️ Admin
+    </button>
+    <button class="btn-icon danger" onclick="clearChat()" title="Futa mazungumzo">
+      🗑️ Futa Chat
+    </button>
+    <button class="btn-icon" onclick="window.location.href='/dashboard/logout/'" title="Toka">
+      🚪 Toka
+    </button>
+  </div>
+</div>
+
+<div class="main-layout">
+
+  <!-- Sidebar — Sample Questions -->
+  <div class="sidebar">
+    <div class="sidebar-header">💡 Mifano ya Maswali</div>
+    <div class="samples-list">
+      {% for q in samples %}
+      <div class="sample-item" onclick="sendSample('{{ q|escapejs }}')">
+        <span class="qicon">💬</span>
+        <span>{{ q }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="sidebar-footer">
+      Bonyeza swali lolote kutuma<br>au andika yako mwenyewe
+    </div>
+  </div>
+
+  <!-- Chat Area -->
+  <div class="chat-area">
+    <div class="chat-bg" id="chatBox">
+
+      {% if not history %}
+      <div class="empty-state" id="emptyState">
+        <div class="icon">🤖</div>
+        <h3>Karibu Kilimoni AI</h3>
+        <p>Tuma ujumbe wowote kuanza mazungumzo.<br>
+        Au bonyeza mfano wa swali upande wa kushoto.</p>
+      </div>
+      {% else %}
+      <div class="date-divider"><span>Leo</span></div>
+      {% for msg in history %}
+      <div class="msg-row {{ msg.role }}">
+        <div class="bubble {{ msg.role }}">
+          {{ msg.text|linebreaksbr }}
+          <div class="bubble-time">
+            {{ msg.time }}{% if msg.role == 'user' %} <span class="ticks">✓✓</span>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <!-- Typing indicator -->
+      <div class="typing-indicator" id="typingIndicator">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+    </div>
+
+    <!-- Input Bar -->
+    <div class="input-bar">
+      <div class="input-wrap">
+        <textarea
+          id="msg-input"
+          placeholder="Andika ujumbe..."
+          rows="1"
+          onkeydown="handleKey(event)"
+          oninput="autoResize(this)"
+        ></textarea>
+      </div>
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Tuma">
+        ➤
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+const chatBox = document.getElementById('chatBox');
+const input = document.getElementById('msg-input');
+const sendBtn = document.getElementById('sendBtn');
+const typingIndicator = document.getElementById('typingIndicator');
+const emptyState = document.getElementById('emptyState');
+const CSRF = '{{ csrf_token }}';
+
+// Auto scroll to bottom
+function scrollBottom() {
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+scrollBottom();
+
+// Auto resize textarea
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+// Enter = send, Shift+Enter = newline
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+// Send from sample list
+function sendSample(text) {
+  input.value = text;
+  autoResize(input);
+  input.focus();
+  sendMessage();
+}
+
+// Add message bubble to DOM
+function addBubble(role, text, time) {
+  // Remove empty state
+  if (emptyState) emptyState.remove();
+
+  // Add date divider if first message
+  if (chatBox.querySelectorAll('.msg-row').length === 0) {
+    const div = document.createElement('div');
+    div.className = 'date-divider';
+    div.innerHTML = '<span>Leo</span>';
+    chatBox.insertBefore(div, typingIndicator);
+  }
+
+  const row = document.createElement('div');
+  row.className = `msg-row ${role}`;
+
+  const ticks = role === 'user' ? ' <span class="ticks">✓✓</span>' : '';
+  row.innerHTML = `
+    <div class="bubble ${role}">
+      ${text.replace(/\n/g, '<br>')}
+      <div class="bubble-time">${time}${ticks}</div>
+    </div>`;
+
+  chatBox.insertBefore(row, typingIndicator);
+  scrollBottom();
+}
+
+// Send message
+async function sendMessage() {
+  const text = input.value.trim();
+  if (!text) return;
+
+  // UI state
+  input.value = '';
+  input.style.height = 'auto';
+  sendBtn.disabled = true;
+
+  // Now
+  const now = new Date().toLocaleTimeString('sw-TZ', {hour:'2-digit', minute:'2-digit'});
+
+  // Add user bubble
+  addBubble('user', text, now);
+
+  // Show typing
+  typingIndicator.classList.add('visible');
+  scrollBottom();
+
+  try {
+    const form = new FormData();
+    form.append('message', text);
+    form.append('action', 'send');
+    form.append('csrfmiddlewaretoken', CSRF);
+
+    const res = await fetch('/dashboard/test-bot/', {
+      method: 'POST',
+      body: form,
+    });
+    const data = await res.json();
+
+    typingIndicator.classList.remove('visible');
+
+    if (data.status === 'ok') {
+      addBubble('bot', data.response, data.time || now);
+    } else {
+      addBubble('bot', '❌ Hitilafu: ' + (data.msg || 'Unknown error'), now);
+    }
+  } catch (err) {
+    typingIndicator.classList.remove('visible');
+    addBubble('bot', '❌ Hitilafu ya mtandao. Jaribu tena.', now);
+  }
+
+  sendBtn.disabled = false;
+  input.focus();
+}
+
+// Clear chat
+async function clearChat() {
+  if (!confirm('Futa mazungumzo yote?')) return;
+
+  const form = new FormData();
+  form.append('action', 'clear');
+  form.append('csrfmiddlewaretoken', CSRF);
+
+  await fetch('/dashboard/test-bot/', { method: 'POST', body: form });
+  window.location.reload();
+}
+
+// Focus input on load
+input.focus();
+</script>
+</body>
+</html>

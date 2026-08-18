@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Ingia – Mkulima AI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,#1b4332,#2d6a4f);min-height:100vh;display:flex;align-items:center;justify-content:center;}
+.login-box{background:#fff;border-radius:16px;padding:40px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.login-logo{text-align:center;margin-bottom:28px;}
+.login-logo .icon{font-size:48px;}
+.login-logo h1{font-size:22px;font-weight:700;color:#1b4332;margin-top:8px;}
+.login-logo p{font-size:13px;color:#6b7280;margin-top:4px;}
+.form-group{margin-bottom:16px;}
+.form-label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:#374151;}
+.form-control{width:100%;padding:10px 14px;border:1.5px solid #d1d5db;border-radius:8px;font-size:14px;outline:none;transition:border .2s;}
+.form-control:focus{border-color:#2d6a4f;box-shadow:0 0 0 3px rgba(45,106,79,.1);}
+.btn-login{width:100%;padding:12px;background:#2d6a4f;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s;margin-top:8px;}
+.btn-login:hover{background:#1b4332;}
+.alert{padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:13px;background:#fee2e2;color:#dc2626;border:1px solid #fecaca;}
+.footer-note{text-align:center;font-size:12px;color:#9ca3af;margin-top:20px;}
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="login-logo">
+    <div class="icon">🌱</div>
+    <h1>Mkulima AI Tanzania</h1>
+    <p>Ingia kwenye dashibodi ya usimamizi</p>
+  </div>
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-group">
+      <label class="form-label">Jina la Mtumiaji</label>
+      <input name="username" class="form-control" type="text" placeholder="username" required autofocus>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nenosiri</label>
+      <input name="password" class="form-control" type="password" placeholder="••••••••" required>
+    </div>
+    <button type="submit" class="btn-login">🔐 Ingia</button>
+  </form>
+  <div class="footer-note">Mkulima AI Tanzania &copy; 2024 | JamiiTek</div>
+</div>
+</body>
+</html>

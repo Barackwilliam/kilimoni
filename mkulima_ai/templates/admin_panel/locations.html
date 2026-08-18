@@ -1,0 +1,51 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Master Data ya Maeneo{% endblock %}
+{% block page_title %}📍 Master Data — Kata / Wilaya / Mkoa{% endblock %}
+{% block content %}
+
+<div class="stat-grid" style="margin-bottom:20px;">
+  <div class="stat-card">
+    <div class="stat-label">🗺️ Mikoa (Regions)</div>
+    <div class="stat-value">{{ region_count }}</div>
+  </div>
+  <div class="stat-card gold">
+    <div class="stat-label">📍 Wilaya (Districts)</div>
+    <div class="stat-value">{{ district_count }}</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">🏘️ Kata (Wards)</div>
+    <div class="stat-value">{{ ward_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">🌍 Zone Mappings</div>
+    <div class="stat-value">{{ mapping_count }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Mikoa na Wilaya — Hierarchy</div>
+    <a href="/admin/crops/region/" class="btn btn-primary btn-sm">⚙️ Manage kwenye Admin</a>
+  </div>
+  <div style="font-size:13px;color:#6b7280;margin-bottom:16px;">
+    ⚠️ Maeneo yote yanatoka kwenye Master Data pekee. Si free text.
+    Hii inazuia makosa ya tahajia kama "Iringa" vs "Irnga".
+  </div>
+  <div class="table-wrap" style="max-height:500px;overflow-y:auto;">
+    <table>
+      <thead>
+        <tr><th>Mkoa</th><th>Wilaya</th><th>Zone Iliyopangwa</th></tr>
+      </thead>
+      <tbody>
+        {% for mapping in mappings %}
+        <tr>
+          <td><strong>{{ mapping.region.name }}</strong></td>
+          <td>{{ mapping.district.name|default:"(Mkoa Wote)" }}</td>
+          <td><span class="badge badge-green">{{ mapping.zone.zone_name }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,106 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}CSV Import{% endblock %}
+{% block page_title %}📥 Import CSV Datasets{% endblock %}
+{% block content %}
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Upload Dataset (CSV)</div>
+    </div>
+    <p style="font-size:13px;color:#6b7280;margin-bottom:18px;">
+      Pakia datasets za kilimo bila kuhitaji developer. 
+      CSV iwe na safu sahihi kama inavyoonyeshwa chini.
+    </p>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Aina ya Dataset *</label>
+        <select name="import_type" class="form-control" required>
+          <option value="">-- Chagua Aina --</option>
+          {% for key, label in import_types.items %}
+          <option value="{{ key }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">CSV File *</label>
+        <input type="file" name="csv_file" class="form-control" accept=".csv" required>
+        <div class="form-hint">Faili lazima liwe .csv na encoding ya UTF-8</div>
+      </div>
+      <button type="submit" class="btn btn-primary">📤 Import Dataset</button>
+    </form>
+
+    {% if result %}
+    <div style="margin-top:20px;padding:16px;border-radius:8px;background:{% if result.error %}#fee2e2{% else %}#dcfce7{% endif %};">
+      {% if result.error %}
+        <strong style="color:#dc2626;">❌ Hitilafu:</strong> {{ result.error }}
+      {% else %}
+        <strong style="color:#16a34a;">✅ Matokeo ya Import — {{ result.label }}</strong><br>
+        <div style="margin-top:8px;font-size:13px;">
+          📊 Jumla ya mistari: <strong>{{ result.total_rows }}</strong><br>
+          ➕ Mpya: <strong>{{ result.created }}</strong><br>
+          🔄 Zilizoboreshwa: <strong>{{ result.updated }}</strong><br>
+          ❌ Makosa: <strong>{{ result.errors|length }}</strong>
+        </div>
+        {% if result.errors %}
+        <div style="margin-top:10px;max-height:120px;overflow-y:auto;font-size:12px;color:#dc2626;">
+          {% for err in result.errors %}<div>• {{ err }}</div>{% endfor %}
+        </div>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📋 Muundo wa CSV Files</div>
+    </div>
+    <div style="font-size:13px;">
+
+      <div style="margin-bottom:16px;padding:12px;background:#f8f9fa;border-radius:8px;">
+        <strong>🌱 Aina za Mbegu (varieties)</strong><br>
+        <code style="font-size:11px;color:#374151;">
+          variety_name, crop_name_sw, zone_name, maturity_class,<br>
+          maturity_days_min, maturity_days_max, drought_tolerance,<br>
+          seed_source, verification_status, notes
+        </code><br>
+        <em style="font-size:11px;color:#6b7280;">Mfano: PAN 23, Mahindi, Central Zone, early, 85, 95, High, Pannar, verified, Inafaa ukame</em>
+      </div>
+
+      <div style="margin-bottom:16px;padding:12px;background:#f8f9fa;border-radius:8px;">
+        <strong>📝 Answer Templates</strong><br>
+        <code style="font-size:11px;color:#374151;">
+          answer_reference, intent_name, crop_name_sw, zone_name,<br>
+          answer_text_sw, follow_up_question, caution_note, active_status
+        </code>
+      </div>
+
+      <div style="margin-bottom:16px;padding:12px;background:#f8f9fa;border-radius:8px;">
+        <strong>🔤 Synonyms</strong><br>
+        <code style="font-size:11px;color:#374151;">
+          main_word, variation, category, crop_name_sw
+        </code><br>
+        <em style="font-size:11px;color:#6b7280;">Mfano: mahindi, mahind, crop, Mahindi</em>
+      </div>
+
+      <div style="margin-bottom:16px;padding:12px;background:#f8f9fa;border-radius:8px;">
+        <strong>💬 Maswali ya Wakulima</strong><br>
+        <code style="font-size:11px;color:#374151;">
+          question_text, intent_name, crop_name_sw, location,<br>
+          keywords, answer_reference
+        </code>
+      </div>
+
+      <div style="padding:12px;background:#f8f9fa;border-radius:8px;">
+        <strong>📍 Location Mapping</strong><br>
+        <code style="font-size:11px;color:#374151;">
+          region_name, district_name, zone_name
+        </code><br>
+        <em style="font-size:11px;color:#6b7280;">Mfano: Singida, Iramba, Central Zone</em>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

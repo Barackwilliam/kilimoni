@@ -1,0 +1,120 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Dashibodi – Mkulima AI{% endblock %}
+{% block page_title %}📊 Dashibodi{% endblock %}
+{% block content %}
+
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">👥 Wakulima Wote</div>
+    <div class="stat-value">{{ total_users }}</div>
+    <div class="stat-sub">Waliojisajili hadi sasa</div>
+  </div>
+  <div class="stat-card gold">
+    <div class="stat-label">💬 Mazungumzo Yote</div>
+    <div class="stat-value">{{ total_conversations }}</div>
+    <div class="stat-sub">Maswali yaliyopokelewa</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">📅 Leo</div>
+    <div class="stat-value">{{ today_messages }}</div>
+    <div class="stat-sub">Maswali ya leo</div>
+  </div>
+  <div class="stat-card {% if unresolved_count > 0 %}danger{% endif %}">
+    <div class="stat-label">⚠️ Bila Jibu</div>
+    <div class="stat-value">{{ unresolved_count }}</div>
+    <div class="stat-sub">Yanayosubiri review</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">✅ Kiwango cha Mafanikio</div>
+    <div class="stat-value">{{ success_rate }}%</div>
+    <div class="stat-sub">Ya maswali yaliyojibiwa</div>
+  </div>
+</div>
+
+<div class="grid-2" style="margin-bottom:20px;">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📈 Maswali – Siku 7 Zilizopita</div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-bars" id="barChart"></div>
+      <div style="display:flex;gap:6px;margin-top:4px;">
+        {% for d in daily_stats %}
+        <div style="flex:1;text-align:center;font-size:10px;color:#6b7280;">{{ d.day }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    <script>
+    (function(){
+      const data = [{% for d in daily_stats %}{{ d.count }},{% endfor %}];
+      const max = Math.max(...data, 1);
+      const container = document.getElementById('barChart');
+      data.forEach(v => {
+        const b = document.createElement('div');
+        b.className = 'bar';
+        b.style.height = (v/max*100)+'%';
+        b.title = v + ' maswali';
+        container.appendChild(b);
+      });
+    })();
+    </script>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🔝 Maswali Yanayoulizwa Zaidi</div>
+    </div>
+    {% for i in top_intents %}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;">
+      <span style="font-size:13px;">{{ i.intent__intent_name }}</span>
+      <span class="badge badge-green">{{ i.count }}</span>
+    </div>
+    {% empty %}
+    <div class="empty-state"><p>Bado hakuna data</p></div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🌽 Mazao Yanayoulizwa Zaidi</div>
+    </div>
+    {% for c in top_crops %}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;">
+      <span style="font-size:13px;">{{ c.crop__crop_name_sw }}</span>
+      <span class="badge badge-yellow">{{ c.count }}</span>
+    </div>
+    {% empty %}
+    <div class="empty-state"><p>Bado hakuna data</p></div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">💬 Mazungumzo ya Hivi Karibuni</div>
+      <a href="{% url 'conversations' %}" class="btn btn-secondary btn-sm">Yote →</a>
+    </div>
+    {% for c in recent_convos %}
+    <div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+        <span class="phone-num">{{ c.user.phone_number }}</span>
+        <span style="font-size:11px;color:#9ca3af;">{{ c.created_at|date:"d M H:i" }}</span>
+      </div>
+      <div style="font-size:13px;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">
+        {{ c.raw_message|truncatechars:70 }}
+      </div>
+      {% if c.detected_crop %}
+      <span class="badge badge-green" style="margin-top:3px;">{{ c.detected_crop.crop_name_sw }}</span>
+      {% endif %}
+      {% if c.detected_intent %}
+      <span class="badge badge-blue" style="margin-top:3px;">{{ c.detected_intent.intent_name }}</span>
+      {% endif %}
+    </div>
+    {% empty %}
+    <div class="empty-state"><p>Bado hakuna mazungumzo</p></div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

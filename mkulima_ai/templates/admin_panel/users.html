@@ -1,0 +1,40 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Wakulima{% endblock %}
+{% block page_title %}👥 Wakulima{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Wakulima Wote ({{ users.count }})</div>
+  </div>
+  <form method="get" class="search-bar">
+    <input name="q" class="form-control" placeholder="Tafuta nambari au eneo..." value="{{ search }}">
+    <button class="btn btn-primary" type="submit">🔍 Tafuta</button>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Nambari ya Simu</th><th>Mkoa</th><th>Wilaya</th><th>Maswali</th><th>Mara ya Mwisho</th><th>Hali</th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td style="color:#9ca3af;font-size:12px;">{{ forloop.counter }}</td>
+          <td><span class="phone-num">{{ u.phone_number }}</span></td>
+          <td>{{ u.region|default:"–" }}</td>
+          <td>{{ u.district|default:"–" }}</td>
+          <td><span class="badge badge-blue">{{ u.message_count }}</span></td>
+          <td style="font-size:12px;color:#6b7280;">{{ u.last_seen_at|date:"d M Y H:i" }}</td>
+          <td>
+            {% if u.active_status == 'active' %}
+            <span class="badge badge-green">Active</span>
+            {% else %}
+            <span class="badge badge-red">Blocked</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:#9ca3af;">Hakuna wakulima.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

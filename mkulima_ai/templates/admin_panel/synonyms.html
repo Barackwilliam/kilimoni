@@ -1,0 +1,63 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Synonyms{% endblock %}
+{% block page_title %}🔤 Synonyms{% endblock %}
+{% block content %}
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">＋ Ongeza Synonym</div>
+    </div>
+    <form method="post" action="{% url 'synonym_add' %}">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Neno Rasmi (Main Word)</label>
+        <input name="main_word" class="form-control" required placeholder="mahindi">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Neno Mbadala (Variation)</label>
+        <input name="variation" class="form-control" required placeholder="mahind">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Kategoria</label>
+        <select name="category" class="form-control">
+          {% for val, label in categories %}
+          <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Zao (optional)</label>
+        <select name="crop" class="form-control">
+          <option value="">--</option>
+          {% for crop in crops %}
+          <option value="{{ crop.pk }}">{{ crop.crop_name_sw }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" type="submit">💾 Ongeza</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Synonyms Zote ({{ synonyms.count }})</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Variation</th><th>→ Main Word</th><th>Kategoria</th></tr></thead>
+        <tbody>
+          {% for s in synonyms %}
+          <tr>
+            <td><code>{{ s.variation }}</code></td>
+            <td><strong>{{ s.main_word }}</strong></td>
+            <td><span class="badge badge-gray">{{ s.category }}</span></td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="3" style="text-align:center;padding:30px;color:#9ca3af;">Hakuna synonyms.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

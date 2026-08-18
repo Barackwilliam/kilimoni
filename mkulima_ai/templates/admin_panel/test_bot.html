@@ -1,0 +1,45 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Jaribu Bot{% endblock %}
+{% block page_title %}🧪 Jaribu Bot{% endblock %}
+{% block content %}
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Tuma Ujumbe wa Majaribio</div>
+    </div>
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Andika ujumbe kama mkulima:</label>
+        <textarea name="message" class="form-control" rows="4" placeholder="Ni mbegu gani ya mahindi nipande Singida?">{{ test_message }}</textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">📤 Tuma kwa Bot</button>
+    </form>
+    <div style="margin-top:20px;">
+      <div class="form-label" style="margin-bottom:8px;">💡 Mifano ya Maswali:</div>
+      {% for q in "Ni mbegu gani ya mahindi nipande Singida?|Wakati gani wa kupanda mahindi Dodoma?|Niambie kuhusu mbolea ya kupandia mahindi|Mahindi yangu yana wadudu, nifanye nini?|Ninaweza kuvuna mahindi lini?|Bei ya mahindi sokoni ni ngapi?" %}
+      <div style="margin-bottom:6px;">
+        <button onclick="document.querySelector('textarea[name=message]').value='{{ q }}'" 
+          class="btn btn-secondary btn-sm" type="button" style="text-align:left;width:100%;">
+          💬 {{ q }}
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📱 Jibu la Bot</div>
+    </div>
+    {% if response %}
+    <div style="background:#f0f4f1;border-radius:12px;padding:16px;font-size:14px;line-height:1.7;white-space:pre-wrap;font-family:'Segoe UI',Arial,sans-serif;min-height:200px;">{{ response }}</div>
+    {% else %}
+    <div class="empty-state" style="min-height:200px;">
+      <div class="icon">🤖</div>
+      <p>Jibu la bot litaonekana hapa baada ya kutuma ujumbe.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

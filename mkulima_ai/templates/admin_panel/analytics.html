@@ -1,0 +1,85 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Analytics{% endblock %}
+{% block page_title %}📊 Analytics na Ripoti{% endblock %}
+{% block content %}
+
+<div class="stat-grid" style="margin-bottom:24px;">
+  <div class="stat-card">
+    <div class="stat-label">📨 Jumla ya Maswali</div>
+    <div class="stat-value">{{ total_logs }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">✅ Yaliyojibiwa</div>
+    <div class="stat-value">{{ success_logs }}</div>
+  </div>
+  <div class="stat-card gold">
+    <div class="stat-label">🎯 Kiwango cha Mafanikio</div>
+    <div class="stat-value">{{ success_rate }}%</div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">⚡ Muda wa Wastani</div>
+    <div class="stat-value" style="font-size:24px;">{{ avg_response_ms }}ms</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <div class="card-title">📈 Maswali Kwa Siku 14 Zilizopita</div>
+  </div>
+  <div style="display:flex;align-items:flex-end;gap:4px;height:100px;margin-bottom:6px;" id="dailyChart"></div>
+  <div style="display:flex;gap:4px;" id="dailyLabels"></div>
+  <script>
+  (function(){
+    const data = [{% for d in daily_stats %}{{ d.count }},{% endfor %}];
+    const labels = [{% for d in daily_stats %}"{{ d.day }}",{% endfor %}];
+    const max = Math.max(...data, 1);
+    const chartEl = document.getElementById('dailyChart');
+    const labelEl = document.getElementById('dailyLabels');
+    data.forEach((v, i) => {
+      const b = document.createElement('div');
+      b.style.cssText = `flex:1;background:#52b788;border-radius:4px 4px 0 0;height:${Math.max(v/max*100,2)}%;min-height:3px;title="${v}";cursor:pointer;transition:background .2s;`;
+      b.title = `${labels[i]}: ${v} maswali`;
+      b.onmouseover = () => b.style.background = '#2d6a4f';
+      b.onmouseout = () => b.style.background = '#52b788';
+      chartEl.appendChild(b);
+      const l = document.createElement('div');
+      l.style.cssText = 'flex:1;text-align:center;font-size:9px;color:#9ca3af;white-space:nowrap;overflow:hidden;';
+      l.textContent = labels[i];
+      labelEl.appendChild(l);
+    });
+  })();
+  </script>
+</div>
+
+<div class="grid-3">
+  <div class="card">
+    <div class="card-header"><div class="card-title">🔍 Top Intents</div></div>
+    {% for item in top_intents %}
+    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">
+      <span>{{ item.intent__intent_name }}</span>
+      <span class="badge badge-blue">{{ item.count }}</span>
+    </div>
+    {% empty %}<div class="empty-state" style="padding:20px;"><p>Bado hakuna data</p></div>{% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">🌽 Top Mazao</div></div>
+    {% for item in top_crops %}
+    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">
+      <span>{{ item.crop__crop_name_sw }}</span>
+      <span class="badge badge-green">{{ item.count }}</span>
+    </div>
+    {% empty %}<div class="empty-state" style="padding:20px;"><p>Bado hakuna data</p></div>{% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">📍 Top Zones</div></div>
+    {% for item in top_zones %}
+    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px;">
+      <span>{{ item.zone__zone_name }}</span>
+      <span class="badge badge-yellow">{{ item.count }}</span>
+    </div>
+    {% empty %}<div class="empty-state" style="padding:20px;"><p>Bado hakuna data</p></div>{% endfor %}
+  </div>
+</div>
+{% endblock %}

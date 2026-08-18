@@ -1,0 +1,51 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Mazungumzo{% endblock %}
+{% block page_title %}💬 Mazungumzo{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Historia ya Mazungumzo</div>
+  </div>
+  <form method="get" class="search-bar">
+    <input name="q" class="form-control" placeholder="Tafuta nambari au ujumbe..." value="{{ search }}">
+    <select name="direction" class="form-control" style="max-width:160px;">
+      <option value="">Zote</option>
+      <option value="inbound" {% if request.GET.direction == 'inbound' %}selected{% endif %}>Kutoka Mkulima</option>
+      <option value="outbound" {% if request.GET.direction == 'outbound' %}selected{% endif %}>Kutoka Mfumo</option>
+    </select>
+    <button class="btn btn-primary" type="submit">🔍 Tafuta</button>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nambari</th><th>Mwelekeo</th><th>Ujumbe</th><th>Zao</th><th>Intent</th><th>Eneo</th><th>Tarehe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in conversations %}
+        <tr>
+          <td><span class="phone-num">{{ c.user.phone_number }}</span></td>
+          <td>
+            {% if c.message_direction == 'inbound' %}
+            <span class="badge badge-blue">⬇ Mkulima</span>
+            {% else %}
+            <span class="badge badge-green">⬆ Mfumo</span>
+            {% endif %}
+          </td>
+          <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            {{ c.raw_message|truncatechars:100 }}
+          </td>
+          <td>{% if c.detected_crop %}<span class="badge badge-yellow">{{ c.detected_crop.crop_name_sw }}</span>{% else %}–{% endif %}</td>
+          <td>{% if c.detected_intent %}<span class="badge badge-gray">{{ c.detected_intent.intent_name }}</span>{% else %}–{% endif %}</td>
+          <td>{{ c.detected_location|default:"–" }}</td>
+          <td style="font-size:12px;color:#6b7280;white-space:nowrap;">{{ c.created_at|date:"d M Y H:i" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:#9ca3af;">Hakuna mazungumzo yaliyopatikana.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

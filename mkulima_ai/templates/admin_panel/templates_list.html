@@ -1,0 +1,43 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Majibu (Templates){% endblock %}
+{% block page_title %}📝 Answer Templates{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Templates Zote ({{ templates.count }})</div>
+    <a href="{% url 'template_add' %}" class="btn btn-primary">＋ Ongeza Template</a>
+  </div>
+  <form method="get" class="search-bar">
+    <input name="q" class="form-control" placeholder="Tafuta template..." value="{{ search }}">
+    <button class="btn btn-primary" type="submit">🔍</button>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Reference</th><th>Intent</th><th>Zao</th><th>Zone</th><th>Jibu (Preview)</th><th>Hali</th><th>Vitendo</th></tr></thead>
+      <tbody>
+        {% for t in templates %}
+        <tr>
+          <td><code style="font-size:12px;">{{ t.answer_reference }}</code></td>
+          <td><span class="badge badge-blue">{{ t.intent.intent_name }}</span></td>
+          <td>{{ t.crop.crop_name_sw|default:"–" }}</td>
+          <td>{{ t.zone.zone_name|default:"–" }}</td>
+          <td style="max-width:250px;font-size:12px;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            {{ t.answer_text_sw|truncatechars:80 }}
+          </td>
+          <td>
+            {% if t.active_status == 'active' %}
+            <span class="badge badge-green">Active</span>
+            {% else %}
+            <span class="badge badge-red">Inactive</span>
+            {% endif %}
+          </td>
+          <td><a href="{% url 'template_edit' t.pk %}" class="btn btn-secondary btn-sm">✏️ Hariri</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:#9ca3af;">Hakuna templates. <a href="{% url 'template_add' %}">Ongeza ya kwanza.</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

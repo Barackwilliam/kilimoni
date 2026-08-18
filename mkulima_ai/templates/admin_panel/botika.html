@@ -1,0 +1,282 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}System Status – Mkulima AI{% endblock %}
+{% block page_title %}🔧 System Status & Troubleshoot{% endblock %}
+
+{% block extra_css %}
+<style>
+.status-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin-bottom:24px; }
+.status-card {
+  background:#fff; border-radius:10px; padding:20px;
+  box-shadow:0 2px 12px rgba(0,0,0,0.08);
+  border-left:5px solid #e5e7eb;
+}
+.status-card.ok { border-left-color:#16a34a; }
+.status-card.error { border-left-color:#dc2626; }
+.status-card.warning { border-left-color:#d97706; }
+.status-card.info { border-left-color:#3b82f6; }
+.status-icon { font-size:28px; margin-bottom:8px; }
+.status-label { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; margin-bottom:4px; }
+.status-value { font-size:20px; font-weight:700; margin-bottom:4px; }
+.status-value.ok { color:#16a34a; }
+.status-value.error { color:#dc2626; }
+.status-value.warning { color:#d97706; }
+.status-detail { font-size:12px; color:#6b7280; font-family:monospace; word-break:break-all; }
+
+.check-list { background:#fff; border-radius:10px; box-shadow:0 2px 12px rgba(0,0,0,0.08); overflow:hidden; margin-bottom:24px; }
+.check-item {
+  display:flex; align-items:flex-start; gap:16px;
+  padding:16px 20px; border-bottom:1px solid #f0f0f0;
+}
+.check-item:last-child { border-bottom:none; }
+.check-dot { width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; margin-top:2px; }
+.check-dot.ok { background:#dcfce7; color:#16a34a; }
+.check-dot.error { background:#fee2e2; color:#dc2626; }
+.check-dot.warning { background:#fef3c7; color:#d97706; }
+.check-dot.info { background:#dbeafe; color:#2563eb; }
+.check-body { flex:1; }
+.check-title { font-weight:600; font-size:14px; margin-bottom:2px; }
+.check-desc { font-size:13px; color:#6b7280; }
+.check-action { font-size:12px; color:#2563eb; margin-top:4px; font-weight:500; }
+.check-code { font-family:monospace; font-size:12px; background:#f3f4f6; padding:2px 6px; border-radius:4px; color:#374151; }
+
+.section-title { font-size:15px; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px; color:#1a1a2e; }
+.copy-btn { cursor:pointer; background:#f3f4f6; border:none; padding:4px 10px; border-radius:4px; font-size:12px; color:#374151; }
+.copy-btn:hover { background:#e5e7eb; }
+.token-box { background:#1e293b; color:#94a3b8; font-family:monospace; font-size:12px; padding:12px 16px; border-radius:8px; word-break:break-all; position:relative; }
+.token-box .token-val { color:#34d399; }
+.webhook-url { background:#f0fdf4; border:1.5px solid #bbf7d0; border-radius:8px; padding:12px 16px; font-family:monospace; font-size:13px; color:#166534; word-break:break-all; }
+.steps { counter-reset:steps; }
+.step { counter-increment:steps; display:flex; gap:14px; padding:14px 0; border-bottom:1px solid #f0f0f0; }
+.step:last-child { border-bottom:none; }
+.step-num { width:28px; height:28px; border-radius:50%; background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0; }
+.step-body { flex:1; }
+.step-title { font-weight:600; font-size:14px; margin-bottom:4px; }
+.step-desc { font-size:13px; color:#6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Status Cards -->
+<div class="section-title">📊 Hali ya Mfumo kwa Sekunde Moja</div>
+<div class="status-grid">
+
+  <!-- Database -->
+  <div class="status-card {% if db_ok %}ok{% else %}error{% endif %}">
+    <div class="status-icon">🗄️</div>
+    <div class="status-label">Database (Supabase)</div>
+    <div class="status-value {% if db_ok %}ok{% else %}error{% endif %}">
+      {% if db_ok %}✅ Connected{% else %}❌ Failed{% endif %}
+    </div>
+    <div class="status-detail">{{ db_detail }}</div>
+  </div>
+
+  <!-- WhatsApp Token -->
+  <div class="status-card {% if token_ok %}ok{% else %}error{% endif %}">
+    <div class="status-icon">📱</div>
+    <div class="status-label">WhatsApp Access Token</div>
+    <div class="status-value {% if token_ok %}ok{% else %}error{% endif %}">
+      {% if token_ok %}✅ Imewekwa{% else %}❌ Haijawekwa{% endif %}
+    </div>
+    <div class="status-detail">{{ token_preview }}</div>
+  </div>
+
+  <!-- Groq AI -->
+  <div class="status-card {% if groq_ok %}ok{% else %}warning{% endif %}">
+    <div class="status-icon">🤖</div>
+    <div class="status-label">Groq AI (LLaMA)</div>
+    <div class="status-value {% if groq_ok %}ok{% else %}warning{% endif %}">
+      {% if groq_ok %}✅ Online{% else %}⚠️ Offline{% endif %}
+    </div>
+    <div class="status-detail">{{ groq_detail }}</div>
+  </div>
+
+  <!-- Webhook URL -->
+  <div class="status-card info">
+    <div class="status-icon">🔗</div>
+    <div class="status-label">Webhook URL</div>
+    <div class="status-value" style="font-size:13px;color:#2563eb;">{{ webhook_url }}</div>
+    <div class="status-detail">Verify Token: <span style="color:#16a34a;">{{ verify_token }}</span></div>
+  </div>
+
+  <!-- Mazao -->
+  <div class="status-card {% if crops_count > 0 %}ok{% else %}warning{% endif %}">
+    <div class="status-icon">🌽</div>
+    <div class="status-label">Mazao (Database)</div>
+    <div class="status-value {% if crops_count > 0 %}ok{% else %}warning{% endif %}">
+      {{ crops_count }} mazao
+    </div>
+    <div class="status-detail">{{ templates_count }} templates · {{ intents_count }} intents</div>
+  </div>
+
+  <!-- Wakulima -->
+  <div class="status-card {% if users_count > 0 %}ok{% else %}info{% endif %}">
+    <div class="status-icon">👥</div>
+    <div class="status-label">Wakulima Waliojisajili</div>
+    <div class="status-value ok">{{ users_count }} wakulima</div>
+    <div class="status-detail">{{ conversations_count }} mazungumzo yote</div>
+  </div>
+
+</div>
+
+<!-- Checklist ya WhatsApp -->
+<div class="section-title">📋 WhatsApp Webhook Checklist</div>
+<div class="check-list">
+
+  <div class="check-item">
+    <div class="check-dot {% if token_ok %}ok{% else %}error{% endif %}">
+      {% if token_ok %}✓{% else %}✗{% endif %}
+    </div>
+    <div class="check-body">
+      <div class="check-title">Access Token imewekwa</div>
+      <div class="check-desc">
+        {% if token_ok %}
+          Token ipo: <span class="check-code">{{ token_preview }}</span>
+        {% else %}
+          Token haijawekwaa kwenye settings.py au Environment Variables
+        {% endif %}
+      </div>
+      {% if not token_ok %}
+      <div class="check-action">→ Nenda Meta Developer Console → copy Access Token mpya</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="check-item">
+    <div class="check-dot warning">!</div>
+    <div class="check-body">
+      <div class="check-title">Token ni ya muda (24hr) — Lazima iburudishwe kila siku</div>
+      <div class="check-desc">Test token kutoka Meta Developer Console inaisha baada ya masaa 24. Kwa production, tengeneza <strong>System User Permanent Token</strong> kupitia Meta Business Manager.</div>
+      <div class="check-action">→ Meta Business Manager → System Users → Generate Token (Never Expires)</div>
+    </div>
+  </div>
+
+  <div class="check-item">
+    <div class="check-dot info">i</div>
+    <div class="check-body">
+      <div class="check-title">Webhook URL lazima iwe registered kwenye Meta</div>
+      <div class="check-desc">Meta haijui wapi kutuma ujumbe bila webhook kuwa connected.</div>
+      <div class="check-action">→ Hatua ziko chini ya ukurasa huu ↓</div>
+    </div>
+  </div>
+
+  <div class="check-item">
+    <div class="check-dot {% if db_ok %}ok{% else %}error{% endif %}">
+      {% if db_ok %}✓{% else %}✗{% endif %}
+    </div>
+    <div class="check-body">
+      <div class="check-title">Database Connection</div>
+      <div class="check-desc">{{ db_detail }}</div>
+    </div>
+  </div>
+
+  <div class="check-item">
+    <div class="check-dot {% if crops_count > 0 %}ok{% else %}warning{% endif %}">
+      {% if crops_count > 0 %}✓{% else %}!{% endif %}
+    </div>
+    <div class="check-body">
+      <div class="check-title">Mazao na Templates zipo</div>
+      <div class="check-desc">
+        {{ crops_count }} mazao · {{ templates_count }} templates · {{ intents_count }} intents kwenye database
+        {% if crops_count == 0 %} — <strong>Bot haitaweza kujibu vizuri bila mazao!</strong>{% endif %}
+      </div>
+      {% if crops_count == 0 %}
+      <div class="check-action">→ Nenda <a href="{% url 'csv_import' %}">Import CSV</a> au ongeza mazao manually</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Webhook Setup Steps -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🔗 Webhook Configuration (Copy & Paste)</div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div class="status-label" style="margin-bottom:6px;">Callback URL — Weka hii kwenye Meta Console</div>
+      <div class="webhook-url" id="webhookUrl">{{ webhook_url }}</div>
+      <button class="copy-btn" style="margin-top:6px;" onclick="copyText('webhookUrl')">📋 Copy URL</button>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div class="status-label" style="margin-bottom:6px;">Verify Token</div>
+      <div class="token-box"><span class="token-val">{{ verify_token }}</span></div>
+      <button class="copy-btn" style="margin-top:6px;" onclick="copyText('verifyToken')">📋 Copy Token</button>
+      <span id="verifyToken" style="display:none">{{ verify_token }}</span>
+    </div>
+    <div>
+      <div class="status-label" style="margin-bottom:6px;">Webhook Field — Lazima iwe Subscribed</div>
+      <div style="background:#f3f4f6;padding:10px 14px;border-radius:6px;font-family:monospace;font-size:13px;">
+        ✅ <strong>messages</strong> — Subscribe hii kwenye Meta Console
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📋 Hatua za Kufix Webhook (Dakika 3)</div>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">Fungua Meta Developer Console</div>
+          <div class="step-desc">developers.facebook.com → App yako → WhatsApp → Configuration</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Bonyeza "Edit" kwenye Webhook</div>
+          <div class="step-desc">Weka Callback URL na Verify Token zilizo juu → Bonyeza <strong>"Verify and Save"</strong></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Subscribe "messages"</div>
+          <div class="step-desc">Chini ya Webhook fields → tafuta <strong>messages</strong> → bonyeza <strong>Subscribe</strong></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">Copy Access Token Mpya</div>
+          <div class="step-desc">WhatsApp → API Setup → copy token → weka kwenye Render Environment Variables kama <strong>WHATSAPP_API_TOKEN</strong></div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <div class="step-title">Tuma ujumbe wa test</div>
+          <div class="step-desc">Tuma "habari" WhatsApp → angalia <a href="{% url 'conversations' %}">Mazungumzo</a> — unapaswa kuona jibu</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Links -->
+<div class="card" style="margin-top:16px;">
+  <div class="card-header"><div class="card-title">🚀 Viungo vya Haraka</div></div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;">
+    <a href="https://developers.facebook.com/apps/{{ whatsapp_app_id }}/whatsapp-business/wa-configurations-v2/" target="_blank" class="btn btn-primary">📱 Meta Developer Console</a>
+    <a href="https://dashboard.render.com" target="_blank" class="btn btn-secondary">🖥️ Render Dashboard</a>
+    <a href="https://console.groq.com" target="_blank" class="btn btn-secondary">🤖 Groq Console</a>
+    <a href="{% url 'test_bot' %}" class="btn btn-gold">🧪 Jaribu Bot Ndani</a>
+    <a href="{% url 'conversations' %}" class="btn btn-secondary">💬 Angalia Mazungumzo</a>
+    <a href="{% url 'groq_status' %}" class="btn btn-secondary">🤖 Groq AI Status</a>
+  </div>
+</div>
+
+<script>
+function copyText(id) {
+  const el = document.getElementById(id);
+  const text = el.innerText || el.textContent;
+  navigator.clipboard.writeText(text.trim()).then(() => {
+    alert('✅ Imekopishwa!');
+  });
+}
+</script>
+{% endblock %}
