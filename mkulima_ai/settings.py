@@ -80,39 +80,17 @@ WSGI_APPLICATION = 'mkulima_ai.wsgi.application'
 #         }
 #     }
 
-#Database from botikawilly@gmail.com
-#web hosting 
 
-
-
-
-
-
-
-
-# Database - Supabase kwa production, SQLite kwa local dev
-if config('DB_USER', default=''):
-    DATABASES = {
+DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.postgresql',
                 'NAME': 'postgres',
                 'USER': 'postgres.djjshelinxxwwibfteyy',
                 'PASSWORD': 'Nyumbachap@123',
                 'HOST': 'aws-0-eu-west-1.pooler.supabase.com',
-                'PORT':'5432',
+                'PORT': '5432',
             }
         }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-
-
-
-
 
 
 AUTH_PASSWORD_VALIDATORS = [
