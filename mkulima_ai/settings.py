@@ -3,9 +3,16 @@ from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-mkulima-ai-tanzania-change-this-in-production')
-DEBUG = config('DEBUG', default=True, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*').split(',')
+SECRET_KEY = config('SECRET_KEY', default='django-insecure-CHANGE-ME-in-production')
+DEBUG = config('DEBUG', default=False, cast=bool)
+ALLOWED_HOSTS = [h.strip() for h in config('ALLOWED_HOSTS', default='*').split(',') if h.strip()]
+
+# Django 4+ inahitaji hii kwa POST/login kupitia HTTPS.
+# BILA HII, kuingia kwenye dashboard production kutashindwa kwa CSRF error.
+# Mfano: CSRF_TRUSTED_ORIGINS=https://kilimoni.onrender.com
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in config('CSRF_TRUSTED_ORIGINS', default='').split(',') if o.strip()
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -55,51 +62,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'mkulima_ai.wsgi.application'
 
-# # Database
-# DATABASE_URL = config('DATABASE_URL', default=f'sqlite:///{BASE_DIR}/db.sqlite3')
-# if DATABASE_URL.startswith('postgresql') or DATABASE_URL.startswith('postgres'):
-#     import re
-#     match = re.match(r'postgres(?:ql)?://([^:]+):([^@]+)@([^:/]+):?(\d+)?/(.+)', DATABASE_URL)
-#     if match:
-#         user, password, host, port, dbname = match.groups()
-#         DATABASES = {
-#             'default': {
-#                 'ENGINE': 'django.db.backends.postgresql',
-#                 'NAME': dbname,
-#                 'USER': 'postgres.djjshelinxxwwibfteyy',
-#                 'PASSWORD': 'Nyumbachap@123',
-#                 'HOST': 'aws-0-eu-west-1.pooler.supabase.com',
-#                 'PORT': port or '5432',
-#             }
-#         }
-# else:
-#     DATABASES = {
-#         'default': {
-#             'ENGINE': 'django.db.backends.sqlite3',
-#             'NAME': BASE_DIR / 'db.sqlite3',
-#         }
-#     }
-
-#Database from botikawilly@gmail.com
-#web hosting 
-
-
-
-
-
-
-
-
 # Database - Supabase kwa production, SQLite kwa local dev
 if config('DB_USER', default=''):
     DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.postgresql',
-                'NAME': 'postgres',
-                'USER': 'postgres.djjshelinxxwwibfteyy',
-                'PASSWORD': 'Nyumbachap@123',
-                'HOST': 'aws-0-eu-west-1.pooler.supabase.com',
-                'PORT':'5432',
+                'NAME': config('DB_NAME', default='postgres'),
+                'USER': config('DB_USER'),
+                'PASSWORD': config('DB_PASSWORD', default=''),
+                'HOST': config('DB_HOST', default=''),
+                'PORT': config('DB_PORT', default='5432'),
+                'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=0, cast=int),
             }
         }
 else:
@@ -137,6 +110,38 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# ── Usalama (production tu) ──────────────────
+if not DEBUG:
+    # Render iko nyuma ya proxy — bila hii Django hajui request ni HTTPS
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    # Render tayari inalazimisha HTTPS. Washa hizi ukitaka ugumu zaidi:
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
+    SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=0, cast=int)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = bool(SECURE_HSTS_SECONDS)
+    SECURE_HSTS_PRELOAD = bool(SECURE_HSTS_SECONDS)
+
+# ── Logging — muhimu kwa ku-debug webhook kwenye Render Logs ──
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {'format': '[{levelname}] {asctime} {name}: {message}', 'style': '{'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'simple'},
+    },
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+    'loggers': {
+        'bot': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'whatsapp': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'admin_panel': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}
+
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -153,7 +158,7 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 # WhatsApp
 WHATSAPP_API_TOKEN = config('WHATSAPP_API_TOKEN', default='')
 WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='')
-WHATSAPP_VERIFY_TOKEN = config('WHATSAPP_VERIFY_TOKEN', default='mkulima-ai-verify-2024')
+WHATSAPP_VERIFY_TOKEN = config('WHATSAPP_VERIFY_TOKEN', default='')
 WHATSAPP_BUSINESS_ACCOUNT_ID = config('WHATSAPP_BUSINESS_ACCOUNT_ID', default='')
 # Meta huondoa Graph API versions za zamani baada ya ~miaka 2.
 # Angalia version mpya kwenye Meta App Dashboard, kisha weka hapa kwa env var.
@@ -170,10 +175,10 @@ ANTHROPIC_API_KEY = config('ANTHROPIC_API_KEY', default='')
 CLAUDE_MODEL = 'claude-sonnet-4-6'
 
 # Green API (testing tu)
-GREENAPI_URL = config('GREENAPI_URL', default='https://7107.api.greenapi.com')
-GREENAPI_INSTANCE_ID = config('GREENAPI_INSTANCE_ID', default='710722681001')
-GREENAPI_TOKEN = config('GREENAPI_TOKEN', default='1ee696cb18d04050962607fa65ef73f14c751363c3cc4ed78b')
+GREENAPI_URL = config('GREENAPI_URL', default='')
+GREENAPI_INSTANCE_ID = config('GREENAPI_INSTANCE_ID', default='')
+GREENAPI_TOKEN = config('GREENAPI_TOKEN', default='')
 
 # Groq AI (fallback yenye akili)
-GROQ_API_KEY = config('GROQ_API_KEY', default='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')
+GROQ_API_KEY = config('GROQ_API_KEY', default='')
 GROQ_MODEL = config('GROQ_MODEL', default='llama-3.3-70b-versatile')
