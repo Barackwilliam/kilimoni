@@ -1,5 +1,5 @@
 """
-Claude AI Integration — Mkulima AI Tanzania
+Claude AI Integration — Kilimoni AI Tanzania
 Inatumika kwa maswali ambayo templates hazijashughulikia
 """
 import logging
@@ -36,7 +36,7 @@ def get_claude_response(user_message: str, crop_name: str = '', location: str = 
 
         context_str = '\n'.join(context_parts) if context_parts else 'Hakuna taarifa za ziada'
 
-        system_prompt = """Wewe ni Msaidizi wa Kilimo wa Mkulima AI Tanzania — bot ya WhatsApp inayosaidia wakulima wa Tanzania kupitia WhatsApp.
+        system_prompt = """Wewe ni Msaidizi wa Kilimo wa Kilimoni AI Tanzania — bot ya WhatsApp inayosaidia wakulima wa Tanzania kupitia WhatsApp.
 
 KAZI YAKO:
 - Toa ushauri wa kilimo kwa Kiswahili rahisi na kueleweka
@@ -51,7 +51,7 @@ KANUNI MUHIMU:
 4. Kama swali linahitaji Afisa Ugani, sema hivyo
 5. Tumia emoji kidogo kwa urafiki (🌱🌽💧🐛 n.k.)
 6. Mwisho wa jibu, weka mstari: "─────────────────"
-7. Kisha: "🤖 Mkulima AI Tanzania"
+7. Kisha: "🤖 Kilimoni AI Tanzania"
 8. Kisha: "💬 Piga nambari *0* kupata msaada zaidi"
 
 USISEME:

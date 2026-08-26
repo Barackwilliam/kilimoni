@@ -8,7 +8,7 @@ from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from bot.engine import process_message
+from bot.engine import process_message, is_duplicate_message
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def send_whatsapp_message(to: str, message: str) -> bool:
         logger.warning("WhatsApp API credentials hazikuwekwa. Ujumbe haujatumwa.")
         return False
 
-    url = f"https://graph.facebook.com/v19.0/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    url = settings.WHATSAPP_API_URL
     headers = {
         "Authorization": f"Bearer {settings.WHATSAPP_API_TOKEN}",
         "Content-Type": "application/json",
@@ -37,7 +37,12 @@ def send_whatsapp_message(to: str, message: str) -> bool:
         logger.info(f"Ujumbe umetumwa kwa {to}")
         return True
     except requests.RequestException as e:
-        logger.error(f"Imeshindwa kutuma ujumbe kwa {to}: {e}")
+        # Meta huweka sababu halisi ndani ya response body — bila hii
+        # utaona '400 Bad Request' tu bila kujua tatizo ni nini.
+        body = ''
+        if getattr(e, 'response', None) is not None:
+            body = e.response.text[:500]
+        logger.error(f"Imeshindwa kutuma ujumbe kwa {to}: {e} | Meta alisema: {body}")
         return False
 
 
@@ -71,12 +76,19 @@ def webhook(request):
         for msg in messages:
             msg_type = msg.get("type", "")
             phone_number = msg.get("from", "")
+            message_id = msg.get("id", "")
+
+            # Meta hurudia webhook kama haikupata 200 haraka —
+            # bila ukaguzi huu mkulima angepokea jibu mara mbili.
+            if message_id and is_duplicate_message(message_id):
+                logger.info(f"Ujumbe {message_id} umeshashughulikiwa — unarukwa.")
+                continue
 
             if msg_type == "text":
                 raw_text = msg.get("text", {}).get("body", "").strip()
                 if raw_text and phone_number:
                     logger.info(f"Ujumbe umepokelewa kutoka {phone_number}: {raw_text[:50]}")
-                    response_text = process_message(phone_number, raw_text)
+                    response_text = process_message(phone_number, raw_text, message_id=message_id)
                     send_whatsapp_message(phone_number, response_text)
 
             elif msg_type in ["audio", "image", "document"]:
@@ -92,108 +104,3 @@ def webhook(request):
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         logger.error(f"Webhook error: {e}")
         return JsonResponse({"status": "error"}, status=200)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-"""
-Green API Webhook - Kwa TESTING tu (QR scan, namba yako mwenyewe)
-Weka file hii kama: whatsapp/greenapi_views.py
-
-⚠️ Tumia SIM ya majaribio, si namba kuu ya biashara (hatari ya ban).
-Production itatumia Meta webhook iliyopo tayari (views.py).
-"""
-import json
-import logging
-import requests
-
-from django.conf import settings
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-
-from bot.engine import process_message
-
-logger = logging.getLogger(__name__)
-
-
-def send_greenapi_message(chat_id: str, message: str) -> bool:
-    """Tuma jibu kupitia Green API"""
-    url = (
-        f"{settings.GREENAPI_URL}/waInstance{settings.GREENAPI_INSTANCE_ID}"
-        f"/sendMessage/{settings.GREENAPI_TOKEN}"
-    )
-    try:
-        r = requests.post(
-            url,
-            json={"chatId": chat_id, "message": message},
-            timeout=15,
-        )
-        r.raise_for_status()
-        logger.info(f"[GreenAPI] Jibu limetumwa kwa {chat_id}")
-        return True
-    except requests.RequestException as e:
-        logger.error(f"[GreenAPI] Imeshindwa kutuma: {e}")
-        return False
-
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def greenapi_webhook(request):
-    """Inapokea notifications kutoka Green API"""
-    try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({"status": "bad_json"}, status=200)
-
-    # Tunashughulikia incoming messages tu
-    if data.get("typeWebhook") != "incomingMessageReceived":
-        return JsonResponse({"status": "ignored"}, status=200)
-
-    sender_data = data.get("senderData", {})
-    chat_id = sender_data.get("chatId", "")          # "255712345678@c.us"
-    phone_number = chat_id.split("@")[0]
-
-    msg_data = data.get("messageData", {})
-    msg_type = msg_data.get("typeMessage", "")
-
-    # Text ya kawaida au extended (reply/link preview)
-    if msg_type == "textMessage":
-        raw_text = msg_data.get("textMessageData", {}).get("textMessage", "").strip()
-    elif msg_type == "extendedTextMessage":
-        raw_text = msg_data.get("extendedTextMessageData", {}).get("text", "").strip()
-    else:
-        send_greenapi_message(
-            chat_id,
-            "Samahani, kwa sasa ninaweza kushughulikia maandishi tu. 📝\n"
-            "Tafadhali andika swali lako kwa maneno.",
-        )
-        return JsonResponse({"status": "non_text"}, status=200)
-
-    if not raw_text or not phone_number:
-        return JsonResponse({"status": "empty"}, status=200)
-
-    logger.info(f"[GreenAPI] Ujumbe kutoka {phone_number}: {raw_text[:50]}")
-
-    try:
-        reply = process_message(phone_number, raw_text)
-    except Exception as e:
-        logger.error(f"[GreenAPI] Bot engine error: {e}")
-        reply = "Samahani, kuna tatizo la kiufundi. Jaribu tena baadaye. 🙏"
-
-    send_greenapi_message(chat_id, reply)
-    return JsonResponse({"status": "ok"}, status=200)

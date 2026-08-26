@@ -83,13 +83,13 @@ mazungumzo_data = [
         "intent_key": "variety_by_location", "location": "Singida",
         "pairs": [
             ("Ni mbegu gani ya mahindi nipande Singida?",
-             "Kwa maeneo ya Singida, inapendekezwa: PAN 23 (siku 85-95), SC 403 (siku 90-100). Mbegu hizi zinastahimili ukame vizuri.\n─────────────────\n🤖 Mkulima AI Tanzania\n💬 Piga nambari *0* kupata msaada zaidi"),
+             "Kwa maeneo ya Singida, inapendekezwa: PAN 23 (siku 85-95), SC 403 (siku 90-100). Mbegu hizi zinastahimili ukame vizuri.\n─────────────────\n🤖 Kilimoni AI Tanzania\n💬 Piga nambari *0* kupata msaada zaidi"),
             ("PAN 23 inapatikana wapi Singida?",
-             "PAN 23 inapatikana kwa mawakala wa pembejeo Singida Mjini na AGSS. Pia unaweza kuwasiliana na Afisa Ugani wa Wilaya yako.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "PAN 23 inapatikana kwa mawakala wa pembejeo Singida Mjini na AGSS. Pia unaweza kuwasiliana na Afisa Ugani wa Wilaya yako.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Mbolea gani ya kupandia?",
-             "Tumia DAP gramu 50-70 kwa shimo au CAN gramu 60-80. Weka upande wa mbegu, si moja kwa moja.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Tumia DAP gramu 50-70 kwa shimo au CAN gramu 60-80. Weka upande wa mbegu, si moja kwa moja.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Asante sana, umesaidia",
-             "Karibu sana! 🌱 Mkulima AI Tanzania ipo kukusaidia wakati wote. Piga *0* ukihitaji msaada zaidi."),
+             "Karibu sana! 🌱 Kilimoni AI Tanzania ipo kukusaidia wakati wote. Piga *0* ukihitaji msaada zaidi."),
         ]
     },
     # Mkulima 2 - Dodoma
@@ -98,9 +98,9 @@ mazungumzo_data = [
         "intent_key": "planting_time", "location": "Dodoma",
         "pairs": [
             ("Mahindi yapandwe lini Dodoma?",
-             "Dodoma: Panda Novemba hadi Desemba baada ya mvua ya kwanza ya kutosha. Usipande ardhi ikiwa kavu.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Dodoma: Panda Novemba hadi Desemba baada ya mvua ya kwanza ya kutosha. Usipande ardhi ikiwa kavu.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Mvua bado haijanyesha, nisubiri?",
-             "Ndiyo, subiri mvua ya kwanza (mm 20+ kwa siku 2-3 mfululizo) kisha panda haraka. Mbegu ziwe tayari mapema.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Ndiyo, subiri mvua ya kwanza (mm 20+ kwa siku 2-3 mfululizo) kisha panda haraka. Mbegu ziwe tayari mapema.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
     # Mkulima 3 - Mwanza - wadudu
@@ -109,11 +109,11 @@ mazungumzo_data = [
         "intent_key": "pest_identification", "location": "Mwanza",
         "pairs": [
             ("Mahindi yangu yana viwavi wakubwa wanakula majani usiku",
-             "Hii ni Fall Armyworm (Viwavi wa Majani). 🐛\nDawa: Emamectin Benzoate au Spinosad.\nPiga dawa asubuhi au jioni tu.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Hii ni Fall Armyworm (Viwavi wa Majani). 🐛\nDawa: Emamectin Benzoate au Spinosad.\nPiga dawa asubuhi au jioni tu.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Dawa ya Emamectin inapatikana wapi Mwanza?",
-             "Inapatikana kwa mawakala wa pembejeo Mwanza Mjini. Bei takriban TZS 5,000-15,000 kulingana na kiasi. Wasiliana na duka la pembejeo lako.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Inapatikana kwa mawakala wa pembejeo Mwanza Mjini. Bei takriban TZS 5,000-15,000 kulingana na kiasi. Wasiliana na duka la pembejeo lako.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Ninapiga dawa lakini bado wako",
-             "Piga dawa mapema asubuhi (kabla saa 10) au jioni (baada ya saa 12). Hakikisha unafikia ndani ya mmea (funnel). Rudia baada ya siku 7-10 kama bado wako.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Piga dawa mapema asubuhi (kabla saa 10) au jioni (baada ya saa 12). Hakikisha unafikia ndani ya mmea (funnel). Rudia baada ya siku 7-10 kama bado wako.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
     # Mkulima 4 - Mbeya - kuvuna
@@ -122,11 +122,11 @@ mazungumzo_data = [
         "intent_key": "harvest_time", "location": "Mbeya",
         "pairs": [
             ("Mahindi yangu Mbeya yako tayari kuvuna?",
-             "Angalia hivi: Maganda ya kahawia ✓, nywele zimekauka ✓, punje ngumu ✓. Kama dalili hizi zipo, mahindi yako tayari! 🌽\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Angalia hivi: Maganda ya kahawia ✓, nywele zimekauka ✓, punje ngumu ✓. Kama dalili hizi zipo, mahindi yako tayari! 🌽\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Ninaweza kuvuna mvua ikiwa?",
-             "Epuka kuvuna wakati wa mvua - unyevu utaongezeka na kusababisha uozo wakati wa kuhifadhi. Subiri hewa nzuri.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Epuka kuvuna wakati wa mvua - unyevu utaongezeka na kusababisha uozo wakati wa kuhifadhi. Subiri hewa nzuri.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Jinsi ya kuhifadhi baada ya kuvuna?",
-             "1. Kausha hadi unyevu 13.5% 2. Tumia magunia ya PICS 3. Ghala liwe safi na baridi 4. Lindo la panya\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "1. Kausha hadi unyevu 13.5% 2. Tumia magunia ya PICS 3. Ghala liwe safi na baridi 4. Lindo la panya\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
     # Mkulima 5 - Arusha - mbegu
@@ -135,9 +135,9 @@ mazungumzo_data = [
         "intent_key": "seed_selection", "location": "Arusha",
         "pairs": [
             ("Napenda mbegu ya mahindi inayotoa mavuno mengi Arusha",
-             "Kwa Arusha (Northern Zone): TMV 1 (TARI) inafanya vizuri. Matunda makubwa na stahimili magonjwa.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Kwa Arusha (Northern Zone): TMV 1 (TARI) inafanya vizuri. Matunda makubwa na stahimili magonjwa.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("TMV 1 inapandwa lini Arusha?",
-             "Arusha ina mvua mbili: Masika (Machi-Aprili) na Vuli (Oktoba-Novemba). Panda mwanzo wa kila msimu wa mvua.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Arusha ina mvua mbili: Masika (Machi-Aprili) na Vuli (Oktoba-Novemba). Panda mwanzo wa kila msimu wa mvua.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
     # Mkulima 6 - Morogoro - ugonjwa
@@ -146,9 +146,9 @@ mazungumzo_data = [
         "intent_key": "disease_identification", "location": "Morogoro",
         "pairs": [
             ("Mahindi yangu yana madoa ya kijivu kwenye majani",
-             "Hii inaweza kuwa Gray Leaf Spot. 🦠\nDawa: Mancozeb au Propiconazole.\nRoteshea mazao msimu ujao.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Hii inaweza kuwa Gray Leaf Spot. 🦠\nDawa: Mancozeb au Propiconazole.\nRoteshea mazao msimu ujao.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Roteshea maana yake nini?",
-             "Roteshea = panda zao tofauti shambani mwako msimu ujao. Mfano: mahindi mwaka huu → maharage au viazi mwaka ujao. Hii inazuia magonjwa yasirudie.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Roteshea = panda zao tofauti shambani mwako msimu ujao. Mfano: mahindi mwaka huu → maharage au viazi mwaka ujao. Hii inazuia magonjwa yasirudie.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
     # Mkulima 7 - Kagera - soko
@@ -157,9 +157,9 @@ mazungumzo_data = [
         "intent_key": "market_question", "location": "Kagera",
         "pairs": [
             ("Bei ya mahindi Kagera ni ngapi sasa?",
-             "Bei za takriban Kagera (2024):\n• Sokoni: TZS 400-650/kg\n• Wakati bora kuuza: Agosti-Novemba\n\nBei zinaweza kutofautiana. Wasiliana na Cooperative Society ya eneo lako.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Bei za takriban Kagera (2024):\n• Sokoni: TZS 400-650/kg\n• Wakati bora kuuza: Agosti-Novemba\n\nBei zinaweza kutofautiana. Wasiliana na Cooperative Society ya eneo lako.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("NFRA wananunua Kagera?",
-             "NFRA wana ghala baadhi ya maeneo. Wasiliana na ofisi ya NFRA Kagera au Mwanza kwa taarifa za ununuzi wa msimu huu.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "NFRA wana ghala baadhi ya maeneo. Wasiliana na ofisi ya NFRA Kagera au Mwanza kwa taarifa za ununuzi wa msimu huu.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
     # Mkulima 8 - Iringa - mbolea
@@ -168,9 +168,9 @@ mazungumzo_data = [
         "intent_key": "fertilizer_top_dressing", "location": "Iringa",
         "pairs": [
             ("Wakati wa mbolea ya juu kwa mahindi Iringa?",
-             "Mbolea ya juu (Urea/CAN) wiki 5-7 baada ya kupanda, mahindi yakiwa urefu wa 30-50cm. Iringa: mvua nyingi = funika mbolea kidogo kwa udongo.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Mbolea ya juu (Urea/CAN) wiki 5-7 baada ya kupanda, mahindi yakiwa urefu wa 30-50cm. Iringa: mvua nyingi = funika mbolea kidogo kwa udongo.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Gramu ngapi kwa mmea?",
-             "Urea: gramu 50-70 kwa mmea. CAN: gramu 60-80 kwa mmea. Weka kando ya mmea umbali wa cm 10-15 kutoka shina.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Urea: gramu 50-70 kwa mmea. CAN: gramu 60-80 kwa mmea. Weka kando ya mmea umbali wa cm 10-15 kutoka shina.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
     # Mkulima 9 - Tabora - maharage
@@ -179,7 +179,7 @@ mazungumzo_data = [
         "intent_key": "seed_selection", "location": "Tabora",
         "pairs": [
             ("Mbegu za maharage zipi zinafaa Tabora?",
-             "🌱 Kwa Tabora (Western Zone), maharage yanayofaa:\n• Lyamungu 85 - mapema, tija nzuri\n• SUA 90 - wastani, stahimili magonjwa\n\nWasiliana na TARI Tumbi Tabora kwa mbegu bora.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "🌱 Kwa Tabora (Western Zone), maharage yanayofaa:\n• Lyamungu 85 - mapema, tija nzuri\n• SUA 90 - wastani, stahimili magonjwa\n\nWasiliana na TARI Tumbi Tabora kwa mbegu bora.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
     # Mkulima 10 - Kilimanjaro - mpunga
@@ -188,9 +188,9 @@ mazungumzo_data = [
         "intent_key": "planting_time", "location": "Kilimanjaro",
         "pairs": [
             ("Mpunga upandwe lini Kilimanjaro?",
-             "Kilimanjaro: Mpunga kwenye mabondeni hupandwa:\n• Masika: Machi-Aprili\n• Vuli: Oktoba-Novemba\n\nHitaji maji ya umwagiliaji au mvua ya kutosha.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Kilimanjaro: Mpunga kwenye mabondeni hupandwa:\n• Masika: Machi-Aprili\n• Vuli: Oktoba-Novemba\n\nHitaji maji ya umwagiliaji au mvua ya kutosha.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
             ("Umbali wa mpanda mpunga ni upi?",
-             "Nafasi ya mpunga: Safu 20-25cm, shimo 20cm. Miche 2-3 kwa shimo. Kwa SRI method: 25x25cm, mche 1 kwa shimo.\n─────────────────\n🤖 Mkulima AI Tanzania"),
+             "Nafasi ya mpunga: Safu 20-25cm, shimo 20cm. Miche 2-3 kwa shimo. Kwa SRI method: 25x25cm, mche 1 kwa shimo.\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ]
     },
 ]

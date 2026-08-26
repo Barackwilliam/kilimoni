@@ -1,5 +1,5 @@
 """
-CSV Import Module — Mkulima AI Tanzania
+CSV Import Module — Kilimoni AI Tanzania
 Inasaidia ku-upload datasets kupitia Admin Dashboard bila developer
 Formats: maize_varieties.csv, maize_answer_templates.csv, maize_synonyms.csv n.k.
 """

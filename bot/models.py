@@ -10,7 +10,9 @@ class User(models.Model):
     ]
     STATUS = [('active', 'Active'), ('blocked', 'Blocked')]
 
-    phone_number = models.CharField(max_length=20, unique=True)
+    # 30 — inaendana na migration 0002 iliyopo kwenye database.
+    # (20 ilikuwa fupi mno: namba ya majaribio 'test_admin_...' ina herufi 23)
+    phone_number = models.CharField(max_length=30, unique=True)
     first_seen_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(auto_now=True)
     preferred_language = models.CharField(max_length=5, choices=LANGUAGES, default='sw')
@@ -61,7 +63,8 @@ class Conversation(models.Model):
     detected_location = models.CharField(max_length=100, blank=True)
     detected_zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True)
     response_reference = models.CharField(max_length=200, blank=True)
-    whatsapp_message_id = models.CharField(max_length=200, blank=True)
+    # db_index — inatumika kwenye ukaguzi wa majibu ya marudio kwa kila ujumbe
+    whatsapp_message_id = models.CharField(max_length=200, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

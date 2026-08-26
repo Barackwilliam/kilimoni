@@ -14,7 +14,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from bot.engine import process_message
+from bot.engine import process_message, is_duplicate_message
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,19 @@ def greenapi_webhook(request):
     chat_id = sender_data.get("chatId", "")          # "255712345678@c.us"
     phone_number = chat_id.split("@")[0]
 
+    # Puuza group chats — bot ni kwa mazungumzo binafsi tu.
+    # ("...@g.us" ni group; kujibu humo kunaweza kusababisha spam na ban)
+    if chat_id.endswith("@g.us"):
+        return JsonResponse({"status": "group_ignored"}, status=200)
+
+    message_id = data.get("idMessage", "")
+
+    # GreenAPI hurudia webhook kama haikupata 200 haraka —
+    # bila ukaguzi huu mkulima angepokea jibu lile lile mara kadhaa.
+    if message_id and is_duplicate_message(message_id):
+        logger.info(f"[GreenAPI] Ujumbe {message_id} umeshashughulikiwa — unarukwa.")
+        return JsonResponse({"status": "duplicate"}, status=200)
+
     msg_data = data.get("messageData", {})
     msg_type = msg_data.get("typeMessage", "")
 
@@ -78,9 +91,9 @@ def greenapi_webhook(request):
     logger.info(f"[GreenAPI] Ujumbe kutoka {phone_number}: {raw_text[:50]}")
 
     try:
-        reply = process_message(phone_number, raw_text)
+        reply = process_message(phone_number, raw_text, message_id=message_id)
     except Exception as e:
-        logger.error(f"[GreenAPI] Bot engine error: {e}")
+        logger.exception(f"[GreenAPI] Bot engine error: {e}")
         reply = "Samahani, kuna tatizo la kiufundi. Jaribu tena baadaye. 🙏"
 
     send_greenapi_message(chat_id, reply)

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}Mkulima AI – Dashboard{% endblock %}</title>
+<title>{% block title %}Kilimoni AI – Dashboard{% endblock %}</title>
 <style>
 :root {
   --green: #2d6a4f;
@@ -199,7 +199,7 @@ textarea.form-control { resize:vertical; min-height:100px; }
 
 <aside class="sidebar">
   <div class="sidebar-logo">
-    <h1>🌱 Mkulima AI</h1>
+    <h1>🌱 Kilimoni AI</h1>
     <span>Tanzania WhatsApp Bot</span>
   </div>
   <nav class="sidebar-nav">
@@ -209,6 +209,9 @@ textarea.form-control { resize:vertical; min-height:100px; }
     </a>
     <a href="{% url 'test_bot' %}" class="nav-link {% if page == 'test_bot' %}active{% endif %}">
       <span class="icon">🧪</span> Jaribu Bot
+    </a>
+    <a href="{% url 'system_status' %}" class="nav-link {% if page == 'system_status' %}active{% endif %}">
+      <span class="icon">🔧</span> System Status
     </a>
 
     <div class="nav-section">Watumiaji</div>
@@ -244,7 +247,7 @@ textarea.form-control { resize:vertical; min-height:100px; }
     </a>
   </nav>
   <div class="sidebar-footer">
-    Mkulima AI v1.0<br>
+    Kilimoni AI v1.0<br>
     <a href="{% url 'dashboard_logout' %}">🚪 Toka</a>
   </div>
 </aside>

@@ -17,9 +17,9 @@
     </form>
     <div style="margin-top:20px;">
       <div class="form-label" style="margin-bottom:8px;">💡 Mifano ya Maswali:</div>
-      {% for q in "Ni mbegu gani ya mahindi nipande Singida?|Wakati gani wa kupanda mahindi Dodoma?|Niambie kuhusu mbolea ya kupandia mahindi|Mahindi yangu yana wadudu, nifanye nini?|Ninaweza kuvuna mahindi lini?|Bei ya mahindi sokoni ni ngapi?" %}
+      {% for q in sample_questions %}
       <div style="margin-bottom:6px;">
-        <button onclick="document.querySelector('textarea[name=message]').value='{{ q }}'" 
+        <button onclick="document.querySelector('textarea[name=message]').value='{{ q|escapejs }}'" 
           class="btn btn-secondary btn-sm" type="button" style="text-align:left;width:100%;">
           💬 {{ q }}
         </button>

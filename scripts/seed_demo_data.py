@@ -93,52 +93,52 @@ def zone_for(region_name):
 mazungumzo = [
     (wakulima[0],  mahindi,  "variety_by_location", "Singida", [
         ("Ni mbegu gani ya mahindi nipande Singida?",
-         "🌽 MAHINDI | 📍 Singida\n\nKwa Singida (Central Zone), mbegu zinazostahimili ukame:\n• PAN 23 (siku 85-95) — ukame: Juu\n• SC 403 (siku 90-100) — ukame: Juu\n• DK 8051 (siku 95-110) — ukame: Wastani\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🌽 MAHINDI | 📍 Singida\n\nKwa Singida (Central Zone), mbegu zinazostahimili ukame:\n• PAN 23 (siku 85-95) — ukame: Juu\n• SC 403 (siku 90-100) — ukame: Juu\n• DK 8051 (siku 95-110) — ukame: Wastani\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ("Mbolea gani ya kupandia mahindi?",
-         "🌽 MAHINDI\n\nDAP gramu 50-70 kwa shimo au CAN gramu 60-80. Weka upande wa mbegu.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🌽 MAHINDI\n\nDAP gramu 50-70 kwa shimo au CAN gramu 60-80. Weka upande wa mbegu.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ("Asante sana", "Karibu! 🌱 Piga *0* ukihitaji msaada."),
     ]),
     (wakulima[1], mahindi, "planting_time", "Dodoma", [
         ("Mahindi yapandwe lini Dodoma?",
-         "📅 Dodoma (Central Zone): Panda Novemba–Desemba baada ya mvua ya kwanza mm 20+.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "📅 Dodoma (Central Zone): Panda Novemba–Desemba baada ya mvua ya kwanza mm 20+.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ("Mvua bado haijanyesha nisubiri?",
-         "Ndiyo, subiri mvua ya kwanza thabiti (siku 2-3 mfululizo). Mbegu ziwe tayari mapema!\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "Ndiyo, subiri mvua ya kwanza thabiti (siku 2-3 mfululizo). Mbegu ziwe tayari mapema!\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
     (wakulima[2], mahindi, "pest_identification", "Mwanza", [
         ("Mahindi yangu yana viwavi wakubwa wanakula majani usiku",
-         "🐛 Hii ni Fall Armyworm!\nDawa: Emamectin Benzoate au Spinosad.\nPiga asubuhi au jioni.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🐛 Hii ni Fall Armyworm!\nDawa: Emamectin Benzoate au Spinosad.\nPiga asubuhi au jioni.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ("Ninapiga dawa lakini bado wako",
-         "Piga ndani ya mmea (funnel). Rudia baada ya siku 7-10. Hakikisha dawa haijapitwa na muda.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "Piga ndani ya mmea (funnel). Rudia baada ya siku 7-10. Hakikisha dawa haijapitwa na muda.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
     (wakulima[3], mahindi, "harvest_time", "Mbeya", [
         ("Mahindi yangu Mbeya yako tayari kuvuna?",
-         "🌽 Angalia: Maganda ya kahawia ✓, nywele zimekauka ✓, punje ngumu ✓ = Tayari kuvuna!\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🌽 Angalia: Maganda ya kahawia ✓, nywele zimekauka ✓, punje ngumu ✓ = Tayari kuvuna!\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
         ("Jinsi ya kuhifadhi baada ya kuvuna?",
-         "1. Kausha hadi 13.5% 2. Tumia magunia ya PICS 3. Ghala safi na baridi 4. Lindo la panya\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "1. Kausha hadi 13.5% 2. Tumia magunia ya PICS 3. Ghala safi na baridi 4. Lindo la panya\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
     (wakulima[4], mahindi, "seed_selection", "Arusha", [
         ("Napenda mbegu ya mahindi inayotoa mavuno mengi Arusha",
-         "🌽 Arusha (Northern Zone): TMV 1 (TARI) inafanya vizuri. Stahimili magonjwa, mavuno mazuri.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🌽 Arusha (Northern Zone): TMV 1 (TARI) inafanya vizuri. Stahimili magonjwa, mavuno mazuri.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
     (wakulima[5], mahindi, "disease_identification", "Morogoro", [
         ("Mahindi yangu yana madoa ya kijivu kwenye majani",
-         "🦠 Hii inaweza kuwa Gray Leaf Spot.\nDawa: Mancozeb au Propiconazole. Roteshea mazao msimu ujao.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🦠 Hii inaweza kuwa Gray Leaf Spot.\nDawa: Mancozeb au Propiconazole. Roteshea mazao msimu ujao.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
     (wakulima[6], mahindi, "market_question", "Kagera", [
         ("Bei ya mahindi Kagera ni ngapi sasa?",
-         "💰 Bei Kagera (2024): TZS 400-650/kg.\nWakati bora kuuza: Agosti-Novemba.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "💰 Bei Kagera (2024): TZS 400-650/kg.\nWakati bora kuuza: Agosti-Novemba.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
     (wakulima[7], mahindi, "fertilizer_top_dressing", "Iringa", [
         ("Wakati wa mbolea ya juu kwa mahindi Iringa?",
-         "🧪 Wiki 5-7 baada ya kupanda, mahindi yakiwa 30-50cm. Urea gramu 50-70 kwa mmea.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🧪 Wiki 5-7 baada ya kupanda, mahindi yakiwa 30-50cm. Urea gramu 50-70 kwa mmea.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
     (wakulima[8], maharage, "seed_selection", "Tabora", [
         ("Mbegu za maharage zipi zinafaa Tabora?",
-         "🫘 Tabora (Western Zone): Lyamungu 85, SUA 90. Wasiliana na TARI Tumbi Tabora.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🫘 Tabora (Western Zone): Lyamungu 85, SUA 90. Wasiliana na TARI Tumbi Tabora.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
     (wakulima[9], mpunga, "planting_time", "Kilimanjaro", [
         ("Mpunga upandwe lini Kilimanjaro?",
-         "🌾 Kilimanjaro: Masika (Machi-Aprili) na Vuli (Oktoba-Novemba). Nafasi: 20x20cm.\n\n─────────────────\n🤖 Mkulima AI Tanzania"),
+         "🌾 Kilimanjaro: Masika (Machi-Aprili) na Vuli (Oktoba-Novemba). Nafasi: 20x20cm.\n\n─────────────────\n🤖 Kilimoni AI Tanzania"),
     ]),
 ]
 

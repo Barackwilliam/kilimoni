@@ -18,6 +18,9 @@ urlpatterns = [
     path('synonyms/', views.synonyms_list, name='synonyms_list'),
     path('synonyms/add/', views.synonym_add, name='synonym_add'),
     path('test-bot/', views.test_bot, name='test_bot'),
+    path('test-bot/classic/', views.test_bot_classic, name='test_bot_classic'),
     path('csv-import/', views.csv_import_view, name='csv_import'),
     path('analytics/', views.analytics_view, name='analytics'),
+    path('status/', views.system_status, name='system_status'),
+    path('groq-status/', views.groq_status_view, name='groq_status'),
 ]

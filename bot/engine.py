@@ -72,8 +72,14 @@ def apply_synonyms(text: str) -> str:
     try:
         synonyms = Synonym.objects.all().values('variation', 'main_word')
         for syn in synonyms:
-            pattern = r'\b' + re.escape(syn['variation'].lower()) + r'\b'
-            text = re.sub(pattern, syn['main_word'], text, flags=re.IGNORECASE)
+            variation = (syn['variation'] or '').lower().strip()
+            main_word = (syn['main_word'] or '').strip()
+            if not variation or not main_word:
+                continue
+            pattern = r'\b' + re.escape(variation) + r'\b'
+            # re.escape kwenye replacement pia — vinginevyo main_word yenye
+            # '\' au '\1' ingevunja re.sub (bad escape / group reference)
+            text = re.sub(pattern, main_word.replace('\\', r'\\'), text, flags=re.IGNORECASE)
     except Exception as e:
         logger.error(f"Synonym error: {e}")
     return text
@@ -86,13 +92,17 @@ def detect_crop(text: str):
     """
     Tambua zao lililotajwa kwenye ujumbe.
     Angalia Kiswahili na English.
+
+    MUHIMU: tunatumia word-boundary (neno kamili), si substring.
+    Bila hii, 'rice' (Mpunga) ingepatikana ndani ya 'price',
+    na mkulima aliyeuliza kuhusu mahindi angepewa jibu la mpunga.
     """
     try:
         crops = Crop.objects.filter(active_status='active').order_by('priority_level')
         for crop in crops:
             names = [crop.crop_name_sw.lower(), crop.crop_name_en.lower()]
             for name in names:
-                if name and name in text:
+                if name and _word_match(name, text):
                     return crop
     except Exception as e:
         logger.error(f"Crop detection error: {e}")
@@ -127,6 +137,26 @@ TANZANIA_DISTRICTS = [
     'shinyanga', 'kahama', 'msalala', 'ushetu',
     'singida', 'mwanzi', 'itigi',
 ]
+
+
+GREETINGS = [
+    'habari', 'hujambo', 'mambo', 'salamu', 'hello', 'hi',
+    'salam', 'shikamoo', 'karibu', 'niaje', 'sasa', 'peace', 'hey',
+]
+
+
+def is_greeting(text: str) -> bool:
+    """
+    Angalia kama ujumbe ni salamu.
+
+    MUHIMU: hatutumii substring ('hi' in text). Bila hii, mkulima
+    aliyeandika 'Shinyanga' au 'Buhigwe' angehesabiwa kama anasalimia,
+    kwa sababu 'hi' ipo ndani ya majina hayo.
+    """
+    t = (text or '').strip()
+    if not t:
+        return False
+    return any(t == g or t.startswith(g + ' ') for g in GREETINGS)
 
 
 def _word_match(name: str, text: str) -> bool:
@@ -330,9 +360,10 @@ def detect_intent(text: str, crop=None, location: str = ''):
         except Intent.DoesNotExist:
             pass
 
-    # Single keyword fallback
+    # Single keyword fallback — word boundary, si substring
+    # ('bei' isipatikane ndani ya neno lingine, 'dap' ndani ya neno lingine n.k.)
     for keyword, intent_name in SINGLE_KEYWORD_INTENTS.items():
-        if keyword in text:
+        if _word_match(keyword, text):
             try:
                 intent = Intent.objects.get(intent_name=intent_name)
                 # Upgrade if location present
@@ -343,12 +374,12 @@ def detect_intent(text: str, crop=None, location: str = ''):
                 pass
 
     # Last resort: check 'mbegu' with location
-    if 'mbegu' in text and location:
+    if _word_match('mbegu', text) and location:
         try:
             return Intent.objects.get(intent_name='variety_by_location')
         except Intent.DoesNotExist:
             pass
-    elif 'mbegu' in text:
+    elif _word_match('mbegu', text):
         try:
             return Intent.objects.get(intent_name='seed_selection')
         except Intent.DoesNotExist:
@@ -597,11 +628,14 @@ def build_help_message() -> str:
 # ═══════════════════════════════════════════════════════
 # MAIN: process_message — Mtiririko Kamili
 # ═══════════════════════════════════════════════════════
-def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 'text') -> str:
+def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 'text',
+                    message_id: str = '') -> str:
     """
     Shughulikia ujumbe wote unaoingia kwa kufuata architecture kamili:
     Receive → Detect → Normalize → Synonyms → Crop → Location →
     Zone → Intent → Retrieve → Template → Follow-up → Format → Log
+
+    message_id: ID ya ujumbe kutoka WhatsApp (kwa kuzuia majibu ya marudio).
     """
     start_time = time.time()
 
@@ -626,7 +660,8 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
             "Tafadhali andika swali lako kwa maneno.\n\n"
             "Mfano: _Mahindi yana wadudu Singida, nifanye nini?_"
         )
-        _log_all(user, raw_message, '', None, None, '', None, response, False, start_time)
+        _log_all(user, raw_message, '', None, None, '', None, response, False, start_time,
+                 message_id=message_id)
         return response
 
     # ── MODULE 3: Normalize text ─────────────────────
@@ -635,24 +670,23 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── Handle menu shortcuts ────────────────────────
     if normalized.strip() == '0':
         response = build_help_message()
-        _log_all(user, raw_message, normalized, None, None, '', None, response, True, start_time)
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True, start_time,
+                 message_id=message_id)
         return response
 
     # ── Handle greetings ─────────────────────────────
-    GREETINGS = ['habari', 'hujambo', 'mambo', 'salamu', 'hello', 'hi',
-                 'salam', 'shikamoo', 'karibu', 'niaje', 'sasa', 'peace', 'hey']
-    if any(g == normalized.strip() or normalized.strip().startswith(g + ' ') for g in GREETINGS):
-        if len(normalized.split()) <= 4:
-            response = build_greeting()
-            _log_all(user, raw_message, normalized, None, None, '', None, response, True, start_time)
-            return response
+    if is_greeting(normalized) and len(normalized.split()) <= 4:
+        response = build_greeting()
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
+                 start_time, message_id=message_id)
+        return response
 
     # ── MODULE 4: Apply synonyms ─────────────────────
     normalized = apply_synonyms(normalized)
 
     # ── Check session state — pending location reply ─
     session = user.session_state or {}
-    if session.get('awaiting_location') and not any(g in normalized for g in GREETINGS):
+    if session.get('awaiting_location') and not is_greeting(normalized):
         # User is replying with their location
         location = detect_location(normalized)
         if location:
@@ -673,25 +707,54 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
                     pass
             zone = map_location_to_zone(location)
 
-            # Clear session
-            user.session_state = {}
+            # Ondoa hali ya kusubiri, LAKINI hifadhi eneo kwa mazungumzo yanayofuata
+            user.session_state = {
+                'last_location': location,
+                'last_location_at': time.time(),
+            }
             user.save(update_fields=['session_state'])
 
             # Now get answer with location
             answer_data = get_answer_from_db(crop, intent, zone)
             response = format_response(answer_data, crop, intent, location)
+            found = bool(response)
             if not response:
                 response = _get_ai_or_fallback(raw_message, crop, intent, location, zone)
-            _log_all(user, raw_message, normalized, crop, intent, location, zone, response, True, start_time, answer_data.get('answer_reference', ''))
+                _log_unresolved(user, raw_message, normalized, crop, intent, response)
+            _log_all(user, raw_message, normalized, crop, intent, location, zone, response,
+                     found, start_time, answer_data.get('answer_reference', ''),
+                     message_id=message_id)
             return response
+
+        # Hakuna eneo lililotambulika. Je, mkulima ameuliza swali JIPYA badala yake?
+        # Bila ukaguzi huu, mtumiaji angeweza kunaswa kwenye "niambie eneo" milele.
+        maybe_crop = detect_crop(normalized)
+        maybe_intent = detect_intent(normalized, maybe_crop, '')
+        attempts = int(session.get('location_attempts', 0)) + 1
+
+        if maybe_crop or maybe_intent or attempts >= 2:
+            # Achana na swali la eneo — shughulikia ujumbe huu kama swali jipya
+            new_session = dict(session)
+            new_session.pop('awaiting_location', None)
+            new_session.pop('saved_intent', None)
+            new_session.pop('location_attempts', None)
+            user.session_state = new_session
+            user.save(update_fields=['session_state'])
+            session = new_session
+            # (hakuna return — mtiririko unaendelea chini kama kawaida)
         else:
-            # Still no location recognized
+            new_session = dict(session)
+            new_session['location_attempts'] = attempts
+            user.session_state = new_session
+            user.save(update_fields=['session_state'])
             response = (
                 "Sijatambua eneo ulilotaja. 📍\n"
                 "Tafadhali andika jina la *mkoa au wilaya* yako.\n\n"
-                "Mfano: _Singida_, _Dodoma_, _Mbeya_, _Mwanza_"
+                "Mfano: _Singida_, _Dodoma_, _Mbeya_, _Mwanza_\n\n"
+                "_Au andika swali lingine lolote kuendelea._"
             )
-            _log_all(user, raw_message, normalized, None, None, '', None, response, False, start_time)
+            _log_all(user, raw_message, normalized, None, None, '', None, response, False,
+                     start_time, message_id=message_id)
             return response
 
     # ── MODULE 5: Crop Detection ──────────────────────
@@ -741,14 +804,31 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── Prompt for crop if missing ────────────────────
     if needs_crop_prompt(crop, intent):
         response = build_crop_prompt()
-        _log_all(user, raw_message, normalized, None, intent, location, zone, response, False, start_time)
+        _log_all(user, raw_message, normalized, None, intent, location, zone, response, False,
+                 start_time, message_id=message_id)
+        return response
+
+    # ── Prompt for location if intent inahitaji eneo ──
+    # Tunauliza KABLA ya kutafuta jibu — hivyo hatupotezi muda wa Groq
+    # kwa jibu ambalo tungelitupa hata hivyo.
+    if needs_location_prompt(intent, location):
+        new_session = dict(user.session_state or {})
+        new_session['awaiting_location'] = True
+        new_session['saved_intent'] = intent.intent_name if intent else ''
+        new_session['location_attempts'] = 0
+        user.session_state = new_session
+        user.save(update_fields=['session_state'])
+        response = build_location_prompt(crop, intent)
+        _log_all(user, raw_message, normalized, crop, intent, '', None, response, False,
+                 start_time, message_id=message_id)
         return response
 
     # ── Special: symptom_analysis needs follow-up ────
     if intent and intent.intent_name == 'symptom_analysis' and crop:
         if not any(w in normalized for w in ['njano', 'kahawia', 'madoa', 'meupe', 'mashimo', 'kufa', 'kukauka']):
             response = build_symptom_followup(crop.crop_name_sw)
-            _log_all(user, raw_message, normalized, crop, intent, location, zone, response, False, start_time)
+            _log_all(user, raw_message, normalized, crop, intent, location, zone, response, False,
+                     start_time, message_id=message_id)
             return response
 
     # ── MODULE 9 & 10: Knowledge Retrieval ───────────
@@ -757,49 +837,81 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── MODULE 11: Answer Template Engine ────────────
     response = format_response(answer_data, crop, intent, location)
 
-    # ── If no template found → Claude AI ─────────────
+    # ── If no template found → Groq AI, kisha fallback ─
+    from_template = bool(response)
+    used_fallback = False
     if not response:
         response = _get_ai_or_fallback(
             raw_message, crop, intent, location, zone
         )
-        success = bool(response and 'Samahani' not in response[:20])
-    else:
-        success = True
-
-    # ── Prompt for location if needed but not provided ─
-    if success and intent and needs_location_prompt(intent, location) and not location:
-        # Save state and ask for location
-        new_session = dict(user.session_state or {})
-        new_session['awaiting_location'] = True
-        new_session['saved_intent'] = intent.intent_name if intent else ''
-        user.session_state = new_session
-        user.save(update_fields=['session_state'])
-        response = build_location_prompt(crop, intent)
-        _log_all(user, raw_message, normalized, crop, intent, '', None, response, False, start_time)
-        return response
+        used_fallback = _is_fallback_message(response)
+    # success = tumeweza kumpa mkulima jibu la maana (template au AI),
+    # SI tu kwamba tulirudisha maandishi fulani.
+    success = from_template or not used_fallback
 
     # ── Log unresolved if needed ──────────────────────
-    if not success or (not answer_data.get('found') and 'Asante kwa swali lako' not in response[:30]):
-        try:
-            UnresolvedQuery.objects.create(
-                user=user,
-                raw_message=raw_message,
-                normalized_text=normalized,
-                detected_crop=crop,
-                detected_intent=intent,
-                reason='no_answer' if (crop or intent) else 'no_intent',
-            )
-        except Exception as e:
-            logger.error(f"UnresolvedQuery error: {e}")
+    # Kila swali lisilopata jibu la template linarekodiwa ili msimamizi
+    # aweze kuongeza template. Fallback kamili ni MUHIMU zaidi kurekodiwa.
+    if not from_template:
+        _log_unresolved(user, raw_message, normalized, crop, intent, response)
 
     # ── Log conversation + analytics ─────────────────
     _log_all(
         user, raw_message, normalized, crop, intent, location, zone,
         response, success, start_time,
-        answer_data.get('answer_reference', '') if answer_data else ''
+        answer_data.get('answer_reference', '') if answer_data else '',
+        message_id=message_id,
     )
 
     return response
+
+
+def is_duplicate_message(message_id: str) -> bool:
+    """
+    Angalia kama ujumbe huu tumeushughulikia tayari.
+
+    WhatsApp (Meta na GreenAPI) hurudia kutuma webhook ile ile kama
+    haikupata 200 haraka. Bila ukaguzi huu, mkulima mmoja angepokea
+    jibu lile lile mara 2-3.
+    """
+    if not message_id:
+        return False
+    try:
+        return Conversation.objects.filter(
+            whatsapp_message_id=message_id,
+            message_direction='inbound',
+        ).exists()
+    except Exception as e:
+        logger.error(f"Duplicate check error: {e}")
+        return False
+
+
+FALLBACK_MARKER = 'Asante kwa swali lako'
+
+
+def _is_fallback_message(response: str) -> bool:
+    """Angalia kama jibu ni lile la dharura (yaani hatukuweza kujibu kabisa)."""
+    return bool(response) and FALLBACK_MARKER in response[:60]
+
+
+def _log_unresolved(user, raw_message, normalized, crop, intent, response):
+    """Rekodi swali lisilojibiwa ili msimamizi aliangalie kwenye dashboard."""
+    try:
+        if _is_fallback_message(response):
+            reason = 'no_answer' if (crop or intent) else 'no_intent'
+        else:
+            # Groq AI ilijibu, lakini hakuna template — bado ni pengo la maudhui
+            reason = 'no_answer'
+        UnresolvedQuery.objects.create(
+            user=user,
+            raw_message=raw_message,
+            normalized_text=normalized,
+            detected_crop=crop,
+            detected_intent=intent,
+            reason=reason,
+        )
+    except Exception as e:
+        logger.error(f"UnresolvedQuery error: {e}")
 
 
 def _get_ai_or_fallback(raw_message, crop, intent, location, zone) -> str:
@@ -822,7 +934,7 @@ def _get_ai_or_fallback(raw_message, crop, intent, location, zone) -> str:
 
 
 def _log_all(user, raw_message, normalized, crop, intent, location, zone,
-             response, success, start_time, answer_ref=''):
+             response, success, start_time, answer_ref='', message_id=''):
     """Hifadhi mazungumzo, analytics — Module 13 & 15"""
     try:
         response_ms = int((time.time() - start_time) * 1000)
@@ -833,6 +945,7 @@ def _log_all(user, raw_message, normalized, crop, intent, location, zone,
             detected_crop=crop, detected_intent=intent,
             detected_location=location or '', detected_zone=zone,
             response_reference=answer_ref,
+            whatsapp_message_id=message_id or '',
         )
         Conversation.objects.create(
             user=user, message_direction='outbound',

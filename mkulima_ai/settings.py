@@ -80,17 +80,39 @@ WSGI_APPLICATION = 'mkulima_ai.wsgi.application'
 #         }
 #     }
 
+#Database from botikawilly@gmail.com
+#web hosting 
 
-DATABASES = {
+
+
+
+
+
+
+
+# Database - Supabase kwa production, SQLite kwa local dev
+if config('DB_USER', default=''):
+    DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.postgresql',
                 'NAME': 'postgres',
                 'USER': 'postgres.djjshelinxxwwibfteyy',
                 'PASSWORD': 'Nyumbachap@123',
                 'HOST': 'aws-0-eu-west-1.pooler.supabase.com',
-                'PORT': '5432',
+                'PORT':'5432',
             }
         }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+
+
+
+
 
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -133,7 +155,10 @@ WHATSAPP_API_TOKEN = config('WHATSAPP_API_TOKEN', default='')
 WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='')
 WHATSAPP_VERIFY_TOKEN = config('WHATSAPP_VERIFY_TOKEN', default='mkulima-ai-verify-2024')
 WHATSAPP_BUSINESS_ACCOUNT_ID = config('WHATSAPP_BUSINESS_ACCOUNT_ID', default='')
-WHATSAPP_API_URL = f"https://graph.facebook.com/v19.0/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+# Meta huondoa Graph API versions za zamani baada ya ~miaka 2.
+# Angalia version mpya kwenye Meta App Dashboard, kisha weka hapa kwa env var.
+WHATSAPP_API_VERSION = config('WHATSAPP_API_VERSION', default='v21.0')
+WHATSAPP_API_URL = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
 
 # Login URL
 LOGIN_URL = '/dashboard/login/'

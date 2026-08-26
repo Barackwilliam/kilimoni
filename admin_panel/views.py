@@ -4,10 +4,26 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Count, Q
 from django.utils import timezone
+from django.http import JsonResponse
+from django.conf import settings
+from django.db import connection
 from datetime import timedelta
+import logging
 from crops.models import Crop, Zone, Intent, AnswerTemplate, FarmerQuestion, Synonym, SeedVariety, CropProfile, LocationMapping
 from bot.models import User, Conversation, UnresolvedQuery
 from analytics.models import AnalyticsLog, AdminUser, ContentUpdate
+
+logger = logging.getLogger(__name__)
+
+# Mifano ya maswali kwa Test Bot (chat UI na classic form)
+SAMPLE_QUESTIONS = [
+    "Ni mbegu gani ya mahindi nipande Singida?",
+    "Wakati gani wa kupanda mahindi Dodoma?",
+    "Niambie kuhusu mbolea ya kupandia mahindi",
+    "Mahindi yangu yana wadudu, nifanye nini?",
+    "Ninaweza kuvuna mahindi lini?",
+    "Bei ya mahindi sokoni ni ngapi?",
+]
 
 
 # ── Auth ──────────────────────────────────────
@@ -308,19 +324,76 @@ def synonym_add(request):
     return redirect('synonyms_list')
 
 
-# ── Test Bot ──────────────────────────────────────
+# ── Test Bot (WhatsApp-style chat UI, JSON-backed) ─
+TEST_BOT_PHONE = 'test_admin_255000000000'
+TEST_BOT_SESSION_KEY = 'test_bot_chat_history'
+TEST_BOT_HISTORY_LIMIT = 60  # jumla ya bubbles (user+bot) zitakazohifadhiwa kwenye session
+
+
 @login_required
 def test_bot(request):
+    """
+    GET  → onyesha chat UI (test_bot_chat.html) na historia ya session ya admin huyu.
+    POST → AJAX endpoint (JSON): action=send (tuma ujumbe kwa bot engine),
+                                 action=clear (futa historia ya mazungumzo).
+    """
+    if request.method == 'POST':
+        action = request.POST.get('action', 'send')
+
+        if action == 'clear':
+            request.session[TEST_BOT_SESSION_KEY] = []
+            request.session.modified = True
+            return JsonResponse({'status': 'ok'})
+
+        message = (request.POST.get('message') or '').strip()
+        if not message:
+            return JsonResponse({'status': 'error', 'msg': 'Ujumbe haupo'}, status=400)
+
+        now_str = timezone.localtime(timezone.now()).strftime('%H:%M')
+        history = request.session.get(TEST_BOT_SESSION_KEY, [])
+        history.append({'role': 'user', 'text': message, 'time': now_str})
+
+        try:
+            from bot.engine import process_message
+            reply = process_message(TEST_BOT_PHONE, message)
+        except Exception as e:
+            logger.error(f"Test bot engine error: {e}")
+            return JsonResponse({'status': 'error', 'msg': 'Bot engine imeshindwa kujibu. Angalia logs.'}, status=500)
+
+        reply_time = timezone.localtime(timezone.now()).strftime('%H:%M')
+        history.append({'role': 'bot', 'text': reply, 'time': reply_time})
+
+        # Weka historia isizidi kikomo, ili session isijae
+        history = history[-TEST_BOT_HISTORY_LIMIT:]
+        request.session[TEST_BOT_SESSION_KEY] = history
+        request.session.modified = True
+
+        return JsonResponse({'status': 'ok', 'response': reply, 'time': reply_time})
+
+    # ── GET: onyesha chat UI ──
+    history = request.session.get(TEST_BOT_SESSION_KEY, [])
+    return render(request, 'admin_panel/test_bot_chat.html', {
+        'history': history,
+        'samples': SAMPLE_QUESTIONS,
+        'page': 'test_bot',
+    })
+
+
+# ── Test Bot (classic form-based, backup ya zamani) ─
+@login_required
+def test_bot_classic(request):
+    """Toleo la zamani la ukurasa wa test — bado linapatikana kama backup."""
     response_text = ''
     test_message = ''
     if request.method == 'POST':
         test_message = request.POST.get('message', '')
         if test_message:
             from bot.engine import process_message
-            response_text = process_message('test_admin_255000000000', test_message)
+            response_text = process_message(TEST_BOT_PHONE, test_message)
     return render(request, 'admin_panel/test_bot.html', {
         'response': response_text,
         'test_message': test_message,
+        'sample_questions': SAMPLE_QUESTIONS,
         'page': 'test_bot',
     })
 
@@ -404,4 +477,114 @@ def analytics_view(request):
         'top_zones': top_zones,
         'daily_stats': daily_stats,
         'page': 'analytics',
+    })
+
+
+# ── System Status / Troubleshoot (botika.html) ─────
+def _mask_secret(value: str, keep: int = 4) -> str:
+    """Onyesha herufi chache za mwisho tu za secret, ficha zilizobaki."""
+    if not value:
+        return ''
+    if len(value) <= keep:
+        return '•' * len(value)
+    return '•' * (len(value) - keep) + value[-keep:]
+
+
+@login_required
+def system_status(request):
+    # ── Database check ──
+    db_ok = True
+    db_detail = ''
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+        engine = connection.settings_dict.get('ENGINE', '')
+        if 'postgresql' in engine:
+            db_detail = f"Postgres (Supabase) — {connection.settings_dict.get('HOST', '')}"
+        else:
+            db_detail = 'SQLite (local dev)'
+    except Exception as e:
+        db_ok = False
+        db_detail = f"Hitilafu: {e}"
+
+    # ── WhatsApp token ──
+    whatsapp_token = getattr(settings, 'WHATSAPP_API_TOKEN', '')
+    token_ok = bool(whatsapp_token)
+    token_preview = _mask_secret(whatsapp_token) if token_ok else 'Haijawekwa'
+
+    # ── Groq AI (key presence tu; live test iko kwenye ukurasa wa Groq Status) ──
+    groq_key = getattr(settings, 'GROQ_API_KEY', '')
+    groq_ok = bool(groq_key)
+    groq_detail = _mask_secret(groq_key) if groq_ok else 'GROQ_API_KEY haijawekwa'
+
+    # ── Webhook info ──
+    webhook_url = request.build_absolute_uri('/webhook/whatsapp/')
+    verify_token = getattr(settings, 'WHATSAPP_VERIFY_TOKEN', '')
+    whatsapp_app_id = getattr(settings, 'WHATSAPP_BUSINESS_ACCOUNT_ID', '') or ''
+
+    # ── Counts ──
+    crops_count = Crop.objects.filter(active_status='active').count()
+    templates_count = AnswerTemplate.objects.filter(active_status='active').count()
+    intents_count = Intent.objects.count()
+    users_count = User.objects.count()
+    conversations_count = Conversation.objects.filter(message_direction='inbound').count()
+
+    return render(request, 'admin_panel/botika.html', {
+        'db_ok': db_ok, 'db_detail': db_detail,
+        'token_ok': token_ok, 'token_preview': token_preview,
+        'groq_ok': groq_ok, 'groq_detail': groq_detail,
+        'webhook_url': webhook_url, 'verify_token': verify_token,
+        'whatsapp_app_id': whatsapp_app_id,
+        'crops_count': crops_count, 'templates_count': templates_count,
+        'intents_count': intents_count, 'users_count': users_count,
+        'conversations_count': conversations_count,
+        'page': 'system_status',
+    })
+
+
+# ── Groq AI Status (groq_status.html) ──────────────
+@login_required
+def groq_status_view(request):
+    groq_key_set = bool(getattr(settings, 'GROQ_API_KEY', ''))
+    result = None
+
+    if request.method == 'POST':
+        if not groq_key_set:
+            result = {'ok': False, 'error': 'GROQ_API_KEY haijawekwa kwenye settings/.env.'}
+        else:
+            import requests as http_requests
+            try:
+                resp = http_requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile'),
+                        "max_tokens": 20,
+                        "temperature": 0.2,
+                        "messages": [
+                            {"role": "system", "content": "Jibu kwa neno moja tu."},
+                            {"role": "user", "content": "Sema 'Habari'."},
+                        ],
+                    },
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                answer = data['choices'][0]['message']['content'].strip()
+                result = {
+                    'ok': True,
+                    'model': getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile'),
+                    'response': answer,
+                }
+            except Exception as e:
+                logger.error(f"Groq status test error: {e}")
+                result = {'ok': False, 'error': str(e)}
+
+    return render(request, 'admin_panel/groq_status.html', {
+        'groq_key_set': groq_key_set,
+        'result': result,
+        'page': 'groq_status',
     })
