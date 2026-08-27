@@ -62,6 +62,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'mkulima_ai.wsgi.application'
 
+#database botikawilly@gmail.com
+#hosting jafarikilindo@gmail.com
+
 # Database - Supabase kwa production, SQLite kwa local dev
 if config('DB_USER', default=''):
     DATABASES = {
@@ -73,6 +76,12 @@ if config('DB_USER', default=''):
                 'HOST': config('DB_HOST', default=''),
                 'PORT': config('DB_PORT', default='5432'),
                 'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=0, cast=int),
+            # Bila timeout, database ikikwama request inasubiri hadi worker
+            # afe (WORKER TIMEOUT). Kwa webhook ya WhatsApp hilo ni baya:
+            # Meta anarudia kutuma na mkulima anapata majibu ya marudio.
+            'OPTIONS': {
+                'connect_timeout': config('DB_CONNECT_TIMEOUT', default=5, cast=int),
+            },
             }
         }
 else:

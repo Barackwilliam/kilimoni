@@ -325,7 +325,9 @@ def synonym_add(request):
 
 
 # ── Test Bot (WhatsApp-style chat UI, JSON-backed) ─
-TEST_BOT_PHONE = 'test_admin_255000000000'
+# Herufi 15 — inatosha varchar(20) ya database, na haiwezi kugongana
+# na namba halisi ya mkulima yeyote.
+TEST_BOT_PHONE = 'TEST_ADMIN_0001'
 TEST_BOT_SESSION_KEY = 'test_bot_chat_history'
 TEST_BOT_HISTORY_LIMIT = 60  # jumla ya bubbles (user+bot) zitakazohifadhiwa kwenye session
 

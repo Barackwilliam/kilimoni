@@ -10,9 +10,9 @@ class User(models.Model):
     ]
     STATUS = [('active', 'Active'), ('blocked', 'Blocked')]
 
-    # 30 — inaendana na migration 0002 iliyopo kwenye database.
-    # (20 ilikuwa fupi mno: namba ya majaribio 'test_admin_...' ina herufi 23)
-    phone_number = models.CharField(max_length=30, unique=True)
+    # 20 — inaendana na column halisi ya database (varchar(20)).
+    # Namba za WhatsApp ni tarakimu 15 au chini, kwa hiyo inatosha.
+    phone_number = models.CharField(max_length=20, unique=True)
     first_seen_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(auto_now=True)
     preferred_language = models.CharField(max_length=5, choices=LANGUAGES, default='sw')
