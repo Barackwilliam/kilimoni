@@ -8,6 +8,7 @@ urlpatterns = [
     path('conversations/', views.conversations, name='conversations'),
     path('users/', views.users_list, name='users_list'),
     path('crops/', views.crops_list, name='crops_list'),
+    path('privacy/', views.privacy_policy, name='privacy_policy'),
     path('crops/add/', views.crop_add, name='crop_add'),
     path('crops/<int:pk>/edit/', views.crop_edit, name='crop_edit'),
     path('templates/', views.templates_list, name='templates_list'),

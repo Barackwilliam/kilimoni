@@ -590,3 +590,13 @@ def groq_status_view(request):
         'result': result,
         'page': 'groq_status',
     })
+
+
+def privacy_policy(request):
+    """Ukurasa wa wazi — Meta anahitaji Privacy Policy URL kabla ya kwenda Live."""
+    now = timezone.localtime(timezone.now())
+    return render(request, 'admin_panel/privacy.html', {
+        'updated_date': now.strftime('%d/%m/%Y'),
+        'year': now.year,
+        'contact_email': 'barackwilliam12@gmail.com',
+    })
