@@ -401,8 +401,40 @@ def get_answer_from_db(crop, intent, zone) -> dict:
     """
     answer = None
 
+    # Baadhi ya intents zinamaanisha kitu kimoja kwenye maudhui.
+    # Mfano: mkulima akiandika "mbegu" tunapata 'seed_selection',
+    # lakini templates zote za mbegu zimehifadhiwa chini ya
+    # 'variety_by_location'. Bila ramani hii, kila swali la mbegu
+    # linaishia kwenye fallback licha ya jibu kuwepo.
+    INTENT_ALIASES = {
+        'seed_selection': ['variety_by_location'],
+        'variety_by_location': ['seed_selection'],
+        'symptom_analysis': ['disease_identification', 'pest_identification'],
+        'fertilizer_amount': ['fertilizer_planting', 'fertilizer_top_dressing'],
+    }
+
+    intents_to_try = [intent] if intent else []
+    if intent:
+        for alias_name in INTENT_ALIASES.get(intent.intent_name, []):
+            alt = Intent.objects.filter(intent_name=alias_name).first()
+            if alt:
+                intents_to_try.append(alt)
+
+    # 0. Jaribu intent halisi, kisha zinazofanana nayo
+    for candidate in intents_to_try:
+        if crop and zone:
+            answer = AnswerTemplate.objects.filter(
+                crop=crop, intent=candidate, zone=zone, active_status='active'
+            ).first()
+        if not answer and crop:
+            answer = AnswerTemplate.objects.filter(
+                crop=crop, intent=candidate, active_status='active'
+            ).first()
+        if answer:
+            break
+
     # 1. Most specific: crop + intent + zone
-    if crop and intent and zone:
+    if not answer and crop and intent and zone:
         answer = AnswerTemplate.objects.filter(
             crop=crop, intent=intent, zone=zone, active_status='active'
         ).first()
@@ -506,123 +538,39 @@ def needs_crop_prompt(crop, intent) -> bool:
     return intent.intent_name in crop_required and not crop
 
 
-def build_location_prompt(crop, intent) -> str:
-    """Jenga swali la kuomba eneo"""
-    crop_name = crop.crop_name_sw if crop else 'zao lako'
-    return (
-        "📍 *Naomba eneo lako*\n\n"
-        f"Ili nikupe ushauri sahihi wa *{crop_name}*, "
-        "niambie uko mkoa au wilaya gani.\n\n"
-        "_Mfano: Singida, Dodoma, Mbeya, Mwanza_"
-    )
-
-
-def build_crop_prompt() -> str:
-    """Jenga swali la kuomba zao"""
-    return (
-        "🌱 *Naomba jina la zao*\n\n"
-        "Tafadhali niambie ni zao gani unalouliza. Kwa sasa ninasaidia:\n\n"
-        "•  *Mahindi* (Maize)\n"
-        "•  *Maharage* (Beans)\n"
-        "•  *Mpunga* (Rice)\n\n"
-        "_Mfano: Mahindi yana wadudu, nifanye nini?_"
-    )
-
-
-def build_symptom_followup(crop_name: str) -> str:
-    """Follow-up kwa symptom analysis — inahitaji taarifa zaidi"""
-    return (
-        f"🔍 *{crop_name.title()} — Uchunguzi wa Dalili*\n\n"
-        "Ili nikupe utambuzi sahihi, nisaidie kwa taarifa hizi tatu:\n\n"
-        "*1.* Sehemu iliyoathirika — majani, shina au tunda?\n"
-        "*2.* Rangi au dalili — njano, kahawia, madoa?\n"
-        "*3.* Umri wa mmea — wiki au miezi mingapi?\n\n"
-        "_Mfano: Majani ya chini yana madoa ya kahawia, mmea una miezi 2_"
-    )
-
-
 # ═══════════════════════════════════════════════════════
-# MODULE 11: ANSWER TEMPLATE ENGINE — Format Response
+# MAZUNGUMZO — builders ziko bot/messages.py
 # ═══════════════════════════════════════════════════════
-def format_response(answer_data: dict, crop, intent, location: str) -> str:
-    """
-    Panga jibu la mwisho kwa WhatsApp format.
-    - Kiswahili rahisi
-    - Fupi na la moja kwa moja
-    - Follow-up question kama inahitajika
-    - Footer ya Kilimoni AI
-    """
-    if not answer_data.get('found'):
-        return None  # Tutumie Claude AI badala yake
-
-    parts = []
-
-    # Header ya kifahari — zao + eneo, na mstari mwembamba chini yake
-    if crop and location:
-        parts.append(f"🌾 *{crop.crop_name_sw.upper()}*  •  {location}")
-        parts.append("━━━━━━━━━━━━━━━\n")
-    elif crop:
-        parts.append(f"🌾 *{crop.crop_name_sw.upper()}*")
-        parts.append("━━━━━━━━━━━━━━━\n")
-
-    # Main answer body
-    parts.append(answer_data['answer_text'])
-
-    # Caution note
-    if answer_data.get('caution'):
-        parts.append(f"\n⚠️ *Tahadhari:* {answer_data['caution']}")
-
-    # Follow-up question
-    if answer_data.get('follow_up'):
-        parts.append(f"\n💬 _{answer_data['follow_up']}_")
-
-    return '\n'.join(parts)
+from bot.messages import (            # noqa: E402
+    build_greeting,
+    build_crop_prompt,
+    build_location_prompt,
+    build_location_retry,
+    build_symptom_followup,
+    build_acknowledgement,
+    build_fallback_message,
+    build_technical_issue,
+    build_help_message,
+    format_response,
+    topic_of,
+)
 
 
-def build_fallback_message() -> str:
-    """Fallback ya mwisho kabisa — inatumika tu kama AI nayo imeshindwa.
-    Haionyeshi udhaifu wa mfumo — inaomba maelezo zaidi kwa staha."""
-    return (
-        "🌿 *Asante kwa swali lako!*\n\n"
-        "Ili nikupe ushauri sahihi kabisa, naomba unieleze kidogo zaidi — "
-        "hasa *zao* unalolima na *eneo* lako.\n\n"
-        "_Mfano: Mahindi yangu yana majani ya njano, niko Singida_"
-    )
+# Maneno ya kukubali / kushukuru — hayahitaji jibu la kilimo
+ACK_WORDS = {
+    'sawa', 'asante', 'ahsante', 'nashukuru', 'poa', 'safi', 'nzuri',
+    'ok', 'okay', 'haya', 'vizuri', 'shukrani', 'karibu', 'ndio',
+    'ndiyo', 'naam', 'sawasawa', 'noted', 'thanks',
+}
 
 
-def build_greeting() -> str:
-    return (
-        "🌿 *Karibu KILIMONI AI!*\n"
-        "━━━━━━━━━━━━━━━\n\n"
-        "Mimi ni msaidizi wako wa kilimo, popote ulipo Tanzania.\n\n"
-        "*Ninachoweza kukusaidia:*\n\n"
-        "🌱  *Mbegu* — uchaguzi na aina bora\n"
-        "📅  *Kupanda* — wakati na nafasi sahihi\n"
-        "🧪  *Mbolea* — aina na vipimo\n"
-        "🐛  *Wadudu & Magonjwa* — utambuzi na tiba\n"
-        "🌾  *Kuvuna & Kuhifadhi* — njia bora\n"
-        "💰  *Masoko* — bei na mwelekeo\n\n"
-        "Uliza swali lako moja kwa moja 👇\n"
-        "_Mfano: Ni mbegu gani ya mahindi nipande Singida?_\n\n"
-        "Andika *0* kupata mwongozo wakati wowote."
-    )
-
-
-def build_help_message() -> str:
-    return (
-        "📋 *MWONGOZO WA KILIMONI AI*\n"
-        "━━━━━━━━━━━━━━━\n\n"
-        "Uliza swali kwa lugha yako ya kawaida. Mifano:\n\n"
-        "*1.* _Ni mbegu gani ya mahindi nipande Singida?_\n"
-        "*2.* _Mahindi yapandwe lini Dodoma?_\n"
-        "*3.* _Mbolea ya kupandia mahindi ni ipi?_\n"
-        "*4.* _Mahindi yana viwavi, nifanye nini?_\n"
-        "*5.* _Mahindi yana madoa, ni ugonjwa gani?_\n"
-        "*6.* _Mahindi yanakuwa tayari kuvuna lini?_\n"
-        "*7.* _Jinsi ya kuhifadhi mahindi baada ya kuvuna?_\n"
-        "*8.* _Bei ya mahindi sokoni Mbeya ikoje?_\n\n"
-        "💡 *Dokezo:* Taja *zao* na *eneo* lako kwenye swali ili upate ushauri sahihi zaidi."
-    )
+def is_acknowledgement(text: str) -> bool:
+    """Angalia kama ujumbe ni kukubali tu, si swali jipya."""
+    t = (text or '').strip().lower().rstrip('.!')
+    if not t or len(t.split()) > 3:
+        return False
+    words = set(t.split())
+    return bool(words) and words.issubset(ACK_WORDS)
 
 
 # ═══════════════════════════════════════════════════════
@@ -676,13 +624,32 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
 
     # ── Handle greetings ─────────────────────────────
     if is_greeting(normalized) and len(normalized.split()) <= 4:
-        response = build_greeting()
+        # Mkulima anayerudi hapewi utangulizi mrefu tena —
+        # tunamkumbuka na kuendelea pale tulipoishia.
+        last_crop_name = ''
+        if user.last_crop_id:
+            _c = Crop.objects.filter(id=user.last_crop_id).first()
+            last_crop_name = _c.crop_name_sw if _c else ''
+        response = build_greeting(
+            is_returning=user.message_count > 1,
+            last_crop=last_crop_name,
+        )
         _log_all(user, raw_message, normalized, None, None, '', None, response, True,
                  start_time, message_id=message_id)
         return response
 
     # ── MODULE 4: Apply synonyms ─────────────────────
     normalized = apply_synonyms(normalized)
+
+    # ── Kukubali / shukrani ("sawa", "asante") ───────
+    # Bila hii, "sawa" hupelekwa kwenye injini ya maswali na
+    # mkulima anapata fallback isiyo na maana.
+    if is_acknowledgement(normalized) and not (user.session_state or {}).get('awaiting_location'):
+        _c = Crop.objects.filter(id=user.last_crop_id).first() if user.last_crop_id else None
+        response = build_acknowledgement(_c.crop_name_sw if _c else '')
+        _log_all(user, raw_message, normalized, _c, None, '', None, response, True,
+                 start_time, message_id=message_id)
+        return response
 
     # ── Check session state — pending location reply ─
     session = user.session_state or {}
@@ -719,7 +686,7 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
             response = format_response(answer_data, crop, intent, location)
             found = bool(response)
             if not response:
-                response = _get_ai_or_fallback(raw_message, crop, intent, location, zone)
+                response, _ = _get_ai_or_fallback(raw_message, crop, intent, location, zone, user)
                 _log_unresolved(user, raw_message, normalized, crop, intent, response)
             _log_all(user, raw_message, normalized, crop, intent, location, zone, response,
                      found, start_time, answer_data.get('answer_reference', ''),
@@ -747,12 +714,7 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
             new_session['location_attempts'] = attempts
             user.session_state = new_session
             user.save(update_fields=['session_state'])
-            response = (
-                "Sijatambua eneo ulilotaja. 📍\n"
-                "Tafadhali andika jina la *mkoa au wilaya* yako.\n\n"
-                "Mfano: _Singida_, _Dodoma_, _Mbeya_, _Mwanza_\n\n"
-                "_Au andika swali lingine lolote kuendelea._"
-            )
+            response = build_location_retry()
             _log_all(user, raw_message, normalized, None, None, '', None, response, False,
                      start_time, message_id=message_id)
             return response
@@ -784,6 +746,22 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── MODULE 8: Intent Detection ────────────────────
     intent = detect_intent(normalized, crop, location)
 
+    # Mkulima alikuwa akiulizwa zao — sasa ametaja. Rudisha swali lake
+    # la awali badala ya kumpeleka kwenye fallback.
+    _sess = user.session_state or {}
+    if crop and not intent and _sess.get('awaiting_crop'):
+        saved_name = _sess.get('saved_intent', '')
+        if saved_name:
+            try:
+                intent = Intent.objects.get(intent_name=saved_name)
+            except Intent.DoesNotExist:
+                intent = None
+        _cleared = dict(_sess)
+        _cleared.pop('awaiting_crop', None)
+        _cleared.pop('saved_intent', None)
+        user.session_state = _cleared
+        user.save(update_fields=['session_state'])
+
     # ── Update user session ───────────────────────────
     updates = {}
     if crop:
@@ -803,7 +781,14 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
 
     # ── Prompt for crop if missing ────────────────────
     if needs_crop_prompt(crop, intent):
-        response = build_crop_prompt()
+        # Hifadhi swali ili mkulima akitaja zao tuendelee palepale,
+        # badala ya kuanza upya na kumuuliza tena.
+        new_session = dict(user.session_state or {})
+        new_session['awaiting_crop'] = True
+        new_session['saved_intent'] = intent.intent_name if intent else ''
+        user.session_state = new_session
+        user.save(update_fields=['session_state'])
+        response = build_crop_prompt(intent)
         _log_all(user, raw_message, normalized, None, intent, location, zone, response, False,
                  start_time, message_id=message_id)
         return response
@@ -841,10 +826,9 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     from_template = bool(response)
     used_fallback = False
     if not response:
-        response = _get_ai_or_fallback(
-            raw_message, crop, intent, location, zone
+        response, used_fallback = _get_ai_or_fallback(
+            raw_message, crop, intent, location, zone, user
         )
-        used_fallback = _is_fallback_message(response)
     # success = tumeweza kumpa mkulima jibu la maana (template au AI),
     # SI tu kwamba tulirudisha maandishi fulani.
     success = from_template or not used_fallback
@@ -886,12 +870,20 @@ def is_duplicate_message(message_id: str) -> bool:
         return False
 
 
-FALLBACK_MARKER = 'Asante kwa swali lako'
-
-
 def _is_fallback_message(response: str) -> bool:
-    """Angalia kama jibu ni lile la dharura (yaani hatukuweza kujibu kabisa)."""
-    return bool(response) and FALLBACK_MARKER in response[:60]
+    """
+    Ukaguzi wa dharura pale hatuna bendera ya moja kwa moja.
+    Ujumbe wa fallback sasa hubadilika, kwa hiyo tunaangalia
+    misemo yote inayowezekana badala ya mmoja.
+    """
+    if not response:
+        return False
+    head = response[:80]
+    return any(m in head for m in (
+        'Nimeelewa swali lako',
+        'Asante kwa swali lako',
+        'Nimekusikia',
+    ))
 
 
 def _log_unresolved(user, raw_message, normalized, crop, intent, response):
@@ -914,8 +906,8 @@ def _log_unresolved(user, raw_message, normalized, crop, intent, response):
         logger.error(f"UnresolvedQuery error: {e}")
 
 
-def _get_ai_or_fallback(raw_message, crop, intent, location, zone) -> str:
-    """Tumia Groq AI (pamoja na muktadha wa dataset) kama template haipatikani."""
+def _get_ai_or_fallback(raw_message, crop, intent, location, zone, user=None) -> str:
+    """Tumia Groq AI (dataset + historia ya mazungumzo) kama template haipatikani."""
     try:
         from bot.groq_ai import get_groq_response
         ai_response = get_groq_response(
@@ -924,13 +916,15 @@ def _get_ai_or_fallback(raw_message, crop, intent, location, zone) -> str:
             intent=intent,
             location=location or '',
             zone=zone,
+            user=user,
         )
         if ai_response:
-            return ai_response
+            return ai_response, False
     except Exception as e:
         logger.error(f"Groq AI fallback error: {e}")
 
-    return build_fallback_message()
+    # Groq imeshindwa — hii ni fallback ya kweli.
+    return build_fallback_message(crop, intent, location), True
 
 
 def _log_all(user, raw_message, normalized, crop, intent, location, zone,

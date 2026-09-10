@@ -24,4 +24,7 @@ urlpatterns = [
     path('analytics/', views.analytics_view, name='analytics'),
     path('status/', views.system_status, name='system_status'),
     path('groq-status/', views.groq_status_view, name='groq_status'),
+    path('whatsapp/', views.whatsapp_connect, name='whatsapp_connect'),
+    path('whatsapp/qr/', views.whatsapp_qr_api, name='whatsapp_qr_api'),
+    path('whatsapp/logout/', views.whatsapp_logout, name='whatsapp_logout'),
 ]

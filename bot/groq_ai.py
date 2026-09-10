@@ -102,22 +102,27 @@ KAZI YAKO:
 - Kama swali si la kilimo kabisa, lielekeze kwa upole kwenye mada za kilimo bila kumkwaza mteja
 
 MUUNDO WA WHATSAPP (fuata kikamilifu — huu ndio mtindo rasmi wa Kilimoni AI):
-1. ANZA na mstari wa kichwa: emoji moja inayohusiana + *MADA FUPI KWA HERUFI KUBWA*
-   Mstari unaofuata uwe: ━━━━━━━━━━━━━━━
-   Mfano:
-   🌾 *KUPANDA MAHINDI — SINGIDA*
-   ━━━━━━━━━━━━━━━
-2. Kisha mwili wa jibu: aya FUPI za mistari 1-2, zikitenganishwa na mstari mtupu
-3. Orodha zitumie alama • (nukta nene), kila moja mstari wake
-4. *bold* — tumia KWA MAKUSUDI tu: majina ya mbegu, vipimo vya mbolea, vipindi/tarehe muhimu, na maneno ya tahadhari
-5. _italic_ — kwa mifano ya sentensi tu
-6. Emoji: kichwa 1 + ndani ya jibu zisizidi 2 (ziwe na maana: ⚠️ kwa tahadhari, 💡 kwa dokezo)
-7. Kama kuna tahadhari, iwe mstari wake: ⚠️ *Tahadhari:* ...
-8. Mwisho (hiari): swali MOJA fupi la kufuatilia kwa italic — bila footer, bila sahihi, bila jina lako
-9. Jibu zima lisizidi mistari 14 ya WhatsApp
+1. ANZA moja kwa moja na jibu. USITUMIE mistari ya mapambo (━━━)
+   wala vichwa vya herufi kubwa. Andika kama unavyomjibu mtu kwenye WhatsApp.
+2. Kama swali ni la zao mahususi, unaweza kuanza na mstari mfupi:
+   🌾 *Mahindi* — Singida
+   Kisha mstari mtupu, kisha jibu.
+3. Aya FUPI za mistari 1-2, zikitenganishwa na mstari mtupu
+4. Orodha zitumie alama • kila moja mstari wake
+5. *bold* — kwa majina ya mbegu, vipimo, na tarehe muhimu tu
+6. Emoji zisizidi 2 kwenye jibu zima
+7. Tahadhari iwe mstari wake: ⚠️ ...
+8. Mwisho (hiari): swali MOJA fupi la kufuatilia kwa italic
+9. Jibu zima lisizidi mistari 12
 
 KANUNI:
-1. LAZIMA Kiswahili
+0. MAZUNGUMZO: Umepewa historia ya mazungumzo hapo juu. ITUMIE.
+   - Mkulima akijibu kwa neno moja ("ndio", "mahindi", "Singida",
+     "hilo la pili"), rejea ulichokiuliza wewe na uendelee. USIANZE UPYA.
+   - Usimuulize tena kitu alichokwisha kukujibu.
+   - Ukibadilisha mada, ionyeshe kwa mstari mfupi wa kuunganisha.
+1. LAZIMA Kiswahili cha kawaida — kama afisa ugani anavyoongea na mkulima
+   kijijini. Si Kiswahili cha vitabu, si cha kikompyuta.
 2. Usiseme "Kama AI..." au kutaja kuwa wewe ni mfumo/model
 3. USISEME kamwe kuwa hujaelewa, huna taarifa, au mfumo una upungufu — badala yake toa ushauri bora unaowezekana, na kama unahitaji taarifa zaidi uliza swali moja mahususi kwa staha
 4. Dawa/kemikali: taja jina ukishauri, lakini ongeza "fuata maelekezo ya kifungashio au uliza duka la pembejeo"
@@ -133,10 +138,42 @@ TANZANIA AGRO-ZONES:
 - Western (Kigoma, Katavi, Rukwa): tumbaku, mahindi, mihogo, mpunga"""
 
 
-def get_groq_response(user_message: str, crop=None, intent=None,
-                      location: str = '', zone=None) -> str:
+def build_history_messages(user, limit: int = 8) -> list:
     """
-    Tuma swali kwa Groq AI pamoja na muktadha wa dataset.
+    Chukua mazungumzo ya karibuni ya mkulima huyu na yageuze kuwa
+    ujumbe wa chat (user/assistant) ambao Groq anaelewa.
+
+    Hii ndiyo inayomwezesha AI kuelewa majibu mafupi kama
+    "ndio", "sawa", "mahindi" — kwa sababu anaona alichoulizwa.
+    """
+    from bot.models import Conversation
+
+    try:
+        rows = list(
+            Conversation.objects
+            .filter(user=user)
+            .order_by('-created_at')[:limit]
+        )
+    except Exception as e:
+        logger.error(f"History error: {e}")
+        return []
+
+    rows.reverse()  # kutoka ya zamani hadi ya karibuni
+    messages = []
+    for row in rows:
+        text = (row.raw_message or '').strip()
+        if not text:
+            continue
+        role = 'user' if row.message_direction == 'inbound' else 'assistant'
+        messages.append({'role': role, 'content': text[:1200]})
+    return messages
+
+
+def get_groq_response(user_message: str, crop=None, intent=None,
+                      location: str = '', zone=None, user=None) -> str:
+    """
+    Tuma swali kwa Groq AI pamoja na muktadha wa dataset na historia
+    ya mazungumzo.
     Inarudisha '' kama imeshindwa (engine itatumia fallback).
     """
     api_key = getattr(settings, 'GROQ_API_KEY', '')
@@ -175,6 +212,14 @@ Swali la mkulima:
 
 Toa jibu la ushauri wa kilimo kwa Kiswahili, ukifuata muundo wa WhatsApp:"""
 
+    # Historia ya mazungumzo — inampa AI kumbukumbu ya kile
+    # alichokiuliza mkulima na kile mfumo ulichojibu.
+    history = build_history_messages(user) if user is not None else []
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(history)
+    messages.append({"role": "user", "content": user_prompt})
+
     try:
         resp = http_requests.post(
             GROQ_API_URL,
@@ -183,13 +228,10 @@ Toa jibu la ushauri wa kilimo kwa Kiswahili, ukifuata muundo wa WhatsApp:"""
                 "Content-Type": "application/json",
             },
             json={
-                "model": getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile'),
+                "model": getattr(settings, 'GROQ_MODEL', 'openai/gpt-oss-120b'),
                 "max_tokens": 600,
                 "temperature": 0.4,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
+                "messages": messages,
             },
             timeout=25,
         )

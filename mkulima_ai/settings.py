@@ -164,15 +164,44 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = config('CORS_ORIGINS', default='http://localhost:3000').split(',')
 CORS_ALLOW_ALL_ORIGINS = DEBUG
 
+# # WhatsApp
+# WHATSAPP_API_TOKEN = config('WHATSAPP_API_TOKEN', default='')
+# WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='')
+# WHATSAPP_VERIFY_TOKEN = config('WHATSAPP_VERIFY_TOKEN', default='')
+# WHATSAPP_BUSINESS_ACCOUNT_ID = config('WHATSAPP_BUSINESS_ACCOUNT_ID', default='')
+# # Meta huondoa Graph API versions za zamani baada ya ~miaka 2.
+# # Angalia version mpya kwenye Meta App Dashboard, kisha weka hapa kwa env var.
+# WHATSAPP_API_VERSION = config('WHATSAPP_API_VERSION', default='v21.0')
+# WHATSAPP_API_URL = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+
+
 # WhatsApp
 WHATSAPP_API_TOKEN = config('WHATSAPP_API_TOKEN', default='')
 WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='')
 WHATSAPP_VERIFY_TOKEN = config('WHATSAPP_VERIFY_TOKEN', default='')
 WHATSAPP_BUSINESS_ACCOUNT_ID = config('WHATSAPP_BUSINESS_ACCOUNT_ID', default='')
-# Meta huondoa Graph API versions za zamani baada ya ~miaka 2.
-# Angalia version mpya kwenye Meta App Dashboard, kisha weka hapa kwa env var.
-WHATSAPP_API_VERSION = config('WHATSAPP_API_VERSION', default='v21.0')
-WHATSAPP_API_URL = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+
+WHATSAPP_API_VERSION = config(
+    'WHATSAPP_API_VERSION',
+    default='v21.0'
+)
+
+WHATSAPP_API_URL = (
+    f"https://graph.facebook.com/"
+    f"{WHATSAPP_API_VERSION}/"
+    f"{WHATSAPP_PHONE_NUMBER_ID}/messages"
+)
+
+
+# Baileys WhatsApp Bridge
+BAILEYS_BRIDGE_URL = config('BAILEYS_BRIDGE_URL', default='http://127.0.0.1:3001')
+BAILEYS_BRIDGE_KEY = config(
+    'BAILEYS_BRIDGE_KEY',
+    default=''
+)
+
+
+
 
 # Login URL
 LOGIN_URL = '/dashboard/login/'

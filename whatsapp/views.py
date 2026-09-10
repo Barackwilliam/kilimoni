@@ -104,3 +104,179 @@ def webhook(request):
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         logger.error(f"Webhook error: {e}")
         return JsonResponse({"status": "error"}, status=200)
+
+
+
+
+
+
+# ============================================================
+# BAILEYS WHATSAPP BRIDGE
+# ============================================================
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def baileys_incoming(request):
+    """
+    Inapokea ujumbe kutoka Baileys na kuupitisha
+    kwenye chatbot engine ya Kilimoni.
+    """
+
+    # --------------------------------------------------------
+    # SECURITY CHECK
+    # --------------------------------------------------------
+
+    bridge_key = request.headers.get("X-Bridge-Key", "")
+
+    expected_key = getattr(
+        settings,
+        "BAILEYS_BRIDGE_KEY",
+        ""
+    )
+
+    if not expected_key or bridge_key != expected_key:
+        logger.warning(
+            "Baileys bridge unauthorized request."
+        )
+
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Unauthorized"
+            },
+            status=401
+        )
+
+
+    # --------------------------------------------------------
+    # READ REQUEST
+    # --------------------------------------------------------
+
+    try:
+
+        data = json.loads(request.body)
+
+    except json.JSONDecodeError:
+
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Invalid JSON"
+            },
+            status=400
+        )
+
+
+    # --------------------------------------------------------
+    # GET DATA
+    # --------------------------------------------------------
+
+    phone = str(
+        data.get("phone", "")
+    ).strip()
+
+    message = str(
+        data.get("message", "")
+    ).strip()
+
+    message_id = str(
+        data.get("message_id", "")
+    ).strip()
+
+
+    # --------------------------------------------------------
+    # VALIDATION
+    # --------------------------------------------------------
+
+    if not phone:
+
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Phone number is required"
+            },
+            status=400
+        )
+
+
+    if not message:
+
+        return JsonResponse(
+            {
+                "success": False,
+                "error": "Message is required"
+            },
+            status=400
+        )
+
+
+    # --------------------------------------------------------
+    # DUPLICATE MESSAGE CHECK
+    # --------------------------------------------------------
+
+    if message_id:
+
+        try:
+
+            if is_duplicate_message(message_id):
+
+                logger.info(
+                    f"Baileys duplicate message ignored: {message_id}"
+                )
+
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "reply": ""
+                    }
+                )
+
+        except Exception as e:
+
+            logger.warning(
+                f"Duplicate check failed: {e}"
+            )
+
+
+    # --------------------------------------------------------
+    # PROCESS WITH KILIMONI AI ENGINE
+    # --------------------------------------------------------
+
+    try:
+
+        logger.info(
+            f"Baileys message from {phone}: {message[:100]}"
+        )
+
+        response_text = process_message(
+            phone,
+            message,
+            message_id=message_id
+        )
+
+
+        # ----------------------------------------------------
+        # RETURN RESPONSE TO BAILEYS
+        # ----------------------------------------------------
+
+        return JsonResponse(
+            {
+                "success": True,
+                "reply": str(response_text)
+            }
+        )
+
+
+    except Exception as e:
+
+        logger.exception(
+            "Baileys message processing error"
+        )
+
+        return JsonResponse(
+            {
+                "success": False,
+                "error": str(e)
+            },
+            status=500
+        )

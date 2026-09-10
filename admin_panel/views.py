@@ -600,3 +600,56 @@ def privacy_policy(request):
         'year': now.year,
         'contact_email': 'barackwilliam12@gmail.com',
     })
+
+# ── WhatsApp Bridge — QR na hali ya muunganisho ────
+def _bridge_url() -> str:
+    return getattr(settings, 'BAILEYS_BRIDGE_URL', 'http://127.0.0.1:3001').rstrip('/')
+
+
+@login_required
+def whatsapp_connect(request):
+    """Ukurasa wa kuunganisha WhatsApp kwa kuscan QR (badala ya terminal)."""
+    return render(request, 'admin_panel/whatsapp_connect.html', {
+        'page': 'whatsapp_connect',
+    })
+
+
+@login_required
+def whatsapp_qr_api(request):
+    """
+    Proxy kwenda kwa bridge ya Baileys.
+    Browser haiwezi kuifikia bridge moja kwa moja (iko localhost:3001
+    na haina auth), kwa hiyo Django ndiye anayeuliza kwa niaba yake.
+    """
+    import requests as http_requests
+    try:
+        resp = http_requests.get(f"{_bridge_url()}/qr", timeout=8)
+        resp.raise_for_status()
+        return JsonResponse(resp.json())
+    except Exception as e:
+        logger.error(f"Bridge QR error: {e}")
+        return JsonResponse({
+            'success': False,
+            'status': 'bridge_offline',
+            'connected': False,
+            'error': 'Bridge haipatikani. Hakikisha imewashwa (npm start).',
+        }, status=200)
+
+
+@login_required
+def whatsapp_logout(request):
+    """Ondoa muunganisho ili uunganishe namba nyingine."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'POST inahitajika'}, status=405)
+
+    import requests as http_requests
+    try:
+        resp = http_requests.post(
+            f"{_bridge_url()}/logout",
+            headers={'X-Bridge-Key': getattr(settings, 'BAILEYS_BRIDGE_KEY', '')},
+            timeout=10,
+        )
+        return JsonResponse(resp.json(), status=resp.status_code)
+    except Exception as e:
+        logger.error(f"Bridge logout error: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=200)

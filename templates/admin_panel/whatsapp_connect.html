@@ -1,0 +1,119 @@
+{% extends 'admin_panel/base.html' %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">📱 Unganisha WhatsApp</h1>
+  <p class="page-subtitle">Scan QR code kuunganisha namba ya bot</p>
+</div>
+
+<div class="card" style="max-width:620px;">
+  <div class="card-header">
+    <div class="card-title">Hali ya Muunganisho</div>
+    <div id="statusBadge" class="badge badge-secondary">Inaangalia...</div>
+  </div>
+
+  <div id="panel" style="padding:28px 20px; text-align:center;">
+    <div class="spinner" style="margin:0 auto 14px;"></div>
+    <div style="color:#6b7280;font-size:14px;">Inawasiliana na bridge...</div>
+  </div>
+</div>
+
+<div class="card" style="max-width:620px;margin-top:18px;">
+  <div class="card-header"><div class="card-title">📋 Maelekezo</div></div>
+  <div style="padding:18px 20px;font-size:14px;color:#374151;line-height:1.8;">
+    <strong>1.</strong> Fungua WhatsApp kwenye simu ya bot<br>
+    <strong>2.</strong> Nenda <em>Settings → Linked Devices</em><br>
+    <strong>3.</strong> Bonyeza <em>Link a Device</em><br>
+    <strong>4.</strong> Scan QR iliyo hapo juu<br><br>
+    <span style="color:#92400e;background:#fef3c7;padding:8px 12px;border-radius:6px;display:inline-block;">
+      ⏱️ QR huisha baada ya sekunde 60 — mpya hutengenezwa yenyewe.
+    </span>
+  </div>
+</div>
+
+<style>
+  .spinner {
+    width:34px;height:34px;border:3px solid #e5e7eb;border-top-color:#16a34a;
+    border-radius:50%;animation:spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .qr-box { background:#fff;padding:14px;border-radius:12px;display:inline-block;
+            box-shadow:0 2px 10px rgba(0,0,0,.09); }
+  .qr-box img { display:block;width:280px;height:280px; }
+</style>
+
+<script>
+  const CSRF = '{{ csrf_token }}';
+  const panel = document.getElementById('panel');
+  const badge = document.getElementById('statusBadge');
+  let timer = null;
+
+  function setBadge(text, cls) {
+    badge.textContent = text;
+    badge.className = 'badge ' + cls;
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch('{% url "whatsapp_qr_api" %}');
+      const d = await res.json();
+
+      if (d.status === 'bridge_offline') {
+        setBadge('Bridge haipo', 'badge-danger');
+        panel.innerHTML =
+          '<div style="font-size:40px;">🔌</div>' +
+          '<div style="margin-top:10px;font-weight:600;color:#b91c1c;">Bridge haijawashwa</div>' +
+          '<div style="margin-top:8px;color:#6b7280;font-size:13px;">' +
+          'Washa bridge kisha ukurasa huu utaendelea wenyewe.<br>' +
+          '<code style="background:#f3f4f6;padding:3px 8px;border-radius:4px;display:inline-block;margin-top:8px;">' +
+          'cd whatsapp_bridge &amp;&amp; npm start</code></div>';
+        return;
+      }
+
+      if (d.connected) {
+        setBadge('Imeunganishwa', 'badge-success');
+        panel.innerHTML =
+          '<div style="font-size:46px;">✅</div>' +
+          '<div style="margin-top:10px;font-weight:700;color:#15803d;font-size:17px;">WhatsApp imeunganishwa</div>' +
+          (d.number ? '<div style="margin-top:6px;color:#374151;">Namba: <strong>+' + d.number + '</strong></div>' : '') +
+          '<div style="margin-top:8px;color:#6b7280;font-size:13px;">Bot inapokea ujumbe wa wakulima sasa.</div>' +
+          '<button id="logoutBtn" class="btn btn-secondary btn-sm" style="margin-top:18px;">Ondoa muunganisho</button>';
+        document.getElementById('logoutBtn').onclick = doLogout;
+        return;
+      }
+
+      if (d.qr) {
+        setBadge('Inasubiri scan', 'badge-warning');
+        panel.innerHTML =
+          '<div class="qr-box"><img src="' + d.qr + '" alt="QR code"></div>' +
+          '<div style="margin-top:14px;color:#6b7280;font-size:13px;">' +
+          (d.expired
+            ? '⏳ QR hii imepitwa — mpya inatengenezwa...'
+            : 'Scan ndani ya sekunde ' + Math.max(0, 60 - (d.qr_age_seconds || 0))) +
+          '</div>';
+        return;
+      }
+
+      setBadge('Inaanzisha', 'badge-secondary');
+      panel.innerHTML =
+        '<div class="spinner" style="margin:0 auto 14px;"></div>' +
+        '<div style="color:#6b7280;font-size:14px;">Inasubiri QR kutoka WhatsApp...</div>';
+
+    } catch (e) {
+      setBadge('Hitilafu', 'badge-danger');
+    }
+  }
+
+  async function doLogout() {
+    if (!confirm('Una uhakika? Bot itaacha kupokea ujumbe hadi uunganishe tena.')) return;
+    await fetch('{% url "whatsapp_logout" %}', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF },
+    });
+    poll();
+  }
+
+  poll();
+  timer = setInterval(poll, 3000);
+</script>
+{% endblock %}
