@@ -563,8 +563,11 @@ def groq_status_view(request):
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile'),
-                        "max_tokens": 20,
+                        "model": getattr(settings, 'GROQ_MODEL', 'openai/gpt-oss-120b'),
+                        # 20 ilikuwa ndogo mno kwa reasoning models —
+                        # tokens zote zilimezwa na kufikiri, jibu likawa tupu
+                        "max_tokens": 300,
+                        "reasoning_effort": "low",
                         "temperature": 0.2,
                         "messages": [
                             {"role": "system", "content": "Jibu kwa neno moja tu."},

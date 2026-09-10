@@ -11,6 +11,7 @@ import logging
 import requests as http_requests
 
 from django.conf import settings
+from decouple import config
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,11 @@ Toa jibu la ushauri wa kilimo kwa Kiswahili, ukifuata muundo wa WhatsApp:"""
             },
             json={
                 "model": getattr(settings, 'GROQ_MODEL', 'openai/gpt-oss-120b'),
-                "max_tokens": 600,
+                "max_tokens": 1200,
+                # gpt-oss ni reasoning model: hutumia tokens kufikiri
+                # kabla ya kujibu. Bila 'low', kufikiri kunameza
+                # tokens zote na jibu (content) linarudi TUPU.
+                "reasoning_effort": config('GROQ_REASONING', default='low'),
                 "temperature": 0.4,
                 "messages": messages,
             },
@@ -237,7 +242,18 @@ Toa jibu la ushauri wa kilimo kwa Kiswahili, ukifuata muundo wa WhatsApp:"""
         )
         resp.raise_for_status()
         data = resp.json()
-        answer = data['choices'][0]['message']['content'].strip()
+        message = data['choices'][0]['message']
+        answer = (message.get('content') or '').strip()
+
+        if not answer:
+            # Model imefikiri lakini haikutoa jibu. Tunaandika kwenye
+            # logs ili tatizo lisipotee kimya kimya kama lilivyokuwa.
+            reasoning = (message.get('reasoning') or '').strip()
+            logger.error(
+                "[Groq] Jibu tupu — reasoning tokens zimemeza bajeti. "
+                f"reasoning: {reasoning[:120]}"
+            )
+            return ''
         logger.info(f"[Groq] Jibu limetolewa kwa: {user_message[:50]}")
         return answer
     except Exception as e:
