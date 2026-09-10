@@ -275,3 +275,118 @@ def build_help_message() -> str:
         "💡 Ukitaja *zao* na *eneo* lako, jibu linakuwa sahihi zaidi.\n\n"
         "Unaweza pia kujibu kwa neno moja — nitakumbuka tuliyoongea."
     )
+
+
+# ═══════════════════════════════════════════════════════
+# MASWALI YASIYO YA KILIMO
+#
+# Mkulima akiuliza kitu nje ya kilimo ("unaweza kuimba?",
+# "unaitwa nani?", "habari za mpira?"), jibu la kuomba zao
+# na eneo halina maana kabisa. Bot inaonekana haielewi.
+# Hapa tunajibu kwa staha, kisha tunamrudisha kwenye kilimo.
+# ═══════════════════════════════════════════════════════
+
+# Maneno yanayoonyesha swali LINAHUSU kilimo
+FARMING_SIGNALS = {
+    'mbegu', 'panda', 'kupanda', 'shamba', 'zao', 'mazao', 'mavuno',
+    'kuvuna', 'vuna', 'mbolea', 'samadi', 'urea', 'dap', 'npk',
+    'wadudu', 'mdudu', 'viwavi', 'funza', 'ugonjwa', 'magonjwa',
+    'dawa', 'kunyunyizia', 'majani', 'shina', 'mizizi', 'maua',
+    'mvua', 'ukame', 'umwagiliaji', 'maji', 'udongo', 'mkulima',
+    'kilimo', 'lima', 'kulima', 'soko', 'bei', 'gunia', 'ekari',
+    'hekta', 'ghala', 'kuhifadhi', 'mahindi', 'maharage', 'mpunga',
+    'muhogo', 'viazi', 'alizeti', 'pamba', 'ndizi', 'nyanya',
+    'kahawa', 'chai', 'korosho', 'mtama', 'ufuta', 'karanga',
+    'afisa', 'ugani', 'ardhi', 'msimu', 'kupalilia', 'palizi',
+}
+
+# Maswali kuhusu bot yenyewe
+IDENTITY_PATTERNS = {
+    'unaitwa nani', 'jina lako', 'wewe ni nani', 'u nani',
+    'wewe ni nini', 'nani wewe', 'unaitwaje',
+}
+
+CAPABILITY_PATTERNS = {
+    'unaweza nini', 'unaweza kufanya nini', 'unafanya nini',
+    'unasaidia nini', 'una uwezo gani', 'unajua nini',
+}
+
+
+def has_farming_signal(text: str) -> bool:
+    """Angalia kama ujumbe una uhusiano wowote na kilimo."""
+    words = set((text or '').lower().split())
+    return bool(words & FARMING_SIGNALS)
+
+
+def detect_offtopic_kind(text: str) -> str:
+    """
+    Rudisha aina ya swali lisilo la kilimo:
+    'identity', 'capability', 'offtopic', au '' (ni la kilimo).
+    """
+    t = (text or '').lower().strip()
+
+    if any(p in t for p in IDENTITY_PATTERNS):
+        return 'identity'
+
+    if any(p in t for p in CAPABILITY_PATTERNS):
+        return 'capability'
+
+    if has_farming_signal(t):
+        return ''
+
+    words = t.split()
+
+    # "Unaweza ...?" bila dalili ya kilimo — anauliza uwezo wangu
+    # kwa kitu nisichokifanya (mfano "unaweza kuimba?")
+    if words and words[0] in ('unaweza', 'waweza', 'je') and len(words) >= 2:
+        return 'offtopic'
+
+    # Sentensi ya maneno 2+ isiyo na dalili yoyote ya kilimo.
+    # Majibu mafupi ya mkulima ("mahindi", "Singida") ni neno moja,
+    # kwa hiyo hayaguswi hapa.
+    if len(words) >= 2:
+        return 'offtopic'
+
+    return ''
+
+
+def build_identity_message() -> str:
+    return (
+        "Mimi ni *Kilimoni AI* 🌿\n\n"
+        "Msaidizi wa kilimo kwa wakulima wa Tanzania. Nasaidia kuhusu "
+        "mbegu, wakati wa kupanda, mbolea, wadudu na magonjwa, "
+        "kuvuna, na bei za sokoni.\n\n"
+        "Una swali lolote la shamba lako?"
+    )
+
+
+def build_capability_message() -> str:
+    return (
+        "Nasaidia mambo ya shamba 🌿\n\n"
+        "• Mbegu bora kwa eneo lako\n"
+        "• Wakati sahihi wa kupanda\n"
+        "• Mbolea — aina na vipimo\n"
+        "• Wadudu na magonjwa — kutambua na kutibu\n"
+        "• Kuvuna na kuhifadhi\n"
+        "• Bei za sokoni\n\n"
+        "_Mfano: Mahindi yangu yana majani ya njano, niko Singida_"
+    )
+
+
+def build_offtopic_message() -> str:
+    """
+    Swali la nje ya kilimo. Tunajibu kwa ucheshi kidogo na staha —
+    si kwa ukavu — kisha tunamrudisha kwenye kazi yetu.
+    """
+    opening = _pick([
+        "Hilo liko nje ya uwezo wangu 😅",
+        "Hapo umenishinda 😅",
+        "Hilo silijui vizuri 😅",
+    ])
+
+    return (
+        f"{opening}\n\n"
+        "Mimi ni msaidizi wa *kilimo* — niko hapa kwa maswali ya shamba, "
+        "mazao, mbegu, mbolea, wadudu na masoko.\n\n"
+        "Una swali lolote la shamba lako?"
+    )

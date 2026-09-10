@@ -553,6 +553,10 @@ from bot.messages import (            # noqa: E402
     build_help_message,
     format_response,
     topic_of,
+    detect_offtopic_kind,
+    build_identity_message,
+    build_capability_message,
+    build_offtopic_message,
 )
 
 
@@ -742,6 +746,28 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
 
     # ── MODULE 7: Zone Mapping ────────────────────────
     zone = map_location_to_zone(location)
+
+    # ── Maswali yasiyo ya kilimo ──────────────────────
+    # Tunaangalia HAPA (si mwanzo) ili majibu mafupi ya mkulima
+    # kama "Singida" au "mahindi" yasihesabiwe kama yasiyo ya kilimo.
+    _pending = (user.session_state or {})
+    if not _pending.get('awaiting_location') and not _pending.get('awaiting_crop'):
+        _kind = detect_offtopic_kind(normalized)
+        # Tunatumia kilichotajwa KWENYE UJUMBE HUU, si kilichokumbukwa.
+        # Vinginevyo mkulima aliyewahi kutaja Singida hataweza kamwe
+        # kuuliza swali la nje ya kilimo.
+        _fresh_crop = detect_crop(normalized)
+        _fresh_loc = detect_location(normalized)
+        if _kind and not _fresh_crop and not _fresh_loc:
+            if _kind == 'identity':
+                response = build_identity_message()
+            elif _kind == 'capability':
+                response = build_capability_message()
+            else:
+                response = build_offtopic_message()
+            _log_all(user, raw_message, normalized, None, None, '', None, response,
+                     True, start_time, message_id=message_id)
+            return response
 
     # ── MODULE 8: Intent Detection ────────────────────
     intent = detect_intent(normalized, crop, location)
