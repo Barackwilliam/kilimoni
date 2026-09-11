@@ -1,6 +1,155 @@
 {% extends 'admin_panel/base.html' %}
 
 {% block content %}
+<!-- ═══════════════════════════════════════════════
+     LOADER YA UCHAMBUZI
+     Hatua zinazoonyeshwa ni zile zinazotokea kweli
+     upande wa server, si pambo tu.
+     ═══════════════════════════════════════════════ -->
+<div id="aiLoader" class="ai-overlay">
+  <div class="ai-box">
+
+    <div class="ai-core">
+      <div class="ai-ring r1"></div>
+      <div class="ai-ring r2"></div>
+      <div class="ai-ring r3"></div>
+      <div class="ai-brain">🧠</div>
+    </div>
+
+    <div class="ai-title">Inachambua dataset</div>
+    <div class="ai-file" id="aiFile">—</div>
+
+    <div class="ai-bar"><div class="ai-bar-fill" id="aiBar"></div></div>
+
+    <div class="ai-steps" id="aiSteps">
+      <div class="ai-step" data-ms="700">Inasoma faili</div>
+      <div class="ai-step" data-ms="900">Inatambua muundo na columns</div>
+      <div class="ai-step" data-ms="1100">Inachanganua mifano ya data</div>
+      <div class="ai-step" data-ms="2600">Injini ya AI inalinganisha na database</div>
+      <div class="ai-step" data-ms="1400">Inathibitisha kila row</div>
+      <div class="ai-step" data-ms="1000">Inaandaa hakiki</div>
+    </div>
+
+    <div class="ai-log" id="aiLog"></div>
+  </div>
+</div>
+
+<style>
+.ai-overlay{
+  position:fixed;inset:0;z-index:9999;display:none;
+  align-items:center;justify-content:center;
+  background:rgba(8,26,17,.93);backdrop-filter:blur(6px);
+}
+.ai-overlay.on{display:flex;}
+.ai-box{width:min(440px,90vw);text-align:center;color:#fff;padding:10px;}
+
+.ai-core{position:relative;width:118px;height:118px;margin:0 auto 22px;}
+.ai-ring{position:absolute;inset:0;border-radius:50%;border:2px solid transparent;}
+.ai-ring.r1{border-top-color:#4ade80;animation:spin 1.5s linear infinite;}
+.ai-ring.r2{inset:13px;border-right-color:#22d3ee;animation:spin 2.1s linear infinite reverse;}
+.ai-ring.r3{inset:26px;border-bottom-color:#eab308;animation:spin 1.1s linear infinite;}
+.ai-brain{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:36px;animation:pulse 1.8s ease-in-out infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:.85;}50%{transform:scale(1.14);opacity:1;}}
+
+.ai-title{font-size:19px;font-weight:700;letter-spacing:-.02em;}
+.ai-file{font-size:12.5px;color:#86efac;margin-top:5px;word-break:break-all;opacity:.9;}
+
+.ai-bar{
+  height:4px;background:rgba(255,255,255,.12);border-radius:3px;
+  overflow:hidden;margin:20px 0 18px;
+}
+.ai-bar-fill{
+  height:100%;width:0%;border-radius:3px;
+  background:linear-gradient(90deg,#16a34a,#4ade80,#22d3ee);
+  transition:width .5s ease;
+}
+
+.ai-steps{text-align:left;}
+.ai-step{
+  font-size:13.5px;color:rgba(255,255,255,.32);
+  padding:7px 0 7px 26px;position:relative;
+  transition:color .3s ease;
+}
+.ai-step::before{
+  content:'○';position:absolute;left:4px;top:6px;
+  font-size:13px;color:rgba(255,255,255,.28);
+}
+.ai-step.active{color:#fff;}
+.ai-step.active::before{
+  content:'◉';color:#4ade80;animation:blink .9s ease-in-out infinite;
+}
+.ai-step.done{color:rgba(255,255,255,.62);}
+.ai-step.done::before{content:'✓';color:#4ade80;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+.ai-log{
+  margin-top:18px;height:52px;overflow:hidden;
+  font-family:ui-monospace,Menlo,monospace;font-size:11px;
+  color:rgba(134,239,172,.6);text-align:left;line-height:1.8;
+}
+</style>
+
+<script>
+(function(){
+  var overlay = document.getElementById('aiLoader');
+  if (!overlay) return;
+
+  var steps = Array.prototype.slice.call(document.querySelectorAll('#aiSteps .ai-step'));
+  var bar   = document.getElementById('aiBar');
+  var log   = document.getElementById('aiLog');
+
+  var lines = [
+    'kufungua faili...', 'kutambua encoding...', 'kutambua kitenganishi...',
+    'kusoma header row...', 'kuhesabu rows...', 'kuchuja rows tupu...',
+    'kuandaa mifano...', 'kutuma kwa injini ya AI...', 'kulinganisha na schema...',
+    'kupanga fields...', 'kupima uhakika...', 'kuthibitisha rows...',
+    'kuangalia marejeo...', 'kuandaa hakiki...'
+  ];
+  var li = 0, timer = null;
+
+  function pushLog(){
+    var d = document.createElement('div');
+    d.textContent = '› ' + lines[li % lines.length];
+    log.appendChild(d);
+    li++;
+    while (log.children.length > 3) log.removeChild(log.firstChild);
+  }
+
+  function run(i){
+    if (i >= steps.length) {
+      // Hatua zimeisha lakini server bado inafanya kazi —
+      // tunabaki kwenye ya mwisho badala ya kudanganya kwamba imekwisha
+      bar.style.width = '94%';
+      steps[steps.length - 1].classList.add('active');
+      return;
+    }
+    if (i > 0) {
+      steps[i-1].classList.remove('active');
+      steps[i-1].classList.add('done');
+    }
+    steps[i].classList.add('active');
+    bar.style.width = Math.round(((i + 1) / steps.length) * 92) + '%';
+    setTimeout(function(){ run(i + 1); }, parseInt(steps[i].dataset.ms, 10));
+  }
+
+  document.querySelectorAll('form[enctype="multipart/form-data"]').forEach(function(form){
+    form.addEventListener('submit', function(){
+      var input = form.querySelector('input[type=file]');
+      if (input && input.files && input.files[0]) {
+        document.getElementById('aiFile').textContent = input.files[0].name;
+      }
+      overlay.classList.add('on');
+      run(0);
+      timer = setInterval(pushLog, 550);
+    });
+  });
+})();
+</script>
+
 <div class="page-header">
   <h1 class="page-title">🧠 Pokea Dataset</h1>
   <p class="page-subtitle">Pakia data ya muundo wowote — AI itaipanga kwa ajili yako</p>
