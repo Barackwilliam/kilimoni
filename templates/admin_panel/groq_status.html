@@ -1,93 +1,77 @@
 {% extends 'admin_panel/base.html' %}
-{% block title %}Groq AI Status{% endblock %}
-{% block page_title %}🤖 Groq AI — Hali ya Muunganiko{% endblock %}
+
+{% comment %}
+Ukurasa wa ndani wa JamiiTek. Hauna majina ya watoa huduma wala
+maelezo ya bei — mfumo huu unakabidhiwa kwa mteja.
+{% endcomment %}
+
 {% block content %}
+<div class="page-header">
+  <h1 class="page-title">🤖 Injini ya AI</h1>
+  <p class="page-subtitle">Hali ya muunganiko wa injini ya majibu</p>
+</div>
 
-<div class="grid-2">
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">Hali ya Groq AI</div>
-    </div>
-
-    <!-- Status indicator -->
-    <div style="text-align:center;padding:24px 0;">
-      {% if groq_key_set %}
-        <div style="font-size:48px;">🟢</div>
-        <div style="font-size:15px;font-weight:600;color:#16a34a;margin-top:8px;">API Key imewekwa</div>
-        <div style="font-size:13px;color:#6b7280;margin-top:4px;">GROQ_API_KEY ipo kwenye .env</div>
-      {% else %}
-        <div style="font-size:48px;">🔴</div>
-        <div style="font-size:15px;font-weight:600;color:#dc2626;margin-top:8px;">API Key haijawekwa</div>
-        <div style="font-size:13px;color:#6b7280;margin-top:4px;">GROQ_API_KEY haipo kwenye .env</div>
-      {% endif %}
-    </div>
-
-    <!-- Test button -->
-    <form method="post" style="text-align:center;">
-      {% csrf_token %}
-      <button type="submit" class="btn btn-primary">
-        🧪 Jaribu Muunganiko wa Groq
-      </button>
-    </form>
-
-    <!-- Result -->
-    {% if result %}
-    <div style="margin-top:20px;padding:16px;border-radius:8px;
-      background:{% if result.ok %}#dcfce7{% else %}#fee2e2{% endif %};">
-      {% if result.ok %}
-        <div style="color:#16a34a;font-weight:700;margin-bottom:8px;">✅ Groq AI inafanya kazi!</div>
-        <div style="font-size:13px;">
-          <strong>Model:</strong> {{ result.model }}<br>
-          <strong>Jibu la test:</strong> "{{ result.response }}"
-        </div>
-      {% else %}
-        <div style="color:#dc2626;font-weight:700;margin-bottom:8px;">❌ Hitilafu ya Muunganiko</div>
-        <div style="font-size:13px;color:#374151;">{{ result.error }}</div>
-      {% endif %}
-    </div>
+<div class="card" style="max-width:620px;">
+  <div class="card-header">
+    <div class="card-title">Hali ya Sasa</div>
+    {% if groq_key_set %}
+      <div class="badge badge-success">Imesanidiwa</div>
+    {% else %}
+      <div class="badge badge-danger">Haijasanidiwa</div>
     {% endif %}
   </div>
 
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">📋 Jinsi ya Kupata Groq API Key (BURE)</div>
-    </div>
-    <div style="font-size:13px;line-height:1.8;">
-      <div style="display:flex;gap:12px;margin-bottom:14px;align-items:flex-start;">
-        <div style="background:#2d6a4f;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">1</div>
-        <div>Nenda <a href="https://console.groq.com" target="_blank" style="color:#2d6a4f;font-weight:600;">console.groq.com</a></div>
+  <div style="padding:26px 20px;text-align:center;">
+    {% if groq_key_set %}
+      <div style="font-size:42px;">🟢</div>
+      <div style="margin-top:10px;font-weight:700;color:#15803d;font-size:17px;">
+        Injini imesanidiwa
       </div>
-      <div style="display:flex;gap:12px;margin-bottom:14px;align-items:flex-start;">
-        <div style="background:#2d6a4f;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">2</div>
-        <div>Bonyeza <strong>"Sign Up"</strong> — tumia email yako tu, hakuna credit card</div>
+    {% else %}
+      <div style="font-size:42px;">🔴</div>
+      <div style="margin-top:10px;font-weight:700;color:#b91c1c;font-size:17px;">
+        Injini haijasanidiwa
       </div>
-      <div style="display:flex;gap:12px;margin-bottom:14px;align-items:flex-start;">
-        <div style="background:#2d6a4f;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">3</div>
-        <div>Baada ya kuingia, bonyeza <strong>"API Keys"</strong> upande wa kushoto</div>
+      <div style="margin-top:6px;color:#6b7280;font-size:13px;">
+        Wasiliana na JamiiTek kusanidi.
       </div>
-      <div style="display:flex;gap:12px;margin-bottom:14px;align-items:flex-start;">
-        <div style="background:#2d6a4f;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">4</div>
-        <div>Bonyeza <strong>"Create API Key"</strong> → Copy key inayoanza na <code>gsk_...</code></div>
-      </div>
-      <div style="display:flex;gap:12px;margin-bottom:14px;align-items:flex-start;">
-        <div style="background:#2d6a4f;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">5</div>
-        <div>Fungua faili <strong>.env</strong> ya project yako na weka:<br>
-          <code style="background:#f3f4f6;padding:4px 8px;border-radius:4px;font-size:12px;">GROQ_API_KEY=gsk_xxxxxxxxxxxxx</code>
-        </div>
-      </div>
-      <div style="display:flex;gap:12px;align-items:flex-start;">
-        <div style="background:#2d6a4f;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">6</div>
-        <div>Restart server: <code style="background:#f3f4f6;padding:4px 8px;border-radius:4px;font-size:12px;">python manage.py runserver</code><br>
-          Kisha rudi hapa na bonyeza <strong>"Jaribu Muunganiko"</strong>
-        </div>
-      </div>
+    {% endif %}
 
-      <div style="margin-top:20px;padding:14px;background:#fef3c7;border-radius:8px;border-left:4px solid #d97706;">
-        <strong>💡 Bei ya Groq:</strong><br>
-        LLaMA 3.3 70B ni <strong>BURE kabisa</strong> — hakuna malipo yoyote.<br>
-        Kasi: takriban jibu kwa <strong>sekunde 1-2</strong> tu.
+    <form method="post" style="margin-top:20px;">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">🧪 Jaribu Muunganiko</button>
+    </form>
+  </div>
+
+  {% if result %}
+    {% if result.ok %}
+    <div style="background:#f0fdf4;border-left:4px solid #16a34a;
+                padding:16px 18px;border-radius:8px;margin:0 20px 20px;">
+      <div style="font-weight:700;color:#15803d;margin-bottom:6px;">
+        ✅ Injini inafanya kazi
+      </div>
+      <div style="font-size:13px;color:#374151;">
+        Jibu la jaribio: <em>"{{ result.response }}"</em>
       </div>
     </div>
+    {% else %}
+    <div style="background:#fef2f2;border-left:4px solid #dc2626;
+                padding:16px 18px;border-radius:8px;margin:0 20px 20px;">
+      <div style="font-weight:700;color:#dc2626;margin-bottom:6px;">
+        ❌ Muunganiko umeshindikana
+      </div>
+      <div style="font-size:13px;color:#374151;word-break:break-word;">
+        {{ result.error }}
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="card" style="max-width:620px;margin-top:18px;">
+  <div style="padding:18px 20px;font-size:13px;color:#6b7280;">
+    🔒 Ukurasa huu ni wa matumizi ya ndani ya
+    <strong>JamiiTek Digital Agency</strong>.
   </div>
 </div>
 {% endblock %}

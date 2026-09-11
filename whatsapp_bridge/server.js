@@ -352,9 +352,14 @@ async function connectToWhatsApp() {
                     }
                 }
 
+                // JID huwa na kiambishi cha kifaa: "255712345678:0@s.whatsapp.net"
+                // Bila kuondoa ":0", tarakimu hiyo huungana na namba na
+                // mkulima huhifadhiwa kama 2557123456780 — na akitumia
+                // simu pamoja na WhatsApp Web (:0 na :1) huonekana
+                // kama watu wawili tofauti.
                 const phone = sourceJid
-                    .replace('@s.whatsapp.net', '')
-                    .replace('@lid', '')
+                    .split('@')[0]
+                    .split(':')[0]
                     .replace(/\D/g, '');
 
                 if (!phone) {

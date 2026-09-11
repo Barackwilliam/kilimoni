@@ -15,6 +15,29 @@ from analytics.models import AnalyticsLog, AdminUser, ContentUpdate
 
 logger = logging.getLogger(__name__)
 
+
+# ── Huduma za ndani za JamiiTek ────────────────────
+# Kuficha kwenye menu hakutoshi — mteja anaweza kuandika URL
+# moja kwa moja. Hizi ni za msimamizi (superuser) pekee.
+def jamiitek_only(view_func):
+    from functools import wraps
+    from django.http import HttpResponseForbidden
+
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        if not request.user.is_superuser:
+            return HttpResponseForbidden(
+                '<div style="font-family:sans-serif;text-align:center;padding:80px;">'
+                '<div style="font-size:48px;">🔒</div>'
+                '<h2 style="color:#dc2626;">Huduma ya Msimamizi</h2>'
+                '<p style="color:#6b7280;">Ukurasa huu ni wa JamiiTek pekee.</p>'
+                '<a href="/dashboard/" style="color:#15803d;">Rudi Dashibodi</a></div>'
+            )
+        return view_func(request, *args, **kwargs)
+    return _wrapped
+
+
+
 # Mifano ya maswali kwa Test Bot (chat UI na classic form)
 SAMPLE_QUESTIONS = [
     "Ni mbegu gani ya mahindi nipande Singida?",
@@ -333,6 +356,7 @@ TEST_BOT_HISTORY_LIMIT = 60  # jumla ya bubbles (user+bot) zitakazohifadhiwa kwe
 
 
 @login_required
+@jamiitek_only
 def test_bot(request):
     """
     GET  → onyesha chat UI (test_bot_chat.html) na historia ya session ya admin huyu.
@@ -383,6 +407,7 @@ def test_bot(request):
 
 # ── Test Bot (classic form-based, backup ya zamani) ─
 @login_required
+@jamiitek_only
 def test_bot_classic(request):
     """Toleo la zamani la ukurasa wa test — bado linapatikana kama backup."""
     response_text = ''
@@ -402,6 +427,7 @@ def test_bot_classic(request):
 
 # ── CSV Import ─────────────────────────────────────────
 @login_required
+@jamiitek_only
 def csv_import_view(request):
     result = None
     if request.method == 'POST' and request.FILES.get('csv_file'):
@@ -493,6 +519,7 @@ def _mask_secret(value: str, keep: int = 4) -> str:
 
 
 @login_required
+@jamiitek_only
 def system_status(request):
     # ── Database check ──
     db_ok = True
@@ -502,9 +529,9 @@ def system_status(request):
             cursor.execute('SELECT 1')
         engine = connection.settings_dict.get('ENGINE', '')
         if 'postgresql' in engine:
-            db_detail = f"Postgres (Supabase) — {connection.settings_dict.get('HOST', '')}"
+            db_detail = "Postgres — imeunganishwa"
         else:
-            db_detail = 'SQLite (local dev)'
+            db_detail = 'SQLite (majaribio)'
     except Exception as e:
         db_ok = False
         db_detail = f"Hitilafu: {e}"
@@ -546,6 +573,7 @@ def system_status(request):
 
 # ── Groq AI Status (groq_status.html) ──────────────
 @login_required
+@jamiitek_only
 def groq_status_view(request):
     groq_key_set = bool(getattr(settings, 'GROQ_API_KEY', ''))
     result = None
@@ -610,6 +638,7 @@ def _bridge_url() -> str:
 
 
 @login_required
+@jamiitek_only
 def whatsapp_connect(request):
     """Ukurasa wa kuunganisha WhatsApp kwa kuscan QR (badala ya terminal)."""
     return render(request, 'admin_panel/whatsapp_connect.html', {
@@ -618,6 +647,7 @@ def whatsapp_connect(request):
 
 
 @login_required
+@jamiitek_only
 def whatsapp_qr_api(request):
     """
     Proxy kwenda kwa bridge ya Baileys.
@@ -640,6 +670,7 @@ def whatsapp_qr_api(request):
 
 
 @login_required
+@jamiitek_only
 def whatsapp_logout(request):
     """Ondoa muunganisho ili uunganishe namba nyingine."""
     if request.method != 'POST':
@@ -656,3 +687,60 @@ def whatsapp_logout(request):
     except Exception as e:
         logger.error(f"Bridge logout error: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=200)
+
+
+# ── Huduma & Malipo ────────────────────────────────
+@login_required
+def billing_view(request):
+    """
+    Ukurasa unaomwonyesha mteja thamani anayoipata, hali ya
+    malipo, na jinsi ya kulipa. Takwimu ndizo hoja — si maneno.
+    """
+    from admin_panel.models import Subscription, Payment
+    from analytics.models import AnalyticsLog
+    from django.db.models import Avg
+
+    sub = Subscription.current()
+    now = timezone.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # ── Takwimu za mwezi huu — hizi ndizo zinazoonyesha thamani ──
+    farmers_total = User.objects.count()
+    farmers_month = User.objects.filter(first_seen_at__gte=month_start).count()
+    msgs_month = Conversation.objects.filter(
+        created_at__gte=month_start, message_direction='inbound'
+    ).count()
+    msgs_total = Conversation.objects.filter(message_direction='inbound').count()
+
+    logs_month = AnalyticsLog.objects.filter(created_at__gte=month_start)
+    total_logs = logs_month.count()
+    success_logs = logs_month.filter(success_flag=True).count()
+    success_rate = round((success_logs / total_logs * 100), 1) if total_logs else 0
+    avg_ms = logs_month.aggregate(a=Avg('response_time_ms'))['a'] or 0
+
+    # Maswali yaliyojibiwa nje ya saa za kazi — hoja nzuri sana
+    after_hours = Conversation.objects.filter(
+        created_at__gte=month_start,
+        message_direction='inbound',
+    ).exclude(created_at__hour__gte=8, created_at__hour__lt=17).count()
+
+    payments = Payment.objects.all()[:12]
+    total_paid = sum(p.amount for p in payments)
+
+    return render(request, 'admin_panel/billing.html', {
+        'sub': sub,
+        'farmers_total': farmers_total,
+        'farmers_month': farmers_month,
+        'msgs_month': msgs_month,
+        'msgs_total': msgs_total,
+        'success_rate': success_rate,
+        'avg_seconds': round(avg_ms / 1000, 1),
+        'after_hours': after_hours,
+        'payments': payments,
+        'total_paid': total_paid,
+        'MPESA_NUMBER': getattr(settings, 'MPESA_NUMBER', ''),
+        'MIXX_NUMBER': getattr(settings, 'MIXX_NUMBER', ''),
+        'BANK_NAME': getattr(settings, 'BANK_NAME', ''),
+        'BANK_ACCOUNT': getattr(settings, 'BANK_ACCOUNT', ''),
+        'page': 'billing',
+    })

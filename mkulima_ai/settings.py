@@ -40,6 +40,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # JamiiTek — usimamizi wa hali ya huduma kutoka paneli kuu
+    'jamiitek_middleware.JamiiTekStatusMiddleware',
 ]
 
 ROOT_URLCONF = 'mkulima_ai.urls'
@@ -219,4 +221,23 @@ GREENAPI_TOKEN = config('GREENAPI_TOKEN', default='')
 
 # Groq AI (fallback yenye akili)
 GROQ_API_KEY = config('GROQ_API_KEY', default='')
-GROQ_MODEL = config('GROQ_MODEL', default='llama-3.3-70b-versatile')
+GROQ_MODEL = config('GROQ_MODEL', default='openai/gpt-oss-120b')
+GROQ_REASONING = config('GROQ_REASONING', default='low')
+
+# ─────────────────────────────────────────────
+#  Malipo — JamiiTek Digital Agency
+# ─────────────────────────────────────────────
+MPESA_NUMBER = config('MPESA_NUMBER', default='0750910158')
+MIXX_NUMBER = config('MIXX_NUMBER', default='')
+BANK_NAME = config('BANK_NAME', default='')
+BANK_ACCOUNT = config('BANK_ACCOUNT', default='')
+
+
+# ─────────────────────────────────────────────
+#  JamiiTek — usimamizi wa hali ya huduma
+# ─────────────────────────────────────────────
+# API key ya Kilimoni AI kutoka paneli ya JamiiTek.
+# Inaruhusu KUSOMA hali ya huduma tu — haiwezi kubadilisha kitu,
+# kwa hiyo ni salama kukaa hapa kama website nyingine za wateja.
+JAMIITEK_API_KEY = "dU5VmQQtDMO4DRyxhxp6C4kOfFDUWa_3QEssiWcFTslhsKvgP8gsO5LQwCxdYEbh"
+JAMIITEK_API_URL = "https://jamiitek.co.tz/api/site-status/"

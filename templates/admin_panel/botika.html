@@ -64,7 +64,7 @@
   <!-- Database -->
   <div class="status-card {% if db_ok %}ok{% else %}error{% endif %}">
     <div class="status-icon">🗄️</div>
-    <div class="status-label">Database (Supabase)</div>
+    <div class="status-label">Database</div>
     <div class="status-value {% if db_ok %}ok{% else %}error{% endif %}">
       {% if db_ok %}✅ Connected{% else %}❌ Failed{% endif %}
     </div>
@@ -81,10 +81,10 @@
     <div class="status-detail">{{ token_preview }}</div>
   </div>
 
-  <!-- Groq AI -->
+  <!-- Injini ya AI -->
   <div class="status-card {% if groq_ok %}ok{% else %}warning{% endif %}">
     <div class="status-icon">🤖</div>
-    <div class="status-label">Groq AI (LLaMA)</div>
+    <div class="status-label">Injini ya AI</div>
     <div class="status-value {% if groq_ok %}ok{% else %}warning{% endif %}">
       {% if groq_ok %}✅ Online{% else %}⚠️ Offline{% endif %}
     </div>
@@ -137,7 +137,7 @@
         {% endif %}
       </div>
       {% if not token_ok %}
-      <div class="check-action">→ Nenda Meta Developer Console → copy Access Token mpya</div>
+      <div class="check-action">→ Nenda Kituo cha Msanidi → copy Access Token mpya</div>
       {% endif %}
     </div>
   </div>
@@ -146,7 +146,7 @@
     <div class="check-dot warning">!</div>
     <div class="check-body">
       <div class="check-title">Token ni ya muda (24hr) — Lazima iburudishwe kila siku</div>
-      <div class="check-desc">Test token kutoka Meta Developer Console inaisha baada ya masaa 24. Kwa production, tengeneza <strong>System User Permanent Token</strong> kupitia Meta Business Manager.</div>
+      <div class="check-desc">Test token kutoka Kituo cha Msanidi inaisha baada ya masaa 24. Kwa production, tengeneza <strong>System User Permanent Token</strong> kupitia Meta Business Manager.</div>
       <div class="check-action">→ Meta Business Manager → System Users → Generate Token (Never Expires)</div>
     </div>
   </div>
@@ -221,8 +221,8 @@
       <div class="step">
         <div class="step-num">1</div>
         <div class="step-body">
-          <div class="step-title">Fungua Meta Developer Console</div>
-          <div class="step-desc">developers.facebook.com → App yako → WhatsApp → Configuration</div>
+          <div class="step-title">Fungua Kituo cha Msanidi</div>
+          <div class="step-desc">Kituo cha msanidi → App → WhatsApp → Configuration</div>
         </div>
       </div>
       <div class="step">
@@ -243,7 +243,7 @@
         <div class="step-num">4</div>
         <div class="step-body">
           <div class="step-title">Copy Access Token Mpya</div>
-          <div class="step-desc">WhatsApp → API Setup → copy token → weka kwenye Render Environment Variables kama <strong>WHATSAPP_API_TOKEN</strong></div>
+          <div class="step-desc">WhatsApp → API Setup → copy token → weka kwenye mipangilio ya mfumo</div>
         </div>
       </div>
       <div class="step">
@@ -261,12 +261,9 @@
 <div class="card" style="margin-top:16px;">
   <div class="card-header"><div class="card-title">🚀 Viungo vya Haraka</div></div>
   <div style="display:flex;flex-wrap:wrap;gap:10px;">
-    <a href="https://developers.facebook.com/apps/{{ whatsapp_app_id }}/whatsapp-business/wa-configurations-v2/" target="_blank" class="btn btn-primary">📱 Meta Developer Console</a>
-    <a href="https://dashboard.render.com" target="_blank" class="btn btn-secondary">🖥️ Render Dashboard</a>
-    <a href="https://console.groq.com" target="_blank" class="btn btn-secondary">🤖 Groq Console</a>
     <a href="{% url 'test_bot' %}" class="btn btn-gold">🧪 Jaribu Bot Ndani</a>
     <a href="{% url 'conversations' %}" class="btn btn-secondary">💬 Angalia Mazungumzo</a>
-    <a href="{% url 'groq_status' %}" class="btn btn-secondary">🤖 Groq AI Status</a>
+    <a href="{% url 'groq_status' %}" class="btn btn-secondary">🤖 Injini ya AI Status</a>
   </div>
 </div>
 

@@ -1,0 +1,218 @@
+{% extends 'admin_panel/base.html' %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">💳 Huduma &amp; Malipo</h1>
+  <p class="page-subtitle">Hali ya huduma yako na taarifa za malipo</p>
+</div>
+
+<!-- ── HALI YA HUDUMA ── -->
+<div class="card" style="max-width:900px;">
+  <div class="card-header">
+    <div class="card-title">{{ sub.plan_name }}</div>
+    {% if sub.status == 'trial' %}
+      <div class="badge badge-warning">Ofa ya Uzinduzi</div>
+    {% elif sub.status == 'active' %}
+      <div class="badge badge-success">Imelipwa</div>
+    {% elif sub.status == 'pending' %}
+      <div class="badge badge-warning">Inasubiri Malipo</div>
+    {% elif sub.status == 'overdue' %}
+      <div class="badge badge-danger">Imechelewa</div>
+    {% else %}
+      <div class="badge badge-danger">Imesitishwa</div>
+    {% endif %}
+  </div>
+
+  <div style="padding:24px;">
+
+    {% if sub.status == 'trial' %}
+      <div style="background:#fefce8;border-left:4px solid #eab308;padding:16px 18px;border-radius:8px;margin-bottom:20px;">
+        <div style="font-weight:700;color:#854d0e;margin-bottom:6px;">
+          🎁 Mwezi wa kwanza ni ofa ya uzinduzi
+        </div>
+        <div style="font-size:14px;color:#713f12;">
+          Huduma inaendelea bila malipo hadi <strong>{{ sub.due_date|date:"d M Y" }}</strong>.
+          Malipo ya kwanza yataanza baada ya hapo.
+        </div>
+      </div>
+    {% elif sub.status == 'overdue' %}
+      <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:16px 18px;border-radius:8px;margin-bottom:20px;">
+        <div style="font-weight:700;color:#991b1b;margin-bottom:6px;">
+          ⚠️ Malipo yamechelewa kwa siku {{ sub.days_overdue }}
+        </div>
+        <div style="font-size:14px;color:#7f1d1d;">
+          {% if sub.grace_left %}
+            Huduma itaendelea kwa siku <strong>{{ sub.grace_left }}</strong> zaidi.
+          {% else %}
+            Muda wa neema umeisha. Tafadhali wasiliana na JamiiTek.
+          {% endif %}
+        </div>
+      </div>
+    {% elif not sub.service_active %}
+      <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:16px 18px;border-radius:8px;margin-bottom:20px;">
+        <div style="font-weight:700;color:#991b1b;">🔒 Huduma imesitishwa kwa muda</div>
+        <div style="font-size:14px;color:#7f1d1d;margin-top:6px;">
+          Bot haiwajibu wakulima kwa sasa. Wasiliana na JamiiTek kurejesha huduma.
+        </div>
+      </div>
+    {% endif %}
+
+    <div style="display:flex;flex-wrap:wrap;gap:28px;">
+      <div>
+        <div class="form-label">Ada ya mwezi</div>
+        <div style="font-size:30px;font-weight:800;color:#15803d;">
+          TZS {{ sub.monthly_fee|floatformat:0 }}
+        </div>
+      </div>
+      <div>
+        <div class="form-label">Tarehe ya malipo yajayo</div>
+        <div style="font-size:18px;font-weight:700;color:#1f2937;margin-top:6px;">
+          {{ sub.due_date|date:"d M Y" }}
+        </div>
+        <div style="font-size:13px;color:#6b7280;margin-top:3px;">
+          {% if sub.days_remaining >= 0 %}
+            Siku {{ sub.days_remaining }} zimebaki
+          {% else %}
+            Imepita siku {{ sub.days_overdue }}
+          {% endif %}
+        </div>
+      </div>
+      <div>
+        <div class="form-label">Hali ya mfumo</div>
+        <div style="font-size:18px;font-weight:700;margin-top:6px;
+                    color:{% if sub.service_active %}#15803d{% else %}#b91c1c{% endif %};">
+          {% if sub.service_active %}🟢 Unafanya kazi{% else %}🔴 Umesitishwa{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid #e5e7eb;">
+      <div class="form-label" style="margin-bottom:10px;">Huduma inajumuisha</div>
+      <div style="font-size:14px;color:#374151;line-height:2;">
+        ✓ Uendeshaji wa mfumo saa 24 kwa siku 7<br>
+        ✓ Akili bandia (AI) inayojibu maswali ya wakulima<br>
+        ✓ Hifadhi salama ya data na mazungumzo<br>
+        ✓ Usimamizi wa muunganisho wa WhatsApp<br>
+        ✓ Kuongeza na kusasisha maudhui ya kilimo<br>
+        ✓ Matengenezo, masasisho, na msaada wa kiufundi
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── THAMANI: TAKWIMU ── -->
+<div class="card" style="max-width:900px;margin-top:20px;">
+  <div class="card-header">
+    <div class="card-title">📊 Ulichokipata Mwezi Huu</div>
+  </div>
+  <div style="padding:22px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px;">
+
+      <div style="background:#f0fdf4;padding:16px;border-radius:10px;">
+        <div style="font-size:28px;font-weight:800;color:#15803d;">{{ farmers_total }}</div>
+        <div style="font-size:13px;color:#374151;margin-top:3px;">Wakulima waliosajiliwa</div>
+        {% if farmers_month %}
+          <div style="font-size:12px;color:#16a34a;margin-top:3px;">+{{ farmers_month }} mwezi huu</div>
+        {% endif %}
+      </div>
+
+      <div style="background:#eff6ff;padding:16px;border-radius:10px;">
+        <div style="font-size:28px;font-weight:800;color:#1d4ed8;">{{ msgs_month }}</div>
+        <div style="font-size:13px;color:#374151;margin-top:3px;">Maswali yaliyojibiwa</div>
+        <div style="font-size:12px;color:#2563eb;margin-top:3px;">{{ msgs_total }} tangu kuanza</div>
+      </div>
+
+      <div style="background:#fefce8;padding:16px;border-radius:10px;">
+        <div style="font-size:28px;font-weight:800;color:#a16207;">{{ success_rate }}%</div>
+        <div style="font-size:13px;color:#374151;margin-top:3px;">Maswali yaliyopata jibu</div>
+      </div>
+
+      <div style="background:#faf5ff;padding:16px;border-radius:10px;">
+        <div style="font-size:28px;font-weight:800;color:#7e22ce;">{{ avg_seconds }}s</div>
+        <div style="font-size:13px;color:#374151;margin-top:3px;">Wastani wa kujibu</div>
+      </div>
+
+    </div>
+
+    {% if after_hours %}
+    <div style="margin-top:18px;background:#f0fdf4;border-left:4px solid #16a34a;
+                padding:14px 18px;border-radius:8px;">
+      <div style="font-size:14px;color:#166534;">
+        🌙 <strong>{{ after_hours }}</strong> kati ya maswali hayo yalijibiwa
+        <strong>nje ya saa za kazi</strong> — usiku na wikendi, bila mtu kuwepo ofisini.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── MALIPO ── -->
+<div class="card" style="max-width:900px;margin-top:20px;">
+  <div class="card-header">
+    <div class="card-title">💰 Jinsi ya Kulipa</div>
+  </div>
+  <div style="padding:22px;">
+    <div style="font-size:14px;color:#374151;margin-bottom:16px;">
+      Malipo yanafanyika kwa <strong>JamiiTek Digital Agency</strong>.
+    </div>
+
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:18px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;font-size:14px;">
+        <div>
+          <div style="font-weight:700;color:#15803d;margin-bottom:4px;">📱 M-Pesa</div>
+          <div style="color:#374151;">{{ MPESA_NUMBER|default:"—" }}</div>
+          <div style="color:#6b7280;font-size:13px;">JamiiTek Digital Agency</div>
+        </div>
+        <div>
+          <div style="font-weight:700;color:#15803d;margin-bottom:4px;">📱 Mixx by Yas</div>
+          <div style="color:#374151;">{{ MIXX_NUMBER|default:"—" }}</div>
+          <div style="color:#6b7280;font-size:13px;">JamiiTek Digital Agency</div>
+        </div>
+        <div>
+          <div style="font-weight:700;color:#15803d;margin-bottom:4px;">🏦 Benki</div>
+          <div style="color:#374151;">{{ BANK_ACCOUNT|default:"—" }}</div>
+          <div style="color:#6b7280;font-size:13px;">{{ BANK_NAME|default:"" }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;font-size:13px;color:#6b7280;">
+      Baada ya kulipa, tuma uthibitisho kwa JamiiTek ili rekodi isasishwe.
+    </div>
+  </div>
+</div>
+
+<!-- ── HISTORIA ── -->
+<div class="card" style="max-width:900px;margin-top:20px;">
+  <div class="card-header">
+    <div class="card-title">🧾 Historia ya Malipo</div>
+    {% if total_paid %}
+      <div class="badge badge-success">Jumla: TZS {{ total_paid|floatformat:0 }}</div>
+    {% endif %}
+  </div>
+
+  {% if payments %}
+  <table class="table">
+    <thead>
+      <tr><th>Tarehe</th><th>Kipindi</th><th>Njia</th><th>Kumbukumbu</th><th>Kiasi</th></tr>
+    </thead>
+    <tbody>
+      {% for p in payments %}
+      <tr>
+        <td>{{ p.paid_on|date:"d M Y" }}</td>
+        <td>{{ p.period_label|default:"—" }}</td>
+        <td>{{ p.get_method_display }}</td>
+        <td style="color:#6b7280;font-size:13px;">{{ p.reference|default:"—" }}</td>
+        <td style="font-weight:700;color:#15803d;">TZS {{ p.amount|floatformat:0 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="padding:34px;text-align:center;color:#9ca3af;">
+    <div style="font-size:34px;">🧾</div>
+    <div style="margin-top:8px;">Hakuna malipo yaliyorekodiwa bado</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

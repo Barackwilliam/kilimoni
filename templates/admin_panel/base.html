@@ -6,33 +6,41 @@
 <title>{% block title %}Kilimoni AI – Dashboard{% endblock %}</title>
 <style>
 :root {
-  --green: #2d6a4f;
-  --green-dark: #1b4332;
-  --green-light: #52b788;
-  --gold: #d4a017;
-  --gold-light: #f4d03f;
-  --bg: #f0f4f1;
+  --green: #15803d;
+  --green-dark: #0f2e1d;
+  --green-mid: #14532d;
+  --green-light: #4ade80;
+  --gold: #eab308;
+  --bg: #f6f8f7;
   --white: #ffffff;
-  --text: #1a1a2e;
-  --text-muted: #6b7280;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: #e8edea;
   --danger: #dc2626;
   --success: #16a34a;
   --warning: #d97706;
-  --sidebar-w: 240px;
-  --radius: 10px;
-  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  --sidebar-w: 252px;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06);
+  --shadow-lg: 0 4px 12px rgba(16,24,40,.06), 0 20px 48px rgba(16,24,40,.10);
 }
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: 'Segoe UI', Arial, sans-serif; background:var(--bg); color:var(--text); display:flex; min-height:100vh; }
+body {
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;
+  background:var(--bg); color:var(--text); display:flex; min-height:100vh;
+  -webkit-font-smoothing:antialiased; letter-spacing:-0.01em;
+}
 
 /* Sidebar */
 .sidebar {
-  width:var(--sidebar-w); background:var(--green-dark); color:#fff;
+  width:var(--sidebar-w);
+  background:linear-gradient(180deg, var(--green-mid) 0%, var(--green-dark) 100%);
+  color:#fff;
   position:fixed; top:0; left:0; height:100vh; overflow-y:auto;
   display:flex; flex-direction:column; z-index:100;
 }
 .sidebar-logo {
-  padding:24px 20px 16px; border-bottom:1px solid rgba(255,255,255,0.1);
+  padding:26px 22px 20px; border-bottom:1px solid rgba(255,255,255,0.08);
 }
 .sidebar-logo h1 { font-size:17px; font-weight:700; color:#fff; }
 .sidebar-logo span { font-size:11px; color:var(--green-light); display:block; margin-top:2px; }
@@ -40,13 +48,18 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background:var(--bg); color:v
 .nav-section { font-size:10px; font-weight:700; color:rgba(255,255,255,0.4);
   text-transform:uppercase; letter-spacing:1px; padding:12px 20px 4px; }
 .nav-link {
-  display:flex; align-items:center; gap:10px;
-  padding:10px 20px; color:rgba(255,255,255,0.8);
-  text-decoration:none; font-size:14px; transition:all .2s;
+  display:flex; align-items:center; gap:11px;
+  padding:10px 14px; margin:2px 12px; border-radius:10px;
+  color:rgba(255,255,255,0.72);
+  text-decoration:none; font-size:14px; font-weight:500;
+  transition:background .16s ease, color .16s ease, transform .16s ease;
 }
-.nav-link:hover, .nav-link.active {
-  background:rgba(255,255,255,0.1); color:#fff;
-  border-left:3px solid var(--gold);
+.nav-link:hover {
+  background:rgba(255,255,255,0.07); color:#fff; transform:translateX(2px);
+}
+.nav-link.active {
+  background:rgba(255,255,255,0.13); color:#fff; font-weight:600;
+  box-shadow:inset 3px 0 0 var(--green-light);
 }
 .nav-link .icon { font-size:16px; width:20px; }
 .nav-badge {
@@ -79,27 +92,34 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background:var(--bg); color:v
 /* Cards */
 .card {
   background:var(--white); border-radius:var(--radius);
-  box-shadow:var(--shadow); padding:20px;
+  box-shadow:var(--shadow); padding:22px;
+  border:1px solid var(--border);
+  transition:box-shadow .22s ease, transform .22s ease;
 }
+.card:hover { box-shadow:var(--shadow-lg); }
 .card-header {
   display:flex; justify-content:space-between; align-items:center;
-  margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid #f0f0f0;
+  margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--border);
 }
-.card-title { font-size:15px; font-weight:600; }
+.card-title { font-size:15.5px; font-weight:650; letter-spacing:-0.015em; }
 
 /* Stat cards */
 .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:24px; }
 .stat-card {
   background:var(--white); border-radius:var(--radius);
-  padding:20px 24px; box-shadow:var(--shadow);
-  border-left:4px solid var(--green);
+  padding:22px 24px; box-shadow:var(--shadow);
+  border:1px solid var(--border); border-left:4px solid var(--green);
   display:flex; flex-direction:column; gap:6px;
+  transition:transform .22s ease, box-shadow .22s ease;
 }
+.stat-card:hover { transform:translateY(-3px); box-shadow:var(--shadow-lg); }
 .stat-card.gold { border-left-color:var(--gold); }
 .stat-card.danger { border-left-color:var(--danger); }
 .stat-card.blue { border-left-color:#3b82f6; }
-.stat-label { font-size:12px; color:var(--text-muted); font-weight:500; text-transform:uppercase; letter-spacing:.5px; }
-.stat-value { font-size:32px; font-weight:700; color:var(--text); }
+.stat-label { font-size:11.5px; color:var(--text-muted); font-weight:600;
+  text-transform:uppercase; letter-spacing:.07em; }
+.stat-value { font-size:34px; font-weight:750; color:var(--text);
+  letter-spacing:-0.03em; line-height:1.1; }
 .stat-sub { font-size:12px; color:var(--text-muted); }
 
 /* Grid layouts */
@@ -109,7 +129,7 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background:var(--bg); color:v
 /* Tables */
 .table-wrap { overflow-x:auto; }
 table { width:100%; border-collapse:collapse; font-size:14px; }
-th { background:#f8f9fa; padding:10px 14px; text-align:left; font-size:12px;
+th { background:#fafbfa; padding:12px 15px; text-align:left; font-size:11.5px;
   font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px;
   border-bottom:2px solid #e5e7eb; }
 td { padding:10px 14px; border-bottom:1px solid #f0f0f0; vertical-align:middle; }
@@ -207,15 +227,23 @@ textarea.form-control { resize:vertical; min-height:100px; }
     <a href="{% url 'dashboard_home' %}" class="nav-link {% if page == 'home' %}active{% endif %}">
       <span class="icon">📊</span> Dashibodi
     </a>
+    {% if user.is_superuser %}
     <a href="{% url 'test_bot' %}" class="nav-link {% if page == 'test_bot' %}active{% endif %}">
       <span class="icon">🧪</span> Jaribu Bot
     </a>
+    {% endif %}
+    <a href="{% url 'billing' %}" class="nav-link {% if page == 'billing' %}active{% endif %}">
+      <span class="icon">💳</span> Huduma &amp; Malipo
+    </a>
+    {% if user.is_superuser %}
     <a href="{% url 'whatsapp_connect' %}" class="nav-link {% if page == 'whatsapp_connect' %}active{% endif %}">
       <span class="icon">📱</span> Unganisha WhatsApp
     </a>
     <a href="{% url 'system_status' %}" class="nav-link {% if page == 'system_status' %}active{% endif %}">
       <span class="icon">🔧</span> System Status
     </a>
+
+    {% endif %}
 
     <div class="nav-section">Watumiaji</div>
     <a href="{% url 'conversations' %}" class="nav-link {% if page == 'conversations' %}active{% endif %}">
@@ -239,15 +267,19 @@ textarea.form-control { resize:vertical; min-height:100px; }
     <a href="{% url 'synonyms_list' %}" class="nav-link {% if page == 'synonyms' %}active{% endif %}">
       <span class="icon">🔤</span> Synonyms
     </a>
+    {% if user.is_superuser %}
     <a href="{% url 'csv_import' %}" class="nav-link {% if page == 'csv_import' %}active{% endif %}">
       <span class="icon">📥</span> Import CSV
     </a>
+    {% endif %}
     <a href="{% url 'analytics' %}" class="nav-link {% if page == 'analytics' %}active{% endif %}">
       <span class="icon">📈</span> Analytics
     </a>
+    {% if user.is_superuser %}
     <a href="/admin/" class="nav-link">
       <span class="icon">⚙️</span> Django Admin
     </a>
+    {% endif %}
   </nav>
   <div class="sidebar-footer">
     Kilimoni AI v1.0<br>
