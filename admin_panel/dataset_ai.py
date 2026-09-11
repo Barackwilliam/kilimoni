@@ -28,16 +28,44 @@ logger = logging.getLogger(__name__)
 # 1. KUSOMA FAILI ZA AINA MBALIMBALI
 # ═══════════════════════════════════════════════════════
 
-def read_any(uploaded_file):
+def list_sheets(uploaded_file):
+    """
+    Rudisha orodha ya sheets za Excel pamoja na idadi ya rows.
+    Faili za wateja mara nyingi zina sheets nyingi — README,
+    data halisi, vyanzo, ukaguzi. Lazima mtumiaji achague.
+    """
+    name = (uploaded_file.name or '').lower()
+    if not name.endswith(('.xlsx', '.xlsm')):
+        return []
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        return []
+    uploaded_file.seek(0)
+    wb = load_workbook(io.BytesIO(uploaded_file.read()), read_only=True, data_only=True)
+    out = []
+    for sheet in wb.sheetnames:
+        ws = wb[sheet]
+        out.append({
+            'name': sheet,
+            'rows': max(0, (ws.max_row or 1) - 1),
+            'cols': ws.max_column or 0,
+        })
+    uploaded_file.seek(0)
+    return out
+
+
+def read_any(uploaded_file, sheet_name=None):
     """
     Soma faili la aina yoyote na urudishe (headers, rows).
     rows ni orodha ya dict: {header: value}
     """
     name = (uploaded_file.name or '').lower()
+    uploaded_file.seek(0)
     raw = uploaded_file.read()
 
     if name.endswith(('.xlsx', '.xlsm')):
-        return _read_excel(raw)
+        return _read_excel(raw, sheet_name)
 
     if name.endswith('.json'):
         return _read_json(raw)
@@ -80,7 +108,7 @@ def _read_delimited(raw):
     return headers, rows
 
 
-def _read_excel(raw):
+def _read_excel(raw, sheet_name=None):
     try:
         from openpyxl import load_workbook
     except ImportError:
@@ -90,7 +118,13 @@ def _read_excel(raw):
         )
 
     wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-    ws = wb.active
+
+    if sheet_name and sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+    else:
+        # Sheet inayofunguka mara nyingi ni README. Chagua yenye
+        # data nyingi zaidi badala ya kubahatisha.
+        ws = max(wb.worksheets, key=lambda w: (w.max_row or 0) * (w.max_column or 0))
 
     rows_iter = ws.iter_rows(values_only=True)
     headers = []
@@ -131,6 +165,18 @@ def _read_json(raw):
 # ═══════════════════════════════════════════════════════
 
 TARGETS = {
+    'zone': {
+        'label': 'Kanda za Ikolojia (Zone)',
+        'model': 'crops.Zone',
+        'fields': {
+            'zone_name': 'Jina la kanda — LAZIMA',
+            'rain_pattern_simple': 'Mfumo wa mvua: msimu_mmoja, misimu_miwili, au wastani',
+            'rainfall_band_mm': 'Kiwango cha mvua, mfano "800-1500"',
+            'altitude_band_m': 'Mwinuko, mfano "1000-2500"',
+            'risk_factors': 'Hatari za kanda hii',
+            'notes': 'Maelezo mengine',
+        },
+    },
     'crop_profile': {
         'label': 'Maelezo ya Zao kwa Kanda (CropProfile)',
         'model': 'crops.CropProfile',
@@ -404,7 +450,20 @@ def _do_import(target_key, items):
 
     for idx, item in enumerate(items, start=1):
         try:
-            if target_key == 'crop_profile':
+            if target_key == 'zone':
+                zname = (item.get('zone_name') or '').strip()
+                if not zname:
+                    report['skipped'] += 1
+                    report['errors'].append(f"Row {idx}: jina la kanda halipo")
+                    continue
+                data = {k: v for k, v in item.items() if k != 'zone_name'}
+                data.setdefault('rain_pattern_simple', 'wastani')
+                obj, created = Zone.objects.update_or_create(
+                    zone_name=zname, defaults=data
+                )
+                report['created' if created else 'updated'] += 1
+
+            elif target_key == 'crop_profile':
                 crop = get_crop(item.get('crop_name_sw'))
                 if not crop:
                     report['skipped'] += 1

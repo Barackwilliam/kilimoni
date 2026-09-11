@@ -55,6 +55,41 @@
 </div>
 
 
+{% elif step == 'sheet' %}
+<!-- ═══ HATUA 1b: CHAGUA SHEET ═══ -->
+<div class="card" style="max-width:720px;">
+  <div class="card-header">
+    <div class="card-title">{{ filename }}</div>
+    <div class="badge badge-warning">Sheets {{ sheets|length }}</div>
+  </div>
+  <div style="padding:6px 2px;">
+    <div style="font-size:14px;color:#374151;margin-bottom:16px;">
+      Faili hili lina sheets nyingi. Chagua yenye data unayotaka kuingiza.
+    </div>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <input type="hidden" name="target" value="{{ target_key }}">
+      <div class="form-group">
+        <label class="form-label">Sheet</label>
+        <select name="sheet" class="form-control" required>
+          {% for s in sheets %}
+            <option value="{{ s.name }}">{{ s.name }} — rows {{ s.rows }}, columns {{ s.cols }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Pakia faili tena</label>
+        <input type="file" name="file" class="form-control"
+               accept=".xlsx,.xlsm" required>
+        <div style="font-size:12.5px;color:#6b7280;margin-top:5px;">
+          Browser haihifadhi faili — chagua lile lile tena.
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">🧠 Chambua sheet hii</button>
+    </form>
+  </div>
+</div>
+
 {% elif step == 'preview' %}
 <!-- ═══ HATUA 2: HAKIKI ═══ -->
 <div style="background:#fefce8;border-left:4px solid #eab308;padding:15px 18px;
@@ -68,7 +103,7 @@
 
 <div class="card" style="max-width:900px;">
   <div class="card-header">
-    <div class="card-title">{{ filename }} — {{ target_label }}</div>
+    <div class="card-title">{{ filename }}{% if sheet_name %} › {{ sheet_name }}{% endif %} — {{ target_label }}</div>
     {% if proposal.confidence == 'high' %}
       <div class="badge badge-success">Uhakika: juu</div>
     {% elif proposal.confidence == 'medium' %}

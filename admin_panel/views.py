@@ -768,8 +768,23 @@ def dataset_upload(request):
         context['error'] = 'Chagua faili na aina ya data.'
         return render(request, 'admin_panel/dataset.html', context)
 
+    sheet_name = request.POST.get('sheet') or None
+    sheets = dataset_ai.list_sheets(uploaded)
+
+    # Excel yenye sheets nyingi — mtumiaji achague kwanza
+    if sheets and len(sheets) > 1 and not sheet_name:
+        context.update({
+            'step': 'sheet',
+            'sheets': [s for s in sheets if s['rows'] > 0],
+            'filename': uploaded.name,
+            'target_key': target_key,
+            'error': None,
+        })
+        request.session['dataset_file_name'] = uploaded.name
+        return render(request, 'admin_panel/dataset.html', context)
+
     try:
-        headers, rows = dataset_ai.read_any(uploaded)
+        headers, rows = dataset_ai.read_any(uploaded, sheet_name)
     except Exception as e:
         logger.error(f"Dataset read error: {e}")
         context['error'] = f'Imeshindwa kusoma faili: {e}'
@@ -795,6 +810,7 @@ def dataset_upload(request):
         'target_key': target_key,
         'target_label': dataset_ai.TARGETS[target_key]['label'],
         'filename': uploaded.name,
+        'sheet_name': sheet_name or '',
         'headers': headers,
         'total_rows': len(rows),
         'proposal': proposal,
