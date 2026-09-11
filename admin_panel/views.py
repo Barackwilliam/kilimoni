@@ -744,3 +744,91 @@ def billing_view(request):
         'BANK_ACCOUNT': getattr(settings, 'BANK_ACCOUNT', ''),
         'page': 'billing',
     })
+
+
+# ── Dataset AI — kupokea data ya muundo wowote ─────
+@login_required
+@jamiitek_only
+def dataset_upload(request):
+    """
+    Hatua 1: pakia faili. AI inachambua na kupendekeza mapping,
+    kisha tunaonyesha hakiki. HAKUNA kinachoandikwa database bado.
+    """
+    from admin_panel import dataset_ai
+
+    context = {'targets': dataset_ai.TARGETS, 'page': 'dataset'}
+
+    if request.method != 'POST':
+        return render(request, 'admin_panel/dataset.html', context)
+
+    uploaded = request.FILES.get('file')
+    target_key = request.POST.get('target', '')
+
+    if not uploaded or target_key not in dataset_ai.TARGETS:
+        context['error'] = 'Chagua faili na aina ya data.'
+        return render(request, 'admin_panel/dataset.html', context)
+
+    try:
+        headers, rows = dataset_ai.read_any(uploaded)
+    except Exception as e:
+        logger.error(f"Dataset read error: {e}")
+        context['error'] = f'Imeshindwa kusoma faili: {e}'
+        return render(request, 'admin_panel/dataset.html', context)
+
+    if not rows:
+        context['error'] = 'Faili halina data yoyote.'
+        return render(request, 'admin_panel/dataset.html', context)
+
+    proposal = dataset_ai.propose_mapping(headers, rows, target_key)
+    items = dataset_ai.transform(rows, proposal['mapping'])
+    preview = dataset_ai.import_rows(target_key, items, dry_run=True)
+
+    # Hifadhi kwenye session ili hatua ya pili isirudie kusoma faili
+    request.session['dataset_pending'] = {
+        'target': target_key,
+        'items': items[:2000],
+        'filename': uploaded.name,
+    }
+
+    context.update({
+        'step': 'preview',
+        'target_key': target_key,
+        'target_label': dataset_ai.TARGETS[target_key]['label'],
+        'filename': uploaded.name,
+        'headers': headers,
+        'total_rows': len(rows),
+        'proposal': proposal,
+        'sample_items': items[:8],
+        'preview': preview,
+        'ready_count': len(items),
+    })
+    return render(request, 'admin_panel/dataset.html', context)
+
+
+@login_required
+@jamiitek_only
+def dataset_confirm(request):
+    """Hatua 2: msimamizi amethibitisha — sasa tunaandika database."""
+    from admin_panel import dataset_ai
+
+    pending = request.session.get('dataset_pending')
+    if request.method != 'POST' or not pending:
+        return redirect('dataset_upload')
+
+    report = dataset_ai.import_rows(
+        pending['target'], pending['items'], dry_run=False
+    )
+    request.session.pop('dataset_pending', None)
+
+    messages.success(
+        request,
+        f"Imekamilika: {report['created']} mpya, "
+        f"{report['updated']} zimesasishwa, {report['skipped']} zimerukwa."
+    )
+    return render(request, 'admin_panel/dataset.html', {
+        'targets': dataset_ai.TARGETS,
+        'step': 'done',
+        'report': report,
+        'filename': pending.get('filename', ''),
+        'page': 'dataset',
+    })

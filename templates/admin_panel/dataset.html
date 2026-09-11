@@ -1,0 +1,194 @@
+{% extends 'admin_panel/base.html' %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">🧠 Pokea Dataset</h1>
+  <p class="page-subtitle">Pakia data ya muundo wowote — AI itaipanga kwa ajili yako</p>
+</div>
+
+{% if error %}
+<div style="background:#fef2f2;border-left:4px solid #dc2626;padding:14px 18px;
+            border-radius:8px;margin-bottom:18px;max-width:860px;color:#991b1b;">
+  {{ error }}
+</div>
+{% endif %}
+
+
+{% if step == 'done' %}
+<!-- ═══ HATUA 3: IMEKAMILIKA ═══ -->
+<div class="card" style="max-width:720px;">
+  <div style="padding:30px;text-align:center;">
+    <div style="font-size:46px;">✅</div>
+    <div style="font-size:19px;font-weight:700;color:#15803d;margin-top:10px;">
+      Data imeingizwa
+    </div>
+    <div style="color:#6b7280;font-size:14px;margin-top:4px;">{{ filename }}</div>
+
+    <div style="display:flex;justify-content:center;gap:26px;margin-top:24px;">
+      <div>
+        <div style="font-size:26px;font-weight:800;color:#15803d;">{{ report.created }}</div>
+        <div style="font-size:12px;color:#6b7280;">Mpya</div>
+      </div>
+      <div>
+        <div style="font-size:26px;font-weight:800;color:#1d4ed8;">{{ report.updated }}</div>
+        <div style="font-size:12px;color:#6b7280;">Zimesasishwa</div>
+      </div>
+      <div>
+        <div style="font-size:26px;font-weight:800;color:#a16207;">{{ report.skipped }}</div>
+        <div style="font-size:12px;color:#6b7280;">Zimerukwa</div>
+      </div>
+    </div>
+
+    <a href="{% url 'dataset_upload' %}" class="btn btn-primary" style="margin-top:24px;">
+      Pakia faili lingine
+    </a>
+  </div>
+
+  {% if report.errors %}
+  <div style="border-top:1px solid #e5e7eb;padding:18px 22px;">
+    <div class="form-label" style="margin-bottom:8px;">Zilizorukwa</div>
+    <div style="font-size:13px;color:#6b7280;line-height:1.8;">
+      {% for e in report.errors %}• {{ e }}<br>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+
+{% elif step == 'preview' %}
+<!-- ═══ HATUA 2: HAKIKI ═══ -->
+<div style="background:#fefce8;border-left:4px solid #eab308;padding:15px 18px;
+            border-radius:8px;margin-bottom:18px;max-width:900px;">
+  <strong style="color:#854d0e;">⚠️ Hakiki kabla ya kuingiza</strong>
+  <div style="font-size:14px;color:#713f12;margin-top:5px;">
+    AI imependekeza mpangilio ufuatao. Hakuna kilichoandikwa kwenye
+    database bado — angalia kama ni sahihi, kisha thibitisha.
+  </div>
+</div>
+
+<div class="card" style="max-width:900px;">
+  <div class="card-header">
+    <div class="card-title">{{ filename }} — {{ target_label }}</div>
+    {% if proposal.confidence == 'high' %}
+      <div class="badge badge-success">Uhakika: juu</div>
+    {% elif proposal.confidence == 'medium' %}
+      <div class="badge badge-warning">Uhakika: wastani</div>
+    {% else %}
+      <div class="badge badge-danger">Uhakika: chini</div>
+    {% endif %}
+  </div>
+
+  <div style="padding:4px 2px 18px;">
+    <div style="display:flex;flex-wrap:wrap;gap:26px;margin-bottom:18px;">
+      <div><div class="form-label">Rows kwenye faili</div>
+        <div style="font-size:22px;font-weight:700;">{{ total_rows }}</div></div>
+      <div><div class="form-label">Zitakazoingia</div>
+        <div style="font-size:22px;font-weight:700;color:#15803d;">{{ ready_count }}</div></div>
+      <div><div class="form-label">Mpya</div>
+        <div style="font-size:22px;font-weight:700;color:#1d4ed8;">{{ preview.created }}</div></div>
+      <div><div class="form-label">Zitakazosasishwa</div>
+        <div style="font-size:22px;font-weight:700;color:#a16207;">{{ preview.updated }}</div></div>
+    </div>
+
+    {% if proposal.notes %}
+    <div style="background:#f9fafb;border-radius:8px;padding:12px 15px;
+                font-size:13px;color:#374151;margin-bottom:16px;">
+      💬 {{ proposal.notes }}
+    </div>
+    {% endif %}
+
+    <div class="form-label" style="margin-bottom:8px;">Mpangilio uliopendekezwa</div>
+    <table class="table">
+      <thead><tr><th>Column ya faili</th><th>→</th><th>Field ya database</th></tr></thead>
+      <tbody>
+        {% for col, field in proposal.mapping.items %}
+        <tr>
+          <td style="font-weight:600;">{{ col }}</td>
+          <td style="color:#9ca3af;">→</td>
+          <td style="color:#15803d;font-family:monospace;font-size:13px;">{{ field }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if proposal.unmapped %}
+    <div style="margin-top:14px;font-size:13px;color:#6b7280;">
+      <strong>Hazitatumika:</strong>
+      {% for c in proposal.unmapped %}{{ c }}{% if not forloop.last %}, {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if preview.errors %}
+    <div style="margin-top:16px;background:#fef2f2;border-radius:8px;padding:13px 16px;
+                font-size:13px;color:#991b1b;">
+      <strong>Zitakazorukwa ({{ preview.skipped }}):</strong><br>
+      {% for e in preview.errors %}• {{ e }}<br>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="max-width:900px;margin-top:18px;">
+  <div class="card-header"><div class="card-title">👁️ Mfano wa data itakayoingia</div></div>
+  <div style="padding:4px 2px;font-family:monospace;font-size:12.5px;
+              color:#374151;line-height:1.9;max-height:300px;overflow:auto;">
+    {% for item in sample_items %}
+      <div style="padding:8px 0;border-bottom:1px solid #f3f4f6;">
+        {% for k, v in item.items %}<span style="color:#15803d;">{{ k }}</span>: {{ v|truncatechars:70 }}<br>{% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<form method="post" action="{% url 'dataset_confirm' %}" style="margin-top:20px;max-width:900px;">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-primary">✅ Thibitisha na Ingiza</button>
+  <a href="{% url 'dataset_upload' %}" class="btn btn-secondary" style="margin-left:8px;">Ghairi</a>
+</form>
+
+
+{% else %}
+<!-- ═══ HATUA 1: PAKIA ═══ -->
+<div class="card" style="max-width:720px;">
+  <div class="card-header"><div class="card-title">Pakia Faili</div></div>
+  <form method="post" enctype="multipart/form-data" style="padding:6px 2px;">
+    {% csrf_token %}
+
+    <div class="form-group">
+      <label class="form-label">Data hii ni ya aina gani?</label>
+      <select name="target" class="form-control" required>
+        <option value="">— Chagua —</option>
+        {% for key, t in targets.items %}
+          <option value="{{ key }}">{{ t.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Faili</label>
+      <input type="file" name="file" class="form-control"
+             accept=".csv,.tsv,.txt,.xlsx,.xlsm,.json" required>
+      <div style="font-size:13px;color:#6b7280;margin-top:6px;">
+        CSV, Excel (.xlsx), au JSON. AI itatambua columns yenyewe.
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">🧠 Chambua kwa AI</button>
+  </form>
+</div>
+
+<div class="card" style="max-width:720px;margin-top:18px;">
+  <div class="card-header"><div class="card-title">ℹ️ Jinsi inavyofanya kazi</div></div>
+  <div style="padding:6px 2px;font-size:14px;color:#374151;line-height:2;">
+    <strong>1.</strong> Unapakia faili la muundo wowote<br>
+    <strong>2.</strong> AI inasoma columns na kupendekeza kila moja iende wapi<br>
+    <strong>3.</strong> Unaona hakiki — data haijaingia bado<br>
+    <strong>4.</strong> Ukithibitisha, ndipo inaingia kwenye database<br><br>
+    <span style="color:#854d0e;background:#fefce8;padding:8px 12px;
+                 border-radius:6px;display:inline-block;">
+      🔒 AI haiandiki yenyewe. Wewe ndiye unayeamua.
+    </span>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
