@@ -30,6 +30,10 @@ INSTALLED_APPS = [
     'admin_panel',
 ]
 
+JAMIITEK_API_KEY = "dU5VmQQtDMO4DRyxhxp6C4kOfFDUWa_3QEssiWcFTslhsKvgP8gsO5LQwCxdYEbh"
+JAMIITEK_API_URL = "https://jamiitek.com/api/site-status/"
+
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -239,5 +243,3 @@ BANK_ACCOUNT = config('BANK_ACCOUNT', default='')
 # API key ya Kilimoni AI kutoka paneli ya JamiiTek.
 # Inaruhusu KUSOMA hali ya huduma tu — haiwezi kubadilisha kitu,
 # kwa hiyo ni salama kukaa hapa kama website nyingine za wateja.
-JAMIITEK_API_KEY = "dU5VmQQtDMO4DRyxhxp6C4kOfFDUWa_3QEssiWcFTslhsKvgP8gsO5LQwCxdYEbh"
-JAMIITEK_API_URL = "https://jamiitek.co.tz/api/site-status/"

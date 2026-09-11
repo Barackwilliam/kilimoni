@@ -8,7 +8,7 @@ JINSI YA KUTUMIA:
 1. Sakinisha kwenye settings.py ya website ya mteja:
 
     JAMIITEK_API_KEY = "api-key-yako-hapa"
-    JAMIITEK_API_URL = "https://jamiitek.co.tz/api/site-status/"
+    JAMIITEK_API_URL = "https://jamiitek.com/api/site-status/"
     
     MIDDLEWARE = [
         ...
@@ -129,7 +129,7 @@ class JamiiTekStatusMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         self.api_key = getattr(settings, 'JAMIITEK_API_KEY', None)
-        self.api_url = getattr(settings, 'JAMIITEK_API_URL', 'https://jamiitek.co.tz/api/site-status/')
+        self.api_url = getattr(settings, 'JAMIITEK_API_URL', 'https://jamiitek.com/api/site-status/')
 
     def __call__(self, request):
         # Ruka admin na static files
