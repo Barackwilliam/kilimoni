@@ -63,6 +63,9 @@ class Conversation(models.Model):
     detected_location = models.CharField(max_length=100, blank=True)
     detected_zone = models.ForeignKey(Zone, on_delete=models.SET_NULL, null=True, blank=True)
     response_reference = models.CharField(max_length=200, blank=True)
+    # Ufuatiliaji: hali ya uchunguzi, records zilizotumika, uhakika,
+    # chanzo cha jibu, na ukaguzi uliofanyika kabla ya kutuma.
+    trace = models.JSONField(default=dict, blank=True)
     # db_index — inatumika kwenye ukaguzi wa majibu ya marudio kwa kila ujumbe
     whatsapp_message_id = models.CharField(max_length=200, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)

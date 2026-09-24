@@ -15,6 +15,7 @@ from crops.models import (
     SeedVariety, Intent, FarmerQuestion, Synonym, AnswerTemplate
 )
 from bot.models import User, Conversation, UnresolvedQuery
+from bot import diagnostic as dg
 from analytics.models import AnalyticsLog
 
 logger = logging.getLogger(__name__)
@@ -645,6 +646,16 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── MODULE 4: Apply synonyms ─────────────────────
     normalized = apply_synonyms(normalized)
 
+    # ── Uchunguzi unaoendelea au swali la lengo ───────
+    # Hushughulikiwa KWANZA, ili majibu ya mkulima (mfano "wiki 3",
+    # "nusu ya shamba") yasichukuliwe kama maswali mapya.
+    _sess = user.session_state or {}
+    if _sess.get('goal_pending') or dg.get_diag(_sess):
+        handled = _handle_diagnostic_turn(user, raw_message, normalized,
+                                          start_time, message_id)
+        if handled is not None:
+            return handled
+
     # ── Kukubali / shukrani ("sawa", "asante") ───────
     # Bila hii, "sawa" hupelekwa kwenye injini ya maswali na
     # mkulima anapata fallback isiyo na maana.
@@ -772,6 +783,16 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── MODULE 8: Intent Detection ────────────────────
     intent = detect_intent(normalized, crop, location)
 
+    # Mkulima alichagua lengo kwa namba ("2" = mbegu, n.k.)
+    _forced = (user.session_state or {}).get('forced_intent')
+    if _forced:
+        if not intent:
+            intent = Intent.objects.filter(intent_name=_forced).first()
+        _fs = dict(user.session_state or {})
+        _fs.pop('forced_intent', None)
+        user.session_state = _fs
+        user.save(update_fields=['session_state'])
+
     # Mkulima alikuwa akiulizwa zao — sasa ametaja. Rudisha swali lake
     # la awali badala ya kumpeleka kwenye fallback.
     _sess = user.session_state or {}
@@ -804,6 +825,27 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
         updates['session_state'] = new_session
     if updates:
         user.save(update_fields=list(updates.keys()) + ['last_seen_at'])
+
+    # ── Ombi pana: uliza lengo kwanza, usitoe ushauri ──
+    _fresh_c = detect_crop(normalized)
+    _fresh_l = detect_location(normalized)
+    if dg.is_broad_request(normalized, _fresh_c, intent, _fresh_l):
+        _gs = dict(user.session_state or {})
+        _gs['goal_pending'] = True
+        user.session_state = _gs
+        user.save(update_fields=['session_state'])
+        response = dg.build_goal_question()
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
+                 start_time, message_id=message_id,
+                 trace={'mode': 'goal_question', 'reason': 'broad_request'})
+        return response
+
+    # ── Tatizo la zao: anza mtiririko wa uchunguzi ────
+    # Hata kama template ipo, tatizo la mmea halijibiwi mara moja:
+    # taarifa muhimu zikusanywe kwanza (kanuni ya usalama).
+    if dg.is_problem_message(normalized, intent):
+        return _start_diagnostic(user, raw_message, normalized, _fresh_c,
+                                 start_time, message_id)
 
     # ── Prompt for crop if missing ────────────────────
     if needs_crop_prompt(crop, intent):
@@ -851,9 +893,28 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── If no template found → Groq AI, kisha fallback ─
     from_template = bool(response)
     used_fallback = False
-    if not response:
+    if not response and not crop and not intent:
+        # Hakuna zao wala lengo linalojulikana — AI ingebuni jibu la
+        # jumla. Badala yake tunauliza mkulima anahitaji nini.
+        _gs = dict(user.session_state or {})
+        _gs['goal_pending'] = True
+        user.session_state = _gs
+        user.save(update_fields=['session_state'])
+        response = dg.build_goal_question()
+        from_template = True
+    elif not response:
         response, used_fallback = _get_ai_or_fallback(
             raw_message, crop, intent, location, zone, user
+        )
+        if crop:
+            response, _vr = dg.validate_output(response, crop.crop_name_sw, allow_chemical=False)
+
+    # Bei za soko: onyo la lazima
+    if intent and intent.intent_name == 'market_question' and 'thibitisha' not in response.lower():
+        response += (
+            "\n\n⚠️ _Bei hubadilika kila siku kulingana na msimu na soko. "
+            "Taarifa hii si bei ya leo — thibitisha kwenye soko la karibu "
+            "au kwa wafanyabiashara kabla ya kuuza au kununua._"
         )
     # success = tumeweza kumpa mkulima jibu la maana (template au AI),
     # SI tu kwamba tulirudisha maandishi fulani.
@@ -954,7 +1015,7 @@ def _get_ai_or_fallback(raw_message, crop, intent, location, zone, user=None) ->
 
 
 def _log_all(user, raw_message, normalized, crop, intent, location, zone,
-             response, success, start_time, answer_ref='', message_id=''):
+             response, success, start_time, answer_ref='', message_id='', trace=None):
     """Hifadhi mazungumzo, analytics — Module 13 & 15"""
     try:
         response_ms = int((time.time() - start_time) * 1000)
@@ -973,6 +1034,7 @@ def _log_all(user, raw_message, normalized, crop, intent, location, zone,
             detected_crop=crop, detected_intent=intent,
             detected_location=location or '', detected_zone=zone,
             response_reference=answer_ref,
+            trace=trace or {},
         )
         AnalyticsLog.objects.create(
             user_id=user.id, phone_number=user.phone_number,
@@ -981,3 +1043,130 @@ def _log_all(user, raw_message, normalized, crop, intent, location, zone,
         )
     except Exception as e:
         logger.error(f"Logging error: {e}")
+
+
+# ═══════════════════════════════════════════════════════
+# MTIRIRIKO WA UCHUNGUZI — helpers
+# ═══════════════════════════════════════════════════════
+
+def _save_diag(user, diag):
+    sess = dict(user.session_state or {})
+    if diag is None:
+        sess.pop('diag', None)
+    else:
+        diag['updated'] = time.time()
+        sess['diag'] = diag
+    user.session_state = sess
+    user.save(update_fields=['session_state'])
+
+
+def _diag_crop(diag):
+    cid = diag['slots'].get('crop')
+    if cid and cid != 'haijulikani':
+        return Crop.objects.filter(id=cid).first()
+    return None
+
+
+def _diag_step(user, diag, raw_message, normalized, start_time, message_id):
+    """Uliza taarifa inayofuata, au toa jibu la mwisho zikikamilika."""
+    crop = _diag_crop(diag)
+    slot = dg.next_missing_slot(diag)
+
+    # Zao halipo kwenye dataset — sema ukweli, usizunguke
+    if diag.get('unsupported_crop'):
+        name = diag['unsupported_crop'].capitalize()
+        supported = ', '.join(c.crop_name_sw for c in Crop.objects.filter(active_status='active'))
+        _save_diag(user, None)
+        response = (
+            f"Samahani, kwa sasa sina taarifa za *{name}* kwenye mfumo wangu, "
+            "kwa hiyo siwezi kuchunguza tatizo lake kwa usahihi. 🌱\n\n"
+            f"Kwa sasa ninasaidia: *{supported}*.\n\n" + dg.REFER_EXTENSION
+        )
+        _log_all(user, raw_message, normalized, None, None, '', None, response, False,
+                 start_time, message_id=message_id,
+                 trace={'mode': 'diagnostic', 'source': 'unsupported_crop',
+                        'crop_named': diag['unsupported_crop']})
+        return response
+
+    # Jibu lisiloeleweka mara 2 kwa swali la zao — acha kuzunguka
+    if diag.get('crop_attempts', 0) >= 2:
+        diag['slots']['crop'] = 'haijulikani'
+
+    # Bila zao hatuwezi kuendelea — tukishindwa mara 2, tunamwelekeza
+    if diag['slots'].get('crop') == 'haijulikani':
+        _save_diag(user, None)
+        response = (
+            "Sawa. Bila kujua zao, siwezi kuchagua taarifa sahihi. 🌱\n\n"
+            + dg.REFER_EXTENSION
+        )
+        _log_all(user, raw_message, normalized, None, None, '', None, response, False,
+                 start_time, message_id=message_id,
+                 trace={'mode': 'diagnostic', 'slots': diag['slots'], 'source': 'no_crop'})
+        return response
+
+    if slot:
+        diag['asked'] = slot
+        _save_diag(user, diag)
+        response = dg.question_for(slot, crop.crop_name_sw if crop else '')
+        _log_all(user, raw_message, normalized, crop, None, '', None, response, True,
+                 start_time, message_id=message_id,
+                 trace={'mode': 'diagnostic', 'asked': slot, 'slots': diag['slots']})
+        return response
+
+    # Taarifa zote zimekusanywa
+    loc = diag['slots'].get('location')
+    loc = None if loc == 'haijulikani' else loc
+    zone = map_location_to_zone(loc) if loc else None
+    response, trace = dg.build_final_answer(diag['slots'], crop, zone, user)
+    _save_diag(user, None)
+    if crop:
+        user.last_crop_id = crop.id
+        user.save(update_fields=['last_crop_id'])
+    _log_all(user, raw_message, normalized, crop, None, loc or '', zone, response,
+             trace.get('confidence') != 'low', start_time,
+             answer_ref=','.join(r['ref'] for r in trace.get('records_used', [])),
+             message_id=message_id, trace=trace)
+    return response
+
+
+def _start_diagnostic(user, raw_message, normalized, fresh_crop, start_time, message_id):
+    diag = dg.new_diag()
+    # Zao linachukuliwa tu kama limetajwa kwenye ujumbe huu —
+    # si kutoka kumbukumbu ya zamani — ili tusichunguze zao lisilo sahihi.
+    dg.fill_slots(diag, normalized, detect_crop, detect_location, fresh_crop=fresh_crop)
+    return _diag_step(user, diag, raw_message, normalized, start_time, message_id)
+
+
+def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_id):
+    """Inarudisha jibu, au None kama ujumbe ushughulikiwe na mtiririko wa kawaida."""
+    sess = dict(user.session_state or {})
+
+    # ── Jibu la swali la lengo ──
+    if sess.get('goal_pending'):
+        sess.pop('goal_pending', None)
+        user.session_state = sess
+        user.save(update_fields=['session_state'])
+        route = dg.parse_goal_reply(normalized)
+        if route == 'diagnosis':
+            return _start_diagnostic(user, raw_message, normalized,
+                                     detect_crop(normalized), start_time, message_id)
+        if route:
+            sess['forced_intent'] = route
+            user.session_state = sess
+            user.save(update_fields=['session_state'])
+        return None
+
+    # ── Uchunguzi unaoendelea ──
+    diag = dg.get_diag(sess)
+    if not diag:
+        return None
+
+    if dg.is_cancel(normalized):
+        _save_diag(user, None)
+        response = "Sawa, nimesitisha uchunguzi. Uliza swali lingine lolote kuhusu kilimo. 🌿"
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
+                 start_time, message_id=message_id, trace={'mode': 'diagnostic', 'source': 'cancelled'})
+        return response
+
+    dg.fill_slots(diag, normalized, detect_crop, detect_location)
+    return _diag_step(user, diag, raw_message, normalized, start_time, message_id)

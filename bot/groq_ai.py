@@ -125,10 +125,20 @@ KANUNI:
 1. LAZIMA Kiswahili cha kawaida — kama afisa ugani anavyoongea na mkulima
    kijijini. Si Kiswahili cha vitabu, si cha kikompyuta.
 2. Usiseme "Kama AI..." au kutaja kuwa wewe ni mfumo/model
-3. USISEME kamwe kuwa hujaelewa, huna taarifa, au mfumo una upungufu — badala yake toa ushauri bora unaowezekana, na kama unahitaji taarifa zaidi uliza swali moja mahususi kwa staha
-4. Dawa/kemikali: taja jina ukishauri, lakini ongeza "fuata maelekezo ya kifungashio au uliza duka la pembejeo"
-5. Bei za soko: sema zinabadilika kulingana na msimu na eneo — usibuni namba kamili
-6. Maswali makubwa ya kitaalamu (mfano ugonjwa usiotambulika): shauri pia kuonana na Afisa Ugani wa eneo lake
+3. USIBUNI. Tumia TAARIFA ZA DATASET ulizopewa kama chanzo pekee cha
+   ukweli wa kitaalamu. Kama jibu halipo kwenye taarifa hizo, SEMA hivyo
+   kwa staha na uulize swali moja la kufafanua, au mwelekeze kwa afisa
+   ugani. Usitunge maneno, majina ya bidhaa, wala mbinu zisizokuwepo.
+4. SWALI PANA: kama mkulima hajataja zao au tatizo mahususi, USITOE
+   ushauri wa kitaalamu. Uliza anahitaji msaada gani, zao gani, na eneo.
+5. ZAO MOJA: jibu lihusu zao lililotajwa pekee. Usichanganye mazao.
+6. DAWA NA VIWANGO: USITAJE jina la dawa, kiwango (dosage) wala mara za
+   matumizi (frequency). Mapendekezo hayo yanashughulikiwa na mfumo wa
+   uchunguzi baada ya taarifa zote muhimu kukusanywa.
+7. Bei za soko: sema wazi kwamba bei hubadilika na mkulima athibitishe
+   sokoni. Usibuni namba za bei za sasa.
+8. Tatizo la mmea (ugonjwa, wadudu, dalili): usitoe utambuzi. Uliza
+   dalili, hatua ya ukuaji, na eneo, au mshauri aonane na afisa ugani.
 
 TANZANIA AGRO-ZONES:
 - Central (Singida, Dodoma, Tabora): ukame, mahindi ya mapema, mtama, alizeti
@@ -258,4 +268,79 @@ Toa jibu la ushauri wa kilimo kwa Kiswahili, ukifuata muundo wa WhatsApp:"""
         return answer
     except Exception as e:
         logger.error(f"Groq API error: {e}")
+        return ''
+
+
+# ═══════════════════════════════════════════════════════
+# JIBU LILILOFUNGWA KWENYE RECORDS (grounded generation)
+# Inatumika na mtiririko wa uchunguzi. AI inaandika jibu kwa
+# lugha nzuri, lakini maudhui yote ya kitaalamu yanatoka kwenye
+# records za dataset zilizochaguliwa — si kutoka kichwani mwake.
+# ═══════════════════════════════════════════════════════
+
+GROUNDED_SYSTEM_PROMPT = """Wewe ni Kilimoni AI, afisa ugani wa kidijitali.
+
+Unaandika jibu la uchunguzi wa tatizo la zao, KWA KUTUMIA RECORDS ZA
+DATASET ULIZOPEWA PEKEE.
+
+KANUNI (za lazima):
+1. Kila dai la kitaalamu lazima litoke kwenye RECORDS. Usiongeze
+   ugonjwa, mdudu, dawa, kiwango, wala mbinu isiyokuwepo kwenye RECORDS.
+2. Usitunge maneno. Kama neno halipo kwenye RECORDS, usilitumie.
+3. Zungumzia zao lililotajwa PEKEE. Usitaje zao jingine lolote.
+4. Kama RUHUSA_YA_DAWA = HAPANA: usitaje jina la dawa, kiwango, wala
+   mara za matumizi. Toa tathmini na hatua zisizo za kemikali tu.
+5. Kama RUHUSA_YA_DAWA = NDIYO: unaweza kutaja dawa na kiwango KAMA
+   vilivyo kwenye RECORDS, bila kubadilisha namba.
+6. Taja kwamba ni UWEZEKANO kulingana na dalili, si uhakika kamili.
+
+MUUNDO (WhatsApp, Kiswahili cha kawaida, mistari isiyozidi 10):
+*Tathmini:* uwezekano 1-2 unaolingana na dalili, na sababu kwa ufupi
+*Hatua za awali:* hatua 2-3 salama
+*Pendekezo:* (kama inaruhusiwa na RECORDS zinalo)
+Usiongeze kichwa wala chanzo — mfumo utaviongeza."""
+
+
+def get_grounded_response(case_summary: str, crop_name: str, records: list,
+                          confidence: str, allow_chemical: bool) -> str:
+    api_key = getattr(settings, 'GROQ_API_KEY', '')
+    if not api_key or not records:
+        return ''
+
+    records_text = '\n\n'.join(
+        f"[{r['ref']}] {r['text'][:1500]}" for r in records
+    )
+    user_prompt = (
+        f"KESI YA MKULIMA:\n{case_summary}\n\n"
+        f"ZAO: {crop_name}\n"
+        f"KIWANGO CHA UHAKIKA: {confidence}\n"
+        f"RUHUSA_YA_DAWA: {'NDIYO' if allow_chemical else 'HAPANA'}\n\n"
+        f"RECORDS ZA DATASET:\n{records_text}\n\n"
+        "Andika jibu kwa kufuata kanuni."
+    )
+
+    try:
+        resp = http_requests.post(
+            GROQ_API_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": getattr(settings, 'GROQ_MODEL', 'openai/gpt-oss-120b'),
+                "max_tokens": 900,
+                "reasoning_effort": config('GROQ_REASONING', default='low'),
+                "temperature": 0.1,
+                "messages": [
+                    {"role": "system", "content": GROUNDED_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+            },
+            timeout=25,
+        )
+        resp.raise_for_status()
+        answer = (resp.json()['choices'][0]['message'].get('content') or '').strip()
+        return answer
+    except Exception as e:
+        logger.error(f"Grounded Groq error: {e}")
         return ''
