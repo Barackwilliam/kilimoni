@@ -11,7 +11,6 @@ class Subscription(models.Model):
     """
 
     STATUS_CHOICES = [
-        ('trial', 'Ofa ya Uzinduzi'),
         ('active', 'Imelipwa'),
         ('pending', 'Inasubiri Malipo'),
         ('overdue', 'Imechelewa'),
@@ -20,9 +19,22 @@ class Subscription(models.Model):
 
     client_name = models.CharField(max_length=120, default='Kilimoni LABS')
     plan_name = models.CharField(max_length=120, default='Huduma ya Mwezi')
-    monthly_fee = models.PositiveIntegerField(default=50000, help_text='TZS')
+    # Gharama za kila mwezi kwa dola (USD). Makadirio ya TZS yanahesabiwa
+    # kwa kiwango cha kubadilisha fedha kilicho kwenye settings.
+    hosting_usd = models.DecimalField(max_digits=8, decimal_places=2, default=7,
+                                      verbose_name='Hosting (USD)')
+    ai_usd = models.DecimalField(max_digits=8, decimal_places=2, default=4,
+                                 verbose_name='Injini ya AI (USD)')
+    management_usd = models.DecimalField(max_digits=8, decimal_places=2, default=6,
+                                         verbose_name='Usimamizi na matengenezo (USD)')
 
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='trial')
+    # Kiwango cha mwisho cha USD->TZS kilichopatikana (kinajisasisha)
+    fx_rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True,
+                                  verbose_name='Kiwango cha USD→TZS (cha mwisho)')
+    fx_rate_updated = models.DateTimeField(null=True, blank=True,
+                                           verbose_name='Kiwango kilisasishwa')
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
 
     period_start = models.DateField(default=timezone.now)
     due_date = models.DateField(help_text='Tarehe ya mwisho ya malipo ya kipindi hiki')
@@ -47,6 +59,10 @@ class Subscription(models.Model):
 
     def __str__(self):
         return f"{self.client_name} — {self.get_status_display()}"
+
+    @property
+    def total_usd(self):
+        return self.hosting_usd + self.ai_usd + self.management_usd
 
     @property
     def days_remaining(self):
@@ -74,7 +90,7 @@ class Subscription(models.Model):
             sub = cls.objects.create(
                 period_start=today,
                 due_date=today + timedelta(days=30),
-                status='trial',
+                status='pending',
             )
         return sub
 

@@ -724,6 +724,28 @@ def billing_view(request):
         message_direction='inbound',
     ).exclude(created_at__hour__gte=8, created_at__hour__lt=17).count()
 
+    # ── Gharama za kila mwezi: USD na makadirio ya TZS ──
+    from admin_panel.fx import get_usd_tzs_rate, FX_ATTRIBUTION_URL
+    fx = get_usd_tzs_rate(sub)
+    rate = fx['rate']
+
+    def _tzs(usd):
+        # Imezungushwa kwa mia ya karibu (nusu inapanda) — ni makadirio
+        import math
+        return int(math.floor(float(usd) * rate / 100.0 + 0.5) * 100)
+
+    cost_items = [
+        {'label': 'Hosting (seva na hifadhi ya data)', 'usd': sub.hosting_usd, 'tzs': _tzs(sub.hosting_usd)},
+        {'label': 'Injini ya AI', 'usd': sub.ai_usd, 'tzs': _tzs(sub.ai_usd)},
+        {'label': 'Usimamizi na matengenezo', 'usd': sub.management_usd, 'tzs': _tzs(sub.management_usd)},
+    ]
+    total_usd = sub.total_usd
+    # Jumla = jumla ya vipengele, ili jedwali lijumlishe sawasawa
+    total_tzs = sum(i['tzs'] for i in cost_items)
+    for i in cost_items:
+        i['tzs_fmt'] = f"{i['tzs']:,}"
+    total_tzs_fmt = f"{total_tzs:,}"
+
     payments = Payment.objects.all()[:12]
     total_paid = sum(p.amount for p in payments)
 
@@ -738,6 +760,14 @@ def billing_view(request):
         'after_hours': after_hours,
         'payments': payments,
         'total_paid': total_paid,
+        'cost_items': cost_items,
+        'total_usd': total_usd,
+        'total_tzs': total_tzs_fmt,
+        'usd_tzs_rate': f"{int(round(rate)):,}",
+        'usd_tzs_rate_date': (timezone.localtime(fx['updated']).strftime('%d/%m/%Y %H:%M')
+                              if fx['updated'] else getattr(settings, 'USD_TZS_RATE_DATE', '')),
+        'fx_status': fx['status'],
+        'fx_attribution_url': FX_ATTRIBUTION_URL,
         'MPESA_NUMBER': getattr(settings, 'MPESA_NUMBER', ''),
         'MIXX_NUMBER': getattr(settings, 'MIXX_NUMBER', ''),
         'BANK_NAME': getattr(settings, 'BANK_NAME', ''),

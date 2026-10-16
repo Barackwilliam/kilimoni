@@ -244,3 +244,13 @@ BANK_ACCOUNT = config('BANK_ACCOUNT', default='')
 # API key ya Kilimoni AI kutoka paneli ya JamiiTek.
 # Inaruhusu KUSOMA hali ya huduma tu — haiwezi kubadilisha kitu,
 # kwa hiyo ni salama kukaa hapa kama website nyingine za wateja.
+
+
+# ─────────────────────────────────────────────
+#  Makadirio ya gharama kwa TZS
+#  Gharama za huduma ziko kwa USD. Kiwango hiki kinatumika kuonyesha
+#  makadirio kwa shilingi tu — kibadilishe kinapobadilika sana.
+#  Chanzo cha kiwango cha sasa: Bloomberg USD/TZS, 23 Sep 2026 (~2,646).
+# ─────────────────────────────────────────────
+USD_TZS_RATE = config('USD_TZS_RATE', default=2650, cast=float)
+USD_TZS_RATE_DATE = config('USD_TZS_RATE_DATE', default='23 Septemba 2026')
