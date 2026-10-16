@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     'analytics',
     'whatsapp',
     'admin_panel',
+    'diagnosis',
 ]
 
 JAMIITEK_API_KEY = "dU5VmQQtDMO4DRyxhxp6C4kOfFDUWa_3QEssiWcFTslhsKvgP8gsO5LQwCxdYEbh"
