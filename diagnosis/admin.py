@@ -3,79 +3,87 @@ from .models import (
     Pest, DecisionRule, Symptom, SymptomDiagnosisMap, FollowupQuestion,
     ConfidenceRule, Treatment, TreatmentProtocolStep, SafetyRule,
     RecommendationRule, FarmerMessageTemplate, ExplainabilityRecord,
-    EngineSetting,
+    ErrorHandlingRule, EngineSetting,
 )
 
 
 class SourceAdmin(admin.ModelAdmin):
-    list_filter = ['is_active', 'crop']
-    readonly_fields = ['raw', 'created_at', 'updated_at']
+    list_filter = ['is_active']
+    readonly_fields = ['source_file', 'raw', 'created_at', 'updated_at']
 
 
 @admin.register(Pest)
 class PestAdmin(SourceAdmin):
-    list_display = ['source_id', 'name_sw', 'name_en', 'cause_type', 'is_active']
+    list_display = ['source_id', 'name_sw', 'name_en', 'risk_level', 'is_active']
     search_fields = ['source_id', 'name_sw', 'name_en', 'scientific_name']
-
-
-@admin.register(DecisionRule)
-class DecisionRuleAdmin(SourceAdmin):
-    list_display = ['source_id', 'rule_type', 'pest', 'confidence', 'confidence_label']
 
 
 @admin.register(Symptom)
 class SymptomAdmin(SourceAdmin):
-    list_display = ['source_id', 'farmer_description_sw', 'growth_stage', 'plant_part']
-    search_fields = ['source_id', 'farmer_description_sw', 'keywords']
+    list_display = ['source_id', 'farmer_symptom_sw', 'growth_stage', 'plant_part', 'is_active']
+    search_fields = ['source_id', 'farmer_symptom_sw', 'normalized_symptom_sw']
     filter_horizontal = ['likely_pests']
 
 
 @admin.register(SymptomDiagnosisMap)
 class SymptomDiagnosisMapAdmin(SourceAdmin):
-    list_display = ['source_id', 'symptom', 'pest', 'match_strength']
+    list_display = ['source_id', 'symptom', 'target_type', 'target_id', 'match_strength']
 
 
 @admin.register(FollowupQuestion)
 class FollowupQuestionAdmin(SourceAdmin):
-    list_display = ['source_id', 'question_sw', 'is_key_differentiator', 'priority']
-    filter_horizontal = ['symptoms', 'yes_routes_to', 'no_routes_to']
+    list_display = ['source_id', 'question_sw', 'symptom', 'if_yes_min', 'if_yes_max',
+                    'is_key_differentiator']
+    filter_horizontal = ['yes_routes_to']
 
 
 @admin.register(ConfidenceRule)
 class ConfidenceRuleAdmin(SourceAdmin):
-    list_display = ['source_id', 'condition_code', 'adjustment']
+    list_display = ['source_id', 'condition', 'condition_code', 'adjustment']
+    list_editable = ['condition_code']
+
+
+@admin.register(DecisionRule)
+class DecisionRuleAdmin(SourceAdmin):
+    list_display = ['source_id', 'rule_type', 'pest', 'confidence', 'confidence_label', 'followup']
 
 
 class StepInline(admin.TabularInline):
     model = TreatmentProtocolStep
     extra = 0
-    exclude = ['raw']
+    fields = ['source_id', 'step_order', 'step_name', 'farmer_action_sw', 'if_yes', 'if_no']
 
 
 @admin.register(Treatment)
 class TreatmentAdmin(SourceAdmin):
-    list_display = ['source_id', 'pest', 'method', 'active_ingredient_category', 'requires_ppe']
+    list_display = ['source_id', 'linked_diagnosis', 'pest', 'severity']
     inlines = [StepInline]
 
 
 @admin.register(SafetyRule)
 class SafetyRuleAdmin(SourceAdmin):
-    list_display = ['source_id', 'applies_to', 'rule_text_sw']
+    list_display = ['source_id', 'topic', 'rule']
 
 
 @admin.register(RecommendationRule)
 class RecommendationRuleAdmin(SourceAdmin):
-    list_display = ['source_id', 'pest', 'min_confidence', 'min_severity', 'escalate_if_spreading']
+    list_display = ['source_id', 'diagnosis_category', 'condition', 'min_confidence']
 
 
 @admin.register(FarmerMessageTemplate)
 class FarmerMessageTemplateAdmin(SourceAdmin):
-    list_display = ['source_id', 'purpose', 'text_sw']
+    list_display = ['source_id', 'use_case', 'diagnosis_category', 'message_sw']
 
 
 @admin.register(ExplainabilityRecord)
 class ExplainabilityRecordAdmin(SourceAdmin):
-    list_display = ['source_id', 'pest', 'why_this_sw']
+    list_display = ['source_id', 'level', 'pest', 'symptom', 'explanation_type']
+    list_filter = ['level', 'is_active']
+
+
+@admin.register(ErrorHandlingRule)
+class ErrorHandlingRuleAdmin(SourceAdmin):
+    list_display = ['source_id', 'error_code', 'severity', 'blocking']
 
 
 @admin.register(EngineSetting)
