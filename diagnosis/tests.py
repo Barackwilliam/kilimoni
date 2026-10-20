@@ -118,3 +118,76 @@ class ImportMHD007Tests(TestCase):
         # Row nzuri (SAFE001) nayo imerudishwa nyuma — batch nzima
         from .models import SafetyRule
         self.assertFalse(SafetyRule.objects.exists())
+
+
+class RulesEngineTests(TestCase):
+    """Vigezo 6 vya mteja, kwenye data halisi ya sample ya MHD-007."""
+
+    def setUp(self):
+        self.maize = Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize',
+                                         crop_group='cereals')
+        import_mhd007(FIXTURES)
+
+    def run_turns(self, turns):
+        from . import engine as E
+        st = E.new_state()
+        replies, traces = [], []
+        for i, text in enumerate(turns):
+            reply, trace, done = E.step(st, text, self.maize if i == 0 else None)
+            replies.append(reply)
+            traces.append(trace)
+            if done:
+                break
+        return replies, traces, st
+
+    def test_faw_full_diagnosis_with_ipm(self):
+        replies, traces, st = self.run_turns(
+            ['majani yana mashimo makubwa', 'ndiyo', 'hapana', 'nusu ya shamba'])
+        final = traces[-1]
+        self.assertEqual((final['decision'], final['diagnosis']), ('diagnosed', 'PST001'))
+        self.assertLessEqual(final['confidence'], 0.95)            # confidence_cap
+        self.assertIn('DR-MZ-0001', final['rules_used'])           # [4] kanuni
+        self.assertIn('CONF002', final['rules_used'])
+        self.assertTrue(final['gate']['chemical_allowed'])         # REC-MZ-0001
+        self.assertIn('Kwa nini si vingine', replies[-1])          # [3]
+        self.assertNotIn('emamectin', replies[-1].lower())         # SAFE001: hakuna majina ya bidhaa
+
+    def test_small_extent_blocks_chemical(self):
+        from bot.diagnostic import CHEMICAL_PATTERN
+        replies, traces, _ = self.run_turns(
+            ['majani yana mashimo makubwa', 'ndiyo', 'hapana', 'mimea michache'])
+        self.assertFalse(traces[-1]['gate']['chemical_allowed'])   # [5]
+        self.assertIsNone(CHEMICAL_PATTERN.search(replies[-1]))
+
+    def test_symptom_words_do_not_count_as_extent(self):
+        # "mashimo makubwa" si "sehemu kubwa ya shamba" — lazima aulizwe ukubwa
+        replies, traces, _ = self.run_turns(['majani yana mashimo makubwa', 'ndiyo', 'hapana'])
+        self.assertEqual(traces[-1]['asked'], 'extent')
+
+    def test_unknown_answers_end_uncertain_without_repeats(self):
+        replies, traces, st = self.run_turns(['majani yana mashimo makubwa'] + ['sijui'] * 5)
+        self.assertEqual(traces[-1]['decision'], 'uncertain')
+        questions = [ev['question'] for ev in st['evidence']]
+        self.assertEqual(len(questions), len(set(questions)))      # [1]
+        frass = [q for q in questions if 'frass' in q.lower() or 'kinyesi' in q.lower()]
+        self.assertEqual(len(frass), 1)                            # dhana moja, swali moja
+
+    def test_farmer_message_answers_question(self):
+        # Mkulima ametaja kinyesi na viwavi — swali la frass/lava halisiulizwi
+        replies, traces, st = self.run_turns(
+            ['majani yana mashimo makubwa na kinyesi, kuna viwavi ndani ya kamba'])
+        self.assertEqual(st['evidence'][0]['via'], 'farmer_message')
+        self.assertTrue(st['candidates']['PST001']['confirmed'])
+        self.assertNotIn('frass', replies[-1].lower())
+
+    def test_critical_disease_escalates_without_chemical(self):
+        replies, traces, _ = self.run_turns(
+            ['majani yana mistari ya njano na mmea umedumaa', 'ndiyo', 'shamba lote'])
+        final = traces[-1]
+        self.assertEqual(final['diagnosis'], 'DIS001')
+        self.assertIn('ESC-MZ-001', final['gate']['escalations'])
+        self.assertFalse(final['gate']['chemical_allowed'])
+
+    def test_unmatched_symptoms_are_not_invented(self):
+        replies, traces, _ = self.run_turns(['majani yana madoa ya kijivu'])
+        self.assertEqual(traces[-1]['decision'], 'no_rule_matched')   # [6]

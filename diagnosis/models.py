@@ -554,6 +554,11 @@ DEFAULT_SETTINGS = {
     'severity_low_max': ('10', 'Ukubwa (%) chini ya hapa = Low'),
     'severity_medium_max': ('30', 'Ukubwa (%) hadi hapa = Medium; juu = High'),
     'allow_product_names': ('0', 'SAFE001: 1 tu baada ya registry ya dawa kuidhinishwa'),
+    'initial_source': ('007D', 'Chanzo cha score ya mwanzo kikiwa na vingi: 007D au 007A'),
+    'symptom_match_ratio': ('0.5', 'Sehemu ya maneno ya dalili yanayotakiwa kulingana'),
+    'key_question_no_adjustment': ('-0.125', 'Ishara kuu ikikataliwa (katikati ya -0.05..-0.20 ya 007C)'),
+    'rec_min_severity': ('high', 'Severity ya chini kwa Recommendation Rule (low/medium/high)'),
+    'max_questions': ('4', 'Idadi ya juu ya maswali ya kufuatilia kwa uchunguzi mmoja'),
 }
 
 

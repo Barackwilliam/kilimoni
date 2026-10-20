@@ -8,8 +8,10 @@ Inaendesha maswali ya majaribio ya mteja na kukagua kwamba bot:
   - inarekodi trace ya kila hatua
 
 Matumizi:
-    python manage.py kilimoni_regression            # inatumia Groq halisi
-    python manage.py kilimoni_regression --offline  # bila Groq (dataset pekee)
+    python manage.py kilimoni_regression --offline                   # bila AI ya nje
+    python manage.py kilimoni_regression --offline --load-fixtures   # + ingiza MHD-007 kwanza
+
+Majaribio yaliyo na [1]–[6] yanapima vigezo 6 vya mteja vya kukubali injini.
 """
 import re
 from unittest.mock import patch
@@ -35,103 +37,147 @@ def _single_crop(text, crop):
     return not any(re.search(r'\b' + re.escape(c) + r'\b', low) for c in others)
 
 
+def _questions(replies):
+    return [m.group(1).strip() for r in replies for m in re.finditer(r'\*Swali \d+:\* (.+)', r)]
+
+
+def _traces(phone):
+    return [c.trace for c in Conversation.objects
+            .filter(user__phone_number=phone, message_direction='outbound')
+            .order_by('created_at') if c.trace]
+
+
+FAW_TURNS = [
+    'Mazao yangu yanaumwa, nifanye nini?',
+    'mahindi',
+    'majani yana mashimo makubwa',
+    'ndiyo',        # frass/lava ya Y — ishara kuu ya FAW
+    'hapana',       # panzi hawaonekani
+]
+
 SCENARIOS = [
     {
         'name': 'T1 — Swali pana: "Naomba msaada kuhusu kilimo"',
         'turns': ['Naomba msaada kuhusu kilimo'],
         'checks': [
             ('Inauliza lengo badala ya kutoa ushauri',
-             lambda r: 'msaada gani' in r[-1].lower()),
-            ('Haitaji dawa wala dosage', lambda r: _no_chemical(r[-1])),
+             lambda r, t: 'msaada gani' in r[-1].lower()),
+            ('Haitaji dawa wala dosage', lambda r, t: _no_chemical(r[-1])),
         ],
     },
     {
         'name': 'T2 — "Mazao yangu yanaumwa, nifanye nini?"',
         'turns': ['Mazao yangu yanaumwa, nifanye nini?'],
         'checks': [
-            ('Inauliza zao kwanza', lambda r: 'zao gani' in r[-1].lower()),
-            ('Haitaji ugonjwa, dawa wala dosage', lambda r: _no_chemical(r[-1])),
+            ('Inauliza zao kwanza', lambda r, t: 'zao gani' in r[-1].lower()),
+            ('Haitaji ugonjwa, dawa wala dosage', lambda r, t: _no_chemical(r[-1])),
         ],
     },
     {
-        'name': 'T3 — Uchunguzi kamili wa mahindi (taarifa zote)',
-        'turns': [
-            'Mazao yangu yanaumwa, nifanye nini?',
-            'mahindi',
-            'majani yana mashimo makubwa na kinyesi cha kahawia, kuna viwavi ndani ya kamba',
-            'niko Kondoa',
-            'wiki 4 baada ya kuota',
-            'wiki moja iliyopita',
-            'nusu ya shamba',
-        ],
+        'name': 'T3 — Uchunguzi kamili wa mahindi: FAW, nusu ya shamba',
+        'turns': FAW_TURNS + ['nusu ya shamba'],
         'checks': [
-            ('Kila swali la kati halina dawa',
-             lambda r: all(_no_chemical(x) for x in r[:-1])),
-            ('Inakusanya: zao, dalili, eneo, hatua, lini, kiasi',
-             lambda r: ('zao gani' in r[0].lower() and 'dalili' in r[1].lower()
-                        and 'wapi' in r[2].lower() and 'hatua gani' in r[3].lower()
-                        and 'lini' in r[4].lower() and 'kiasi' in r[5].lower())),
-            ('Jibu la mwisho linahusu mahindi pekee',
-             lambda r: _single_crop(r[-1], 'mahindi')),
-            ('Inachagua tatizo mahsusi (si orodha nzima)',
-             lambda r: 'fall armyworm' in r[-1].lower() and 'aphids' not in r[-1].lower()),
-            ('Jibu linaonyesha kiwango cha uhakika', lambda r: 'uhakika' in r[-1].lower()),
-            ('Jibu linaonyesha chanzo cha dataset', lambda r: 'chanzo' in r[-1].lower()),
-            ('Dawa ikitajwa, tahadhari ya label ipo',
-             lambda r: _no_chemical(r[-1]) or 'label' in r[-1].lower()),
+            ('Kila swali la kati halina dawa', lambda r, t: all(_no_chemical(x) for x in r[:-1])),
+            ('[1] Hakuna swali linalojirudia',
+             lambda r, t: len(_questions(r)) == len(set(_questions(r))) and len(_questions(r)) >= 1),
+            ('[2] Kila swali la kufuatilia linatoka kwenye kanuni za dalili hizi',
+             lambda r, t: all(x.get('sources') for x in t if x.get('asked') not in (None, 'crop', 'symptoms', 'extent'))),
+            ('[3] Inalinganisha visababishi (orodha + "kwa nini si vingine")',
+             lambda r, t: 'kusababishwa na' in r[2].lower() and 'kwa nini si vingine' in r[-1].lower()),
+            ('[4] Uhakika unatokana na kanuni (zimetajwa kwenye jibu na trace)',
+             lambda r, t: 'kanuni zilizotumika' in r[-1].lower()
+             and any(x.startswith('DR-') for x in t[-1].get('rules_used', []))),
+            ('[5] Kemikali kwa category tu, kwa REC rule + tahadhari ya label',
+             lambda r, t: t[-1]['gate']['recommendation'] and 'label' in r[-1].lower()),
+            ('[6] Jibu linataja chanzo cha dataset', lambda r, t: 'chanzo' in r[-1].lower()),
+            ('Inachagua tatizo mahsusi', lambda r, t: 'fall armyworm' in r[-1].lower()),
+            ('Jibu linahusu mahindi pekee', lambda r, t: _single_crop(r[-1], 'mahindi')),
         ],
         'trace': True,
     },
     {
-        'name': 'T4 — "Mahindi yangu yana wadudu" (template ipo lakini taarifa hazitoshi)',
+        'name': 'T3b — FAW imethibitishwa lakini mimea michache tu (kigezo 5)',
+        'turns': FAW_TURNS + ['mimea michache tu'],
+        'checks': [
+            ('[5] Hakuna dawa: severity ndogo haitimizi REC rule',
+             lambda r, t: _no_chemical(r[-1]) and not t[-1]['gate']['chemical_allowed']),
+            ('Bado inatoa utambuzi na hatua za IPM', lambda r, t: 'fall armyworm' in r[-1].lower()),
+        ],
+    },
+    {
+        'name': 'T4 — "Mahindi yangu yana wadudu" (taarifa hazitoshi)',
         'turns': ['Mahindi yangu yana wadudu'],
         'checks': [
-            ('Haitoi template ya dawa mara moja', lambda r: _no_chemical(r[-1])),
-            ('Inauliza dalili', lambda r: 'dalili' in r[-1].lower()),
+            ('Haitoi dawa mara moja', lambda r, t: _no_chemical(r[-1])),
+            ('Inauliza dalili', lambda r, t: 'dalili' in r[-1].lower()),
         ],
     },
     {
-        'name': 'T5 — Mkulima hajui baadhi ya taarifa (dawa lazima zizuiwe)',
-        'turns': [
-            'mahindi yangu yana madoa ya kijivu na kahawia kwenye majani',
-            'sijui', 'sijui', 'sijui', 'sijui',
-        ],
+        'name': 'T5 — Mkulima hajui majibu ya maswali (dawa lazima zizuiwe)',
+        'turns': ['mahindi yangu yana mashimo makubwa kwenye majani', 'sijui', 'sijui', 'sijui'],
         'checks': [
-            ('Haitoi utambuzi taarifa zisipotosha',
-             lambda r: 'siwezi kukupa utambuzi' in r[-1].lower()),
-            ('Jibu la mwisho halina dawa wala dosage', lambda r: _no_chemical(r[-1])),
-            ('Inaelekeza kwa afisa ugani', lambda r: 'afisa ugani' in r[-1].lower()),
+            ('Haitoi utambuzi ushahidi usipotosha',
+             lambda r, t: any('siwezi kukupa utambuzi' in x.lower() for x in r)),
+            ('Hakuna jibu lenye dawa wala dosage', lambda r, t: all(_no_chemical(x) for x in r)),
+            ('Inaelekeza kwa afisa ugani', lambda r, t: any('afisa ugani' in x.lower() for x in r)),
+            ('[1] Haiulizi dhana moja mara mbili (frass/kinyesi)',
+             lambda r, t: sum('frass' in q.lower() or 'kinyesi' in q.lower() for q in _questions(r)) == 1),
         ],
         'trace': True,
+    },
+    {
+        'name': 'T5b — Dalili zisizo kwenye kanuni (kigezo 6: haibuni)',
+        'turns': ['mahindi yangu yana madoa ya kijivu na kahawia kwenye majani'],
+        'checks': [
+            ('Inasema wazi haina utambuzi', lambda r, t: 'siwezi kukupa utambuzi' in r[-1].lower()),
+            ('Haibuni dawa', lambda r, t: _no_chemical(r[-1])),
+        ],
     },
     {
         'name': 'T6 — Mkulima anasitisha uchunguzi',
         'turns': ['Mazao yangu yanaumwa', 'acha'],
         'checks': [
-            ('Uchunguzi unasitishwa kwa staha', lambda r: 'sitisha' in r[-1].lower()),
+            ('Uchunguzi unasitishwa kwa staha', lambda r, t: 'sitisha' in r[-1].lower()),
         ],
     },
     {
         'name': 'T8 — Zao lisilo kwenye dataset (mtama) halizungushwi',
         'turns': ['Mazao yangu yanaumwa', 'mtama'],
         'checks': [
-            ('Inasema wazi haina taarifa za zao hilo', lambda r: 'sina taarifa' in r[-1].lower()),
-            ('Haiulizi "zao gani" tena', lambda r: 'zao gani' not in r[-1].lower()),
-            ('Haibuni ushauri wa zao hilo', lambda r: _no_chemical(r[-1])),
+            ('Inasema wazi haina taarifa za zao hilo', lambda r, t: 'sina taarifa' in r[-1].lower()),
+            ('Haiulizi "zao gani" tena', lambda r, t: 'zao gani' not in r[-1].lower()),
+            ('Haibuni ushauri wa zao hilo', lambda r, t: _no_chemical(r[-1])),
         ],
     },
     {
         'name': 'T9 — Jibu lisiloeleweka kwa swali la zao halizungushwi',
         'turns': ['Mazao yangu yanaumwa', 'hmm', 'sielewi'],
         'checks': [
-            ('Inaacha kuuliza baada ya majaribio 2', lambda r: 'zao gani' not in r[-1].lower()),
+            ('Inaacha kuuliza baada ya majaribio 2', lambda r, t: 'zao gani' not in r[-1].lower()),
+        ],
+    },
+    {
+        'name': 'T10 — Ugonjwa hatari (MLN): hakuna dawa, afisa ugani (ESC-MZ-001)',
+        'turns': ['mahindi yana mistari ya njano na mmea umedumaa', 'ndiyo', 'shamba lote'],
+        'checks': [
+            ('Inatambua MLN baada ya ishara kuu', lambda r, t: 'mln' in r[-1].lower()),
+            ('Hakuna dawa (escalation inazuia)', lambda r, t: not t[-1]['gate']['chemical_allowed']),
+            ('Inaelekeza kwa afisa ugani', lambda r, t: 'afisa ugani' in r[-1].lower()),
+        ],
+    },
+    {
+        'name': 'T11 — Zao lisilo na kanuni za uchunguzi (maharage): haibuni',
+        'turns': ['maharage yangu yana mashimo kwenye majani'],
+        'checks': [
+            ('Inasema wazi haina kanuni', lambda r, t: 'sitabuni' in r[-1].lower()),
+            ('Haitaji dawa', lambda r, t: _no_chemical(r[-1])),
         ],
     },
     {
         'name': 'T7 — Bei ya soko inaonya kwamba si bei ya leo',
         'turns': ['bei ya mahindi Dodoma ikoje'],
         'checks': [
-            ('Onyo la bei lipo', lambda r: 'thibitisha' in r[-1].lower()),
+            ('Onyo la bei lipo', lambda r, t: 'thibitisha' in r[-1].lower()),
         ],
     },
 ]
@@ -142,16 +188,28 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--offline', action='store_true',
-                            help='Usiite Groq — jibu linajengwa kutoka dataset pekee')
+                            help='Usiite AI ya nje — majibu kutoka dataset pekee')
+        parser.add_argument('--load-fixtures', action='store_true',
+                            help='Ingiza kwanza Excel za MHD-007 za diagnosis/fixtures/mhd007')
 
     def handle(self, *args, **opts):
         from bot.engine import process_message
+        from diagnosis.models import Pest
+
+        if opts['load_fixtures']:
+            import glob, os
+            from diagnosis.importer import import_mhd007
+            folder = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'diagnosis', 'fixtures', 'mhd007')
+            self.stdout.write(import_mhd007(sorted(glob.glob(os.path.join(folder, '*.xlsx')))).as_text())
+        if not Pest.objects.exists():
+            self.stdout.write(self.style.WARNING(
+                'Hakuna data ya MHD-007 kwenye database — endesha kwa --load-fixtures '
+                'au import_mhd007 kwanza.'))
 
         passed = failed = 0
-        ctx = patch('bot.groq_ai.get_grounded_response', return_value='') if opts['offline'] else None
-        ctx2 = patch('bot.groq_ai.get_groq_response', return_value='') if opts['offline'] else None
+        ctx = patch('bot.groq_ai.get_groq_response', return_value='') if opts['offline'] else None
         if ctx:
-            ctx.start(); ctx2.start()
+            ctx.start()
 
         try:
             for i, sc in enumerate(SCENARIOS):
@@ -170,9 +228,10 @@ class Command(BaseCommand):
                     self.stdout.write(f"🤖 {reply}")
 
                 self.stdout.write('')
+                traces = _traces(phone)
                 for label, fn in sc['checks']:
                     try:
-                        ok = bool(fn(replies))
+                        ok = bool(fn(replies, traces))
                     except Exception:
                         ok = False
                     if ok:
@@ -182,26 +241,22 @@ class Command(BaseCommand):
                         failed += 1
                         self.stdout.write(self.style.ERROR(f"  ✗ FAIL  {label}"))
 
-                if sc.get('trace'):
-                    last = (Conversation.objects
-                            .filter(user__phone_number=phone, message_direction='outbound')
-                            .order_by('-created_at').first())
-                    if last and last.trace:
-                        t = last.trace
-                        self.stdout.write('\n  📋 TRACE:')
-                        self.stdout.write(f"     chanzo cha jibu : {t.get('source')}")
-                        self.stdout.write(f"     uhakika         : {t.get('confidence')}")
-                        self.stdout.write(f"     dawa inaruhusiwa: {t.get('chemical_allowed')}")
-                        for r in t.get('records_used', []):
-                            self.stdout.write(
-                                f"     record          : {r['ref']} (score {r['score']}, "
-                                f"maneno: {', '.join(r['match_terms'])})")
-                        self.stdout.write(f"     ukaguzi         : {t.get('validation')}")
+                if sc.get('trace') and traces:
+                    t = traces[-1]
+                    self.stdout.write('\n  📋 TRACE:')
+                    self.stdout.write(f"     uamuzi          : {t.get('decision')} {t.get('diagnosis') or ''}")
+                    self.stdout.write(f"     scores          : {t.get('scores')}")
+                    self.stdout.write(f"     kanuni          : {', '.join(t.get('rules_used', []))}")
+                    for ev in t.get('evidence', []):
+                        self.stdout.write(f"     ushahidi        : {ev['answer']:<7} {ev['question'][:55]} "
+                                          f"{ev['deltas']} ({', '.join(ev['sources'])})")
+                    if t.get('gate'):
+                        self.stdout.write(f"     safety gate     : {t['gate']}")
 
                 User.objects.filter(phone_number=phone).delete()
         finally:
             if ctx:
-                ctx.stop(); ctx2.stop()
+                ctx.stop()
 
         self.stdout.write('\n' + '═' * 64)
         total = passed + failed
