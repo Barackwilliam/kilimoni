@@ -16,6 +16,7 @@ from crops.models import (
 )
 from bot.models import User, Conversation, UnresolvedQuery
 from bot import diagnostic as dg
+from diagnosis import engine as rx
 from analytics.models import AnalyticsLog
 
 logger = logging.getLogger(__name__)
@@ -650,7 +651,7 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # Hushughulikiwa KWANZA, ili majibu ya mkulima (mfano "wiki 3",
     # "nusu ya shamba") yasichukuliwe kama maswali mapya.
     _sess = user.session_state or {}
-    if _sess.get('goal_pending') or dg.get_diag(_sess):
+    if _sess.get('goal_pending') or rx.get_state(_sess):
         handled = _handle_diagnostic_turn(user, raw_message, normalized,
                                           start_time, message_id)
         if handled is not None:
@@ -1049,92 +1050,72 @@ def _log_all(user, raw_message, normalized, crop, intent, location, zone,
 # MTIRIRIKO WA UCHUNGUZI — helpers
 # ═══════════════════════════════════════════════════════
 
-def _save_diag(user, diag):
+def _save_rx(user, state):
     sess = dict(user.session_state or {})
-    if diag is None:
-        sess.pop('diag', None)
+    sess.pop('diag', None)          # hali ya mfumo wa zamani, kama ipo
+    if state is None:
+        sess.pop(rx.STATE_KEY, None)
     else:
-        diag['updated'] = time.time()
-        sess['diag'] = diag
+        sess[rx.STATE_KEY] = state
     user.session_state = sess
     user.save(update_fields=['session_state'])
 
 
-def _diag_crop(diag):
-    cid = diag['slots'].get('crop')
-    if cid and cid != 'haijulikani':
-        return Crop.objects.filter(id=cid).first()
-    return None
-
-
-def _diag_step(user, diag, raw_message, normalized, start_time, message_id):
-    """Uliza taarifa inayofuata, au toa jibu la mwisho zikikamilika."""
-    crop = _diag_crop(diag)
-    slot = dg.next_missing_slot(diag)
-
-    # Zao halipo kwenye dataset — sema ukweli, usizunguke
-    if diag.get('unsupported_crop'):
-        name = diag['unsupported_crop'].capitalize()
-        supported = ', '.join(c.crop_name_sw for c in Crop.objects.filter(active_status='active'))
-        _save_diag(user, None)
-        response = (
-            f"Samahani, kwa sasa sina taarifa za *{name}* kwenye mfumo wangu, "
-            "kwa hiyo siwezi kuchunguza tatizo lake kwa usahihi. 🌱\n\n"
-            f"Kwa sasa ninasaidia: *{supported}*.\n\n" + dg.REFER_EXTENSION
-        )
-        _log_all(user, raw_message, normalized, None, None, '', None, response, False,
-                 start_time, message_id=message_id,
-                 trace={'mode': 'diagnostic', 'source': 'unsupported_crop',
-                        'crop_named': diag['unsupported_crop']})
-        return response
-
-    # Jibu lisiloeleweka mara 2 kwa swali la zao — acha kuzunguka
-    if diag.get('crop_attempts', 0) >= 2:
-        diag['slots']['crop'] = 'haijulikani'
-
-    # Bila zao hatuwezi kuendelea — tukishindwa mara 2, tunamwelekeza
-    if diag['slots'].get('crop') == 'haijulikani':
-        _save_diag(user, None)
-        response = (
-            "Sawa. Bila kujua zao, siwezi kuchagua taarifa sahihi. 🌱\n\n"
-            + dg.REFER_EXTENSION
-        )
-        _log_all(user, raw_message, normalized, None, None, '', None, response, False,
-                 start_time, message_id=message_id,
-                 trace={'mode': 'diagnostic', 'slots': diag['slots'], 'source': 'no_crop'})
-        return response
-
-    if slot:
-        diag['asked'] = slot
-        _save_diag(user, diag)
-        response = dg.question_for(slot, crop.crop_name_sw if crop else '')
-        _log_all(user, raw_message, normalized, crop, None, '', None, response, True,
-                 start_time, message_id=message_id,
-                 trace={'mode': 'diagnostic', 'asked': slot, 'slots': diag['slots']})
-        return response
-
-    # Taarifa zote zimekusanywa
-    loc = diag['slots'].get('location')
-    loc = None if loc == 'haijulikani' else loc
-    zone = map_location_to_zone(loc) if loc else None
-    response, trace = dg.build_final_answer(diag['slots'], crop, zone, user)
-    _save_diag(user, None)
-    if crop:
+def _rx_reply(user, state, raw_message, normalized, response, trace, done,
+              start_time, message_id):
+    """Hifadhi hali ya uchunguzi, rekodi trace, rudisha jibu."""
+    crop = Crop.objects.filter(id=state.get('crop_id')).first() if state.get('crop_id') else None
+    _save_rx(user, None if done else state)
+    if crop and user.last_crop_id != crop.id:
         user.last_crop_id = crop.id
         user.save(update_fields=['last_crop_id'])
-    _log_all(user, raw_message, normalized, crop, None, loc or '', zone, response,
-             trace.get('confidence') != 'low', start_time,
-             answer_ref=','.join(r['ref'] for r in trace.get('records_used', [])),
+    success = trace.get('decision') not in ('uncertain', 'no_rule_matched', 'no_crop')
+    _log_all(user, raw_message, normalized, crop, None, '', None, response, success,
+             start_time, answer_ref=','.join(trace.get('rules_used', [])),
              message_id=message_id, trace=trace)
     return response
 
 
+def _rx_step(user, state, raw_message, normalized, start_time, message_id, fresh_crop=None):
+    """Hatua moja ya rules engine (diagnosis/engine.py)."""
+    if state['phase'] == 'crop':
+        crop = fresh_crop or detect_crop(normalized)
+        if not crop:
+            words = set(re.findall(r"[a-z]+", normalized.lower()))
+            unsupported = [c for c in dg.KNOWN_CROPS if c in words]
+            if unsupported:
+                # Zao halipo kwenye mfumo — sema ukweli, usizunguke
+                names = ', '.join(rx.supported_crop_names()) or '—'
+                response = (
+                    f"Samahani, kwa sasa sina taarifa za *{unsupported[0].capitalize()}* "
+                    "kwenye mfumo wangu, kwa hiyo siwezi kuchunguza tatizo lake kwa usahihi. 🌱\n\n"
+                    f"Kwa sasa uchunguzi unapatikana kwa: *{names}*.\n\n" + rx.REFER_EXTENSION)
+                return _rx_reply(user, state, raw_message, normalized, response,
+                                 {'mode': 'rules_engine', 'decision': 'unsupported_crop',
+                                  'crop_named': unsupported[0]}, True, start_time, message_id)
+            if state.get('crop_asked'):
+                state['crop_attempts'] = state.get('crop_attempts', 0) + 1
+            if state.get('crop_attempts', 0) >= 2:
+                response = ("Sawa. Bila kujua zao, siwezi kuchagua kanuni sahihi. 🌱\n\n"
+                            + rx.REFER_EXTENSION)
+                return _rx_reply(user, state, raw_message, normalized, response,
+                                 {'mode': 'rules_engine', 'decision': 'no_crop'}, True,
+                                 start_time, message_id)
+            state['crop_asked'] = True
+            return _rx_reply(user, state, raw_message, normalized, rx.ASK_CROP,
+                             {'mode': 'rules_engine', 'asked': 'crop'}, False,
+                             start_time, message_id)
+        fresh_crop = crop
+    response, trace, done = rx.step(state, normalized, fresh_crop)
+    return _rx_reply(user, state, raw_message, normalized, response, trace, done,
+                     start_time, message_id)
+
+
 def _start_diagnostic(user, raw_message, normalized, fresh_crop, start_time, message_id):
-    diag = dg.new_diag()
     # Zao linachukuliwa tu kama limetajwa kwenye ujumbe huu —
     # si kutoka kumbukumbu ya zamani — ili tusichunguze zao lisilo sahihi.
-    dg.fill_slots(diag, normalized, detect_crop, detect_location, fresh_crop=fresh_crop)
-    return _diag_step(user, diag, raw_message, normalized, start_time, message_id)
+    return _rx_step(user, rx.new_state(), raw_message, normalized, start_time,
+                    message_id, fresh_crop=fresh_crop)
 
 
 def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_id):
@@ -1157,16 +1138,17 @@ def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_i
         return None
 
     # ── Uchunguzi unaoendelea ──
-    diag = dg.get_diag(sess)
-    if not diag:
+    state = rx.get_state(sess)
+    if not state:
         return None
 
-    if dg.is_cancel(normalized):
-        _save_diag(user, None)
+    if rx.is_cancel(normalized):
+        _save_rx(user, None)
         response = "Sawa, nimesitisha uchunguzi. Uliza swali lingine lolote kuhusu kilimo. 🌿"
         _log_all(user, raw_message, normalized, None, None, '', None, response, True,
-                 start_time, message_id=message_id, trace={'mode': 'diagnostic', 'source': 'cancelled'})
+                 start_time, message_id=message_id,
+                 trace={'mode': 'rules_engine', 'decision': 'cancelled'})
         return response
 
-    dg.fill_slots(diag, normalized, detect_crop, detect_location)
-    return _diag_step(user, diag, raw_message, normalized, start_time, message_id)
+    return _rx_step(user, state, raw_message, normalized, start_time, message_id,
+                    fresh_crop=detect_crop(normalized) if state['phase'] == 'crop' else None)

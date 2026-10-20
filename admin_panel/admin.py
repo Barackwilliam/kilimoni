@@ -4,11 +4,14 @@ from .models import Subscription, Payment
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
-    list_display = ['client_name', 'plan_name', 'monthly_fee',
+    list_display = ['client_name', 'plan_name', 'total_usd',
                     'status', 'due_date', 'service_active']
     list_editable = ['status', 'due_date', 'service_active']
+    readonly_fields = ['fx_rate', 'fx_rate_updated']
     fieldsets = (
-        ('Mteja', {'fields': ('client_name', 'plan_name', 'monthly_fee')}),
+        ('Mteja', {'fields': ('client_name', 'plan_name')}),
+        ('Gharama za kila mwezi (USD)', {'fields': ('hosting_usd', 'ai_usd', 'management_usd')}),
+        ('Kiwango cha fedha (kinajisasisha)', {'fields': ('fx_rate', 'fx_rate_updated')}),
         ('Kipindi', {'fields': ('period_start', 'due_date', 'grace_days')}),
         ('Hali', {
             'fields': ('status', 'service_active'),
