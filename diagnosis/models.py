@@ -73,6 +73,49 @@ class Pest(SourceRecord):
         return f"{self.source_id} — {self.name_sw or self.name_en}"
 
 
+# ─────────────────────────── MHD-007B: Magonjwa ───────────────────────────
+
+class Disease(SourceRecord):
+    """01_Disease_Master. source_id = Disease_ID (DIS001)."""
+    record_id = models.CharField(max_length=40, blank=True, help_text="Record_ID, mf. MHD007B-REC001")
+    name_en = models.CharField(max_length=150)
+    name_sw = models.CharField(max_length=200, blank=True)
+    causal_agent = models.CharField(max_length=200, blank=True)
+    pathogen_type = models.CharField(max_length=60, blank=True)
+    disease_group = models.CharField(max_length=60, blank=True)
+    plant_part_affected = models.CharField(max_length=200, blank=True)
+    growth_stage_affected = models.CharField(max_length=200, blank=True)
+    favourable_conditions = models.TextField(blank=True)
+    transmission = models.TextField(blank=True)
+    visible_symptoms_sw = models.TextField(blank=True)
+    technical_symptoms = models.TextField(blank=True)
+    key_diagnostic_feature = models.TextField(blank=True)
+    similar_problems = models.TextField(blank=True)
+    differentiator = models.TextField(blank=True)
+    field_diagnosis_method = models.TextField(blank=True)
+    confirmation_method = models.TextField(blank=True)
+    severity_level = models.CharField(max_length=20, blank=True)
+    urgency = models.CharField(max_length=20, blank=True)
+    prevention_sw = models.TextField(blank=True)
+    cultural_control_sw = models.TextField(blank=True)
+    sanitation_control_sw = models.TextField(blank=True)
+    resistant_variety_advice = models.TextField(blank=True)
+    biological_control_sw = models.TextField(blank=True)
+    chemical_control_safety_text = models.TextField(blank=True)
+    ipm_recommendation_sw = models.TextField(blank=True)
+    farmer_question_examples = models.TextField(blank=True)
+    ai_summary_sw = models.TextField(blank=True)
+    follow_up_question_sw = models.TextField(blank=True)
+    escalation_trigger = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Disease / Ugonjwa'
+        verbose_name_plural = 'Diseases / Magonjwa'
+
+    def __str__(self):
+        return f"{self.source_id} — {self.name_sw or self.name_en}"
+
+
 # ─────────────────────────── MHD-007C: Dalili na maswali ───────────────────────────
 
 class Symptom(SourceRecord):
@@ -109,9 +152,11 @@ class SymptomDiagnosisMap(SourceRecord):
     symptom = models.ForeignKey(Symptom, on_delete=models.CASCADE, related_name='mappings')
     target_type = models.CharField(max_length=30, default='Pest')
     target_id = models.CharField(max_length=40,
-                                 help_text="Pest_ID, au Disease_ID MHD-007B ikija")
+                                 help_text="Pest_ID au Disease_ID")
     pest = models.ForeignKey(Pest, on_delete=models.CASCADE, null=True, blank=True,
                              related_name='mappings')
+    disease = models.ForeignKey(Disease, on_delete=models.CASCADE, null=True, blank=True,
+                                related_name='mappings')
     match_strength = models.CharField(max_length=30, blank=True)
     required_context = models.TextField(blank=True)
     rule_trigger = models.TextField(blank=True)
@@ -175,9 +220,18 @@ class ConfidenceRule(SourceRecord):
 
 
 class DecisionRule(SourceRecord):
-    """MHD-007A 02_AI_Decision_Rules, mf. R0001 symptom match → PST001 (0.65)."""
+    """
+    02_AI_Decision_Rules za MHD-007A (pest, mf. R0001 → PST001, 0.65) na
+    MHD-007B (disease, mf. MHD007B-RUL001 → DIS001, 0.82). Moja tu kati ya
+    pest/disease imejazwa.
+    """
     rule_type = models.CharField(max_length=60, blank=True)
-    pest = models.ForeignKey(Pest, on_delete=models.CASCADE, related_name='decision_rules')
+    pest = models.ForeignKey(Pest, on_delete=models.CASCADE, null=True, blank=True,
+                             related_name='decision_rules')
+    disease = models.ForeignKey(Disease, on_delete=models.CASCADE, null=True, blank=True,
+                                related_name='decision_rules')
+    context_requirements = models.TextField(blank=True)
+    differential_check = models.TextField(blank=True)
     input_symptom_sw = models.TextField(blank=True)
     condition_logic = models.TextField(blank=True)
     ai_action = models.TextField(blank=True)
@@ -193,7 +247,121 @@ class DecisionRule(SourceRecord):
         verbose_name = 'Decision Rule'
 
     def __str__(self):
-        return f"{self.source_id} ({self.rule_type}) → {self.pest.source_id}"
+        target = self.pest or self.disease
+        return f"{self.source_id} ({self.rule_type}) → {target.source_id if target else '?'}"
+
+
+# ─────────────────────────── MHD-007D: Decision engine ───────────────────────────
+# 007D inataja visababishi kwa JINA ("Fall Armyworm / Funza Jeshi Vamizi"),
+# si kwa ID. Importer inatafuta Pest/Disease inayolingana na kuhifadhi ID yake
+# kwenye *_cause_id (PST001 / DIS001); tupu = haijaunganishwa (onyo la import).
+
+class DiagnosisRule(SourceRecord):
+    """01_Diagnosis_Decision_Rules, mf. DR-MZ-0001 (FAW, base 0.90)."""
+    input_symptom_sw = models.TextField(blank=True)
+    normalized_symptom = models.TextField(blank=True)
+    plant_part = models.CharField(max_length=60, blank=True)
+    growth_stage = models.CharField(max_length=60, blank=True)
+    condition_code = models.CharField(max_length=30, blank=True)
+    likely_diagnosis = models.CharField(max_length=200)
+    cause_id = models.CharField(max_length=40, blank=True)
+    diagnosis_category = models.CharField(max_length=30, blank=True)
+    trigger_conditions = models.TextField(blank=True)
+    exclusion_conditions = models.TextField(blank=True)
+    follow_up_question_sw = models.TextField(blank=True)
+    if_answer_yes = models.TextField(blank=True)
+    if_answer_no = models.TextField(blank=True)
+    base_confidence = models.FloatField(null=True, blank=True)
+    adjusted_confidence_high = models.FloatField(null=True, blank=True)
+    adjusted_confidence_low = models.FloatField(null=True, blank=True)
+    severity = models.CharField(max_length=20, blank=True)
+    urgency = models.CharField(max_length=20, blank=True)
+    next_action = models.TextField(blank=True)
+    explainability_id = models.CharField(max_length=40, blank=True)
+    cms_action_code = models.CharField(max_length=40, blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Diagnosis Rule (007D)'
+
+    def __str__(self):
+        return f"{self.source_id} — {self.likely_diagnosis} ({self.growth_stage})"
+
+
+class DifferentialDiagnosis(SourceRecord):
+    """02_Differential_Diagnosis, mf. DD-MZ-0001: FAW vs Stem Borer."""
+    symptom_group = models.TextField(blank=True)
+    primary_diagnosis = models.CharField(max_length=200)
+    primary_cause_id = models.CharField(max_length=40, blank=True)
+    alternative_diagnosis = models.CharField(max_length=200)
+    alternative_cause_id = models.CharField(max_length=40, blank=True)
+    shared_symptoms = models.TextField(blank=True)
+    differentiating_feature = models.TextField(blank=True)
+    question_sw = models.TextField(blank=True)
+    decision_logic = models.TextField(blank=True)
+    if_yes_adjustment = models.FloatField(null=True, blank=True)
+    if_no_adjustment = models.FloatField(null=True, blank=True)
+    priority = models.CharField(max_length=20, blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Differential Diagnosis'
+        verbose_name_plural = 'Differential Diagnoses'
+
+    def __str__(self):
+        return f"{self.source_id}: {self.primary_diagnosis} vs {self.alternative_diagnosis}"
+
+
+class FollowUpNode(SourceRecord):
+    """03_Follow_Up_Logic, mf. FU-MZ-0001 → NODE_FAW_2."""
+    rule_group = models.CharField(max_length=40, blank=True, help_text="mf. FAW")
+    question_sw = models.TextField()
+    answer_type = models.CharField(max_length=60, blank=True)
+    yes_action = models.TextField(blank=True)
+    no_action = models.TextField(blank=True)
+    unknown_action = models.TextField(blank=True)
+    adjustment_yes = models.FloatField(null=True, blank=True)
+    adjustment_no = models.FloatField(null=True, blank=True)
+    next_node = models.CharField(max_length=40, blank=True)
+    cms_field = models.CharField(max_length=60, blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Follow-up Node (007D)'
+
+    def __str__(self):
+        return f"{self.source_id} — {self.question_sw[:60]}"
+
+
+class ConfidenceBand(SourceRecord):
+    """04_Confidence_Scoring ya 007D. source_id = jina la band (mf. 'High')."""
+    min_score = models.FloatField()
+    max_score = models.FloatField()
+    meaning = models.TextField(blank=True)
+    system_action = models.TextField(blank=True)
+    farmer_message_sw = models.TextField(blank=True)
+    escalation_needed = models.CharField(max_length=60, blank=True)
+
+    class Meta:
+        ordering = ['-min_score']
+        verbose_name = 'Confidence Band'
+
+    def __str__(self):
+        return f"{self.source_id} ({self.min_score:.2f}–{self.max_score:.2f})"
+
+
+class EscalationRule(SourceRecord):
+    """05_Escalation_Rules, mf. ESC-MZ-001 (ugonjwa hatari → afisa ugani)."""
+    trigger = models.CharField(max_length=200, blank=True)
+    condition = models.TextField(blank=True)
+    ai_action = models.TextField(blank=True)
+    farmer_message_sw = models.TextField(blank=True)
+    escalate_to = models.CharField(max_length=60, blank=True)
+    priority = models.CharField(max_length=20, blank=True)
+    cms_action_code = models.CharField(max_length=40, blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Escalation Rule'
+
+    def __str__(self):
+        return f"{self.source_id} — {self.trigger}"
 
 
 # ─────────────────────────── MHD-007E: Matibabu na usalama ───────────────────────────
@@ -303,16 +471,21 @@ class FarmerMessageTemplate(SourceRecord):
 
 class ExplainabilityRecord(SourceRecord):
     """
-    Maelezo ya "kwa nini" yanatoka sheets 3 zenye umbo tofauti:
+    Maelezo ya "kwa nini" yanatoka sheets 5 zenye umbo tofauti:
       pest     — MHD-007A/03_Explainability (EXP0001…)
       symptom  — MHD-007C/05_Explainability (EXP001…)
       scenario — MHD-007F/02_Explainability_Master (EXP-CAT-001…)
+      disease  — MHD-007B/03_Explainability (MHD007B-EXP001…)
+      decision — MHD-007D/06_Explainability (EXP-MZ-0001…), kwa DiagnosisRule
     """
-    LEVELS = [('pest', 'Pest'), ('symptom', 'Symptom'), ('scenario', 'Scenario')]
+    LEVELS = [('pest', 'Pest'), ('symptom', 'Symptom'), ('scenario', 'Scenario'),
+              ('disease', 'Disease'), ('decision', 'Diagnosis rule')]
     level = models.CharField(max_length=10, choices=LEVELS)
     pest = models.ForeignKey(Pest, on_delete=models.CASCADE, null=True, blank=True,
                              related_name='explanations')
     symptom = models.ForeignKey(Symptom, on_delete=models.CASCADE, null=True, blank=True,
+                                related_name='explanations')
+    disease = models.ForeignKey(Disease, on_delete=models.CASCADE, null=True, blank=True,
                                 related_name='explanations')
     explanation_type = models.CharField(max_length=60, blank=True,
                                         help_text="mf. Diagnosis Reason, au Scenario ya 007F")

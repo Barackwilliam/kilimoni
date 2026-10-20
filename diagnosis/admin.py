@@ -1,5 +1,7 @@
 from django.contrib import admin
 from .models import (
+    ConfidenceBand, DiagnosisRule, DifferentialDiagnosis, Disease, EscalationRule,
+    FollowUpNode,
     Pest, DecisionRule, Symptom, SymptomDiagnosisMap, FollowupQuestion,
     ConfidenceRule, Treatment, TreatmentProtocolStep, SafetyRule,
     RecommendationRule, FarmerMessageTemplate, ExplainabilityRecord,
@@ -16,6 +18,12 @@ class SourceAdmin(admin.ModelAdmin):
 class PestAdmin(SourceAdmin):
     list_display = ['source_id', 'name_sw', 'name_en', 'risk_level', 'is_active']
     search_fields = ['source_id', 'name_sw', 'name_en', 'scientific_name']
+
+
+@admin.register(Disease)
+class DiseaseAdmin(SourceAdmin):
+    list_display = ['source_id', 'name_sw', 'name_en', 'pathogen_type', 'severity_level', 'is_active']
+    search_fields = ['source_id', 'name_sw', 'name_en']
 
 
 @admin.register(Symptom)
@@ -45,7 +53,34 @@ class ConfidenceRuleAdmin(SourceAdmin):
 
 @admin.register(DecisionRule)
 class DecisionRuleAdmin(SourceAdmin):
-    list_display = ['source_id', 'rule_type', 'pest', 'confidence', 'confidence_label', 'followup']
+    list_display = ['source_id', 'rule_type', 'pest', 'disease', 'confidence', 'confidence_label', 'followup']
+
+
+@admin.register(DiagnosisRule)
+class DiagnosisRuleAdmin(SourceAdmin):
+    list_display = ['source_id', 'likely_diagnosis', 'cause_id', 'growth_stage',
+                    'base_confidence', 'adjusted_confidence_low', 'adjusted_confidence_high']
+
+
+@admin.register(DifferentialDiagnosis)
+class DifferentialDiagnosisAdmin(SourceAdmin):
+    list_display = ['source_id', 'primary_cause_id', 'alternative_cause_id',
+                    'if_yes_adjustment', 'if_no_adjustment']
+
+
+@admin.register(FollowUpNode)
+class FollowUpNodeAdmin(SourceAdmin):
+    list_display = ['source_id', 'question_sw', 'adjustment_yes', 'adjustment_no', 'next_node']
+
+
+@admin.register(ConfidenceBand)
+class ConfidenceBandAdmin(SourceAdmin):
+    list_display = ['source_id', 'min_score', 'max_score', 'system_action']
+
+
+@admin.register(EscalationRule)
+class EscalationRuleAdmin(SourceAdmin):
+    list_display = ['source_id', 'trigger', 'escalate_to', 'priority']
 
 
 class StepInline(admin.TabularInline):
@@ -77,7 +112,7 @@ class FarmerMessageTemplateAdmin(SourceAdmin):
 
 @admin.register(ExplainabilityRecord)
 class ExplainabilityRecordAdmin(SourceAdmin):
-    list_display = ['source_id', 'level', 'pest', 'symptom', 'explanation_type']
+    list_display = ['source_id', 'level', 'pest', 'disease', 'symptom', 'explanation_type']
     list_filter = ['level', 'is_active']
 
 
