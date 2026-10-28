@@ -75,3 +75,35 @@ class RxDashboardTests(TestCase):
         self.assertContains(r, 'Ulinganisho wa visababishi')
         self.assertContains(r, 'DR-MZ-0001')
         self.assertContains(r, 'Maelekezo ya mfumo')               # sentensi iliyoondolewa inaonekana hapa
+
+
+class RxAITraceTests(TestCase):
+    """Mazungumzo kamili kupitia bot + AI bandia → trace ya AI inaonekana kwenye dashboard."""
+
+    def setUp(self):
+        Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize', crop_group='cereals')
+        AuthUser.objects.create_user('kilimoni', password='x', is_staff=True)
+        self.client.login(username='kilimoni', password='x')
+
+    def test_farmer_words_end_to_end(self):
+        from unittest.mock import patch
+        from django.test import override_settings
+        from bot.engine import process_message
+        from bot.models import Conversation
+        from diagnosis.importer import import_mhd007
+        from diagnosis.test_ai import FakeLLM
+        import_mhd007(sorted(glob.glob(os.path.join(FIXTURES, '*.xlsx'))))
+        fake = FakeLLM(answers={'nimeona uchafu mweusi kama unga katikati ya mmea': 'yes',
+                                'sijawaona hao kabisa shambani': 'no'})
+        phone = '255700000077'
+        with override_settings(GROQ_API_KEY='x'), patch('diagnosis.ai_layer._chat', fake):
+            first = process_message(phone, 'kuna vitu vinakula mahindi yangu, majani yametobolewa vibaya')
+            self.assertIn('Swali 1', first)                       # uchunguzi umeanza moja kwa moja
+            process_message(phone, 'nimeona uchafu mweusi kama unga katikati ya mmea')
+            process_message(phone, 'sijawaona hao kabisa shambani')
+            final = process_message(phone, 'nusu ya shamba')
+        self.assertIn('Funza jeshi vamizi', final)
+        c = Conversation.objects.filter(trace__decision='diagnosed').latest('created_at')
+        r = self.client.get(reverse('conversation_detail', args=[c.pk]))
+        self.assertContains(r, 'Kazi ya AI')
+        self.assertContains(r, 'Imekubaliwa')

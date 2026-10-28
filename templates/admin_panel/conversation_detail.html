@@ -108,6 +108,34 @@
 </div>
 {% endif %}
 
+{% if trace.ai %}
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">Kazi ya AI (lugha tu — haiamui)</div></div>
+  <p style="font-size:13px;color:#4b5563;margin:-4px 0 12px;">
+    AI inaelewa maneno ya mkulima na kuyaunganisha na dalili za dataset, inaelewa majibu yake,
+    na inaandika aya fupi ya kibinadamu. Kila matokeo yake yanakaguliwa; yasiyopita ukaguzi yanakataliwa.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Hatua</th><th>Maneno ya mkulima / ingizo</th><th>AI ilielewa</th><th>Ukaguzi</th></tr></thead>
+      <tbody>
+        {% for a in trace.ai %}
+        <tr>
+          <td style="white-space:nowrap;">
+            {% if a.step == 'symptoms' %}Dalili{% elif a.step == 'preanswered' %}Majibu ndani ya maelezo{% elif a.step == 'answer' %}Jibu la swali{% elif a.step == 'extent' %}Ukubwa wa tatizo{% elif a.step == 'summary' %}Muhtasari{% else %}{{ a.step }}{% endif %}
+          </td>
+          <td style="max-width:300px;font-size:13px;">{{ a.input }}</td>
+          <td style="max-width:340px;font-size:13px;">{{ a.output|default:"–" }}</td>
+          <td>{% if a.accepted %}<span class="badge badge-green">Imekubaliwa</span>{% else %}<span class="badge badge-red">Imekataliwa</span>{% endif %}
+              {% if a.note %}<br><span style="font-size:11px;color:#6b7280;">{{ a.note }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 {% if trace.dropped_text %}
 <div class="card" style="margin-top:20px;">
   <div class="card-header"><div class="card-title">Maandishi ya dataset yasiyopelekwa kwa mkulima</div></div>

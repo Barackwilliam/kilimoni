@@ -225,8 +225,10 @@ class Command(BaseCommand):
 
         passed = failed = 0
         ctx = patch('bot.groq_ai.get_groq_response', return_value='') if opts['offline'] else None
+        ai_ctx = patch('diagnosis.ai_layer._chat', return_value=None) if opts['offline'] else None
         if ctx:
             ctx.start()
+            ai_ctx.start()
 
         try:
             for i, sc in enumerate(SCENARIOS):
@@ -274,6 +276,7 @@ class Command(BaseCommand):
         finally:
             if ctx:
                 ctx.stop()
+                ai_ctx.stop()
 
         self.stdout.write('\n' + '═' * 64)
         total = passed + failed

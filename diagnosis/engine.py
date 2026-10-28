@@ -37,7 +37,7 @@ import re
 import time
 
 from . import models as m
-from . import plain
+from . import ai_layer, plain
 from .models import get_setting
 
 STATE_KEY = 'rx'
@@ -256,7 +256,7 @@ def parse_extent(text):
         return min(100, int(mt.group(1)))
     for words, pct in ((('shamba lote', 'lote', 'kote'), 100),
                        (('sehemu kubwa', 'mimea mingi', 'mingi'), 60),
-                       (('nusu',), 50), (('robo',), 25),
+                       (('robo tatu',), 75), (('nusu',), 50), (('robo',), 25),
                        (('michache', 'chache', 'kidogo', 'baadhi', 'mmoja', 'miwili'), 5)):
         if any(w in low for w in words):
             return pct
@@ -512,6 +512,28 @@ def _redundant(state, spec):
     return bool(concepts(spec['text']) & asked)
 
 
+def interpret(state, question, text):
+    """
+    Jibu la mkulima → yes/no/unknown/clarify. Majibu mafupi ("ndiyo",
+    "sijui") yanasomwa kwa kanuni; sentensi ndefu zinaelezwa na AI kwanza
+    ("nimeona vitu vyeusi kama unga ndani"), kanuni zikiwa akiba.
+    """
+    rule = parse_answer(text)
+    if len(_words(text)) <= 2:
+        return rule
+    ai = ai_layer.interpret_answer(question, text, state)
+    return ai or rule
+
+
+def clarify_message(question):
+    return (
+        "Samahani kama swali halikuwa wazi. 🙏\n\n"
+        f"Ninachouliza ni: {_plain_q(question)}\n\n"
+        "Angalia mmea wako kwa makini, kisha nijibu: *ndiyo* kama umeona, "
+        "*hapana* kama hujaona, au *sijui* kama huna uhakika."
+    )
+
+
 # ─────────────────────────── 4. Ushahidi ───────────────────────────
 
 def apply_answer(state, qs, key, answer, via='question'):
@@ -626,13 +648,22 @@ def _band(score):
     return 'Low', ''
 
 
+ACKS = {'yes': 'Sawa, nimeelewa. 👍', 'no': 'Sawa, asante.', 'unknown': 'Hakuna shida.'}
+
+
+def _ack(state):
+    """Kitikio kifupi cha jibu la mwisho la mkulima — mazungumzo yasiwe ya kiroboti."""
+    asked = [ev for ev in state['evidence'] if ev['via'] == 'question']
+    return (ACKS.get(asked[-1]['answer'], '') + '\n\n') if asked else ''
+
+
 def question_message(state, spec, number):
     names = [_cause_name(_cause(cid)) for cid, c in _ranked(state['candidates']) if not c['rejected']]
     intro = ''
     if number == 1 and len(names) > 1:
         intro = ("Dalili ulizotaja zinaweza kusababishwa na: *" + '*, *'.join(names[:4]) +
                  "*. Nitakuuliza maswali mafupi ili kuvitofautisha. 🔍\n\n")
-    return f"{intro}*Swali {number}:* {_plain_q(spec['text'])}\n{ANSWER_HINT}"
+    return f"{_ack(state) if number > 1 else ''}{intro}*Swali {number}:* {_plain_q(spec['text'])}\n{ANSWER_HINT}"
 
 
 def _explanation(cid, kind):
@@ -662,13 +693,39 @@ def _rules_used(state, cid, gate):
                               + gate['escalations']))
 
 
+SEVERITY_SW = {'low': 'ndogo', 'medium': 'ya wastani', 'high': 'kubwa', 'critical': 'hatari'}
+
+
+def _summary_facts(state, cid, crop_name, gate, band):
+    """Ukweli ULIOKWISHA amuliwa na kanuni — AI inaueleza tu, haiongezi."""
+    cause = _cause(cid)
+    c = state['candidates'][cid]
+    return {
+        'zao': crop_name,
+        'tatizo': cause.name_sw if cause else '',
+        'tatizo_en': getattr(cause, 'name_en', '') or '',
+        'aina': 'ugonjwa' if c['kind'] == 'disease' else 'mdudu',
+        'kiwango_cha_uhakika': plain.band_sw(band),
+        'dalili_alizotaja_mkulima': state['symptom_text'].strip(),
+        'alichothibitisha': [plain.as_statement(_plain_q(ev['question'])) for ev in state['evidence']
+                             if ev['answer'] == 'yes' and cid in ev['deltas']],
+        'ukubwa_wa_tatizo': SEVERITY_SW.get(state.get('severity') or '', 'haijulikani'),
+        'linaenea_haraka': bool(state.get('spreading')),
+        'ni_hatari_wasiliana_na_afisa_ugani_haraka': bool(gate['escalations']),
+        'kemikali_inaruhusiwa': gate['chemical_allowed'],
+    }
+
+
 def diagnosis_message(state, cid, crop_name, gate):
     cause = _cause(cid)
     c = state['candidates'][cid]
     terms = plain._terms()
     band, band_msg = _band(c['score'])
     lines = [f"🔍 *Matokeo ya uchunguzi — {crop_name.capitalize()}*", '']
-    if band_msg:
+    human = ai_layer.summary(_summary_facts(state, cid, crop_name, gate, band), state)
+    if human:
+        lines += [human, '']
+    elif band_msg:
         lines += [_farmer(state, band_msg, terms), '']
     lines.append(f"*Tatizo linalowezekana zaidi:* {_cause_name(cause)}")
     lines.append(f"*Kiwango cha uhakika:* {round(c['score'] * 100)}% ({plain.band_sw(band)})")
@@ -819,10 +876,23 @@ def step(state, text, crop=None):
             return (f"Samahani, kwa sasa uchunguzi wa matatizo kwa kanuni unapatikana kwa: "
                     f"*{names}* tu. Sina kanuni za *{crop_name}* bado, kwa hiyo sitabuni ushauri.\n\n"
                     + REFER_EXTENSION), {**trace, 'decision': 'crop_without_rules'}, True
-        state['growth_stage'] = _detect_stage(state['symptom_text'])
-        cands, symptoms = match_candidates(crop, state['symptom_text'], state['growth_stage'])
+        # AI (lugha): maelezo ya mkulima → dalili za orodha ya dataset.
+        # Kanuni ndizo zinazoamua; AI inaongeza tu maneno ya dataset
+        # yaliyothibitishwa kuwa kwenye orodha funge.
+        match_text = state['symptom_text']
+        understood = ai_layer.understand_symptoms(crop, state['symptom_text'], state)
+        if understood:
+            if understood['phrases']:
+                match_text += '. ' + '. '.join(understood['phrases'])
+            if understood['extent_pct'] is not None:
+                state['extent'] = understood['extent_pct']
+            if understood['spreading']:
+                state['spreading'] = True
+            trace['ai_symptoms'] = understood['phrases']
+        state['growth_stage'] = _detect_stage(state['symptom_text']) or (understood or {}).get('growth_stage')
+        cands, symptoms = match_candidates(crop, match_text, state['growth_stage'])
         if not cands and state['growth_stage']:
-            cands, symptoms = match_candidates(crop, state['symptom_text'])
+            cands, symptoms = match_candidates(crop, match_text)
         state['candidates'], state['symptoms'] = cands, symptoms
         trace['initial'] = {cid: {'score': c['score'], 'rules': list(c['rules'])} for cid, c in cands.items()}
         state['initial'] = trace['initial']
@@ -832,18 +902,38 @@ def step(state, text, crop=None):
         qs = build_questions(state)
         for key, ans in preanswered(state, qs, state['symptom_text']):
             apply_answer(state, qs, key, ans, via='farmer_message')
+        # AI: maswali ambayo mkulima ameshayajibu kwa maneno yake (kigezo 1)
+        open_qs = {k: v['text'] for k, v in qs.items()
+                   if k not in state['asked'] and not _redundant(state, v)}
+        for key, ans in ai_layer.answered_questions(state['symptom_text'], open_qs, state).items():
+            if key not in state['asked'] and not _redundant(state, qs[key]):
+                apply_answer(state, qs, key, ans, via='farmer_message_ai')
         state['phase'] = 'questions'
         return _next(state, crop_name, trace)
 
     qs = build_questions(state)
     if state['phase'] == 'questions':
         if state['pending']:
-            apply_answer(state, qs, state['pending'], parse_answer(text))
+            key = state['pending']
+            answer = interpret(state, qs[key]['text'] if key in qs else key, text)
+            if answer == 'clarify':
+                clar = state.setdefault('clarified', {})
+                if clar.get(key, 0) < 1:
+                    clar[key] = clar.get(key, 0) + 1
+                    return (clarify_message(qs[key]['text'] if key in qs else key),
+                            {**trace, 'asked': key, 'clarify': True}, False)
+                answer = 'unknown'
+            apply_answer(state, qs, key, answer)
             state['pending'] = None
         return _next(state, crop_name, trace)
 
     if state['phase'] == 'extent':
         state['extent'] = parse_extent(text)
+        if state['extent'] is None:
+            got = ai_layer.interpret_extent(text, state)
+            if got:
+                state['extent'] = got[0]
+                state['spreading'] = state['spreading'] or got[1]
         state['severity'] = severity_from(state['extent'], state['spreading'])
         return _finish(state, crop_name, trace)
     return None, trace, False
@@ -865,8 +955,10 @@ def _next(state, crop_name, trace):
             low = state['symptom_text'].lower()
             ext = parse_extent(low) if ('shamba' in low or '%' in low or 'asilimia' in low) else None
             if ext is None:
+                ext = state.get('extent')          # AI ilielewa ukubwa kwenye maelezo
+            if ext is None:
                 state['phase'] = 'extent'
-                return ASK_EXTENT, {**trace, 'asked': 'extent', 'scores': _scores(state)}, False
+                return _ack(state) + ASK_EXTENT, {**trace, 'asked': 'extent', 'scores': _scores(state)}, False
             state['extent'] = ext
         state['severity'] = severity_from(state['extent'], state['spreading'])
         return _finish(state, crop_name, trace)
@@ -875,7 +967,7 @@ def _next(state, crop_name, trace):
                                                  'scores': _scores(state),
                                                  'evidence': state['evidence'],
                                                  'dropped_text': state.get('dropped_text', []),
-                  'initial': state.get('initial', {})}, True
+                  'initial': state.get('initial', {}), 'ai': state.get('ai', [])}, True
 
 
 def _finish(state, crop_name, trace):
@@ -893,7 +985,7 @@ def _finish(state, crop_name, trace):
                   'confidence': state['candidates'][cid]['score'],
                   'rules_text': ', '.join(_rules_used(state, cid, gate)),
                   'dropped_text': state.get('dropped_text', []),
-                  'initial': state.get('initial', {})}, True
+                  'initial': state.get('initial', {}), 'ai': state.get('ai', [])}, True
 
 
 def _scores(state):

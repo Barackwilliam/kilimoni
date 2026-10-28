@@ -581,6 +581,8 @@ DEFAULT_SETTINGS = {
     'key_question_no_adjustment': ('-0.125', 'Ishara kuu ikikataliwa (katikati ya -0.05..-0.20 ya 007C)'),
     'rec_min_severity': ('high', 'Severity ya chini kwa Recommendation Rule (low/medium/high)'),
     'max_questions': ('4', 'Idadi ya juu ya maswali ya kufuatilia kwa uchunguzi mmoja'),
+    'ai_language': ('1', 'AI ielewe lugha ya mkulima (dalili, majibu, ukubwa): 1 = ndiyo, 0 = maneno tu'),
+    'ai_summary': ('1', 'AI iandike aya fupi ya kibinadamu juu ya jibu (inakaguliwa): 1 = ndiyo, 0 = hapana'),
     'show_rules_to_farmer': ('0', 'Onyesha kanuni (DR-…, CONF…) na chanzo kwenye jibu la mkulima: 1 = ndiyo (demo), 0 = trace tu'),
 }
 

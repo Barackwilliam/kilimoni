@@ -31,6 +31,10 @@ PROBLEM_STEMS = (
     'madoa', 'doa', 'mashimo', 'shimo', 'kuoza', 'oza', 'kufa', 'yanakufa',
     'yamekufa', 'haikui', 'hayakui', 'dhaifu', 'harib', 'kutu', 'ukungu',
     'kahawia', 'mabaka', 'kujikunja', 'jikunja', 'kudumaa', 'dumaa',
+    # Maneno ya kawaida ya wakulima yasiyotaja "ugonjwa/wadudu" moja kwa moja
+    'kinakula', 'vinakula', 'wanakula', 'anakula', 'imeliwa', 'yameliwa', 'zimeliwa',
+    'meliwa', 'kuliwa', 'tobo', 'tobolewa', 'nyauk', 'pukutika', 'ungua', 'kunjamana',
+    'mistari', 'michirizi', 'kinyesi', 'chafu', 'haistawi', 'hayastawi',
 )
 
 # Maneno ya ombi pana lisilo na maelezo

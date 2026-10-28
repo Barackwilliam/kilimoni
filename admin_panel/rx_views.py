@@ -62,6 +62,10 @@ SETTING_RULES = {
     'rec_min_severity': ('choice', ('low', 'medium', 'high'), None,
                          'Ukali wa chini kabla ya kutaja kemikali (Recommendation Rule)'),
     'max_questions': ('number', 1, 10, 'Idadi ya juu ya maswali kwa uchunguzi mmoja'),
+    'ai_language': ('choice', ('1', '0'), None,
+                    'AI ielewe lugha ya mkulima (dalili, majibu, ukubwa wa tatizo): 1 = ndiyo, 0 = maneno tu'),
+    'ai_summary': ('choice', ('1', '0'), None,
+                   'AI iandike aya fupi ya kibinadamu juu ya jibu (inakaguliwa kabla ya kutumwa)'),
     'show_rules_to_farmer': ('choice', ('0', '1'), None,
                              'Onyesha namba za kanuni (DR-…, CONF…) kwa mkulima: 1 = ndiyo (kwa demo), 0 = hapana'),
 }
