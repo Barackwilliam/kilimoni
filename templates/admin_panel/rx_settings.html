@@ -1,0 +1,93 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Mipangilio ya Uchunguzi{% endblock %}
+{% block page_title %}⚙️ Mipangilio ya Uchunguzi na Kamusi{% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <div class="card-title">Tafsiri za kanuni</div>
+    <span class="badge badge-gray">Zinatumika mara moja</span>
+  </div>
+  <p style="font-size:13px;color:#4b5563;margin:-4px 0 14px;">
+    Hizi ni thamani ambazo dataset haizitaji moja kwa moja (mf. "Medium" ni namba gani).
+    Thamani ya awali imeonyeshwa kando ya kila moja.
+  </p>
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="action" value="settings">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Mpangilio</th><th style="width:170px;">Thamani</th><th>Ya awali</th></tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td><strong style="font-size:13px;">{{ r.help }}</strong><br><code style="font-size:11px;color:#6b7280;">{{ r.key }}</code></td>
+            <td>
+              {% if r.choices %}
+              <select name="{{ r.key }}" class="form-control">
+                {% for ch in r.choices %}<option value="{{ ch }}" {% if ch == r.value %}selected{% endif %}>{{ ch }}</option>{% endfor %}
+              </select>
+              {% else %}
+              <input name="{{ r.key }}" value="{{ r.value }}" class="form-control" type="number" step="any"
+                     min="{{ r.min }}" max="{{ r.max }}">
+              {% endif %}
+            </td>
+            <td style="color:#6b7280;font-size:13px;">{{ r.default }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button class="btn btn-primary" type="submit" style="margin-top:14px;">💾 Hifadhi mipangilio</button>
+  </form>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><div class="card-title">＋ Ongeza neno kwenye kamusi</div></div>
+    <p style="font-size:13px;color:#4b5563;margin:-4px 0 14px;">
+      Neno la kiufundi kutoka dataset linabadilishwa kuwa maneno rahisi kabla mkulima hajapokea jibu.
+      Kifungu kirefu kinatangulia kifupi.
+    </p>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="action" value="term_add">
+      <div class="form-group">
+        <label class="form-label">Neno la dataset</label>
+        <input name="term" class="form-control" required placeholder="mf. frass">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Maneno rahisi kwa mkulima</label>
+        <input name="plain" class="form-control" required placeholder="mf. kinyesi cha funza (kama vumbi la mbao)">
+      </div>
+      <button class="btn btn-primary" type="submit">💾 Hifadhi</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">Kamusi ya lugha rahisi ({{ terms|length }})</div></div>
+    <div class="table-wrap" style="max-height:520px;overflow:auto;">
+      <table>
+        <thead><tr><th>Dataset</th><th>→ Mkulima anaona</th><th></th></tr></thead>
+        <tbody>
+          {% for t in terms %}
+          <tr {% if not t.is_active %}style="opacity:.45"{% endif %}>
+            <td><code>{{ t.term }}</code></td>
+            <td>{{ t.plain }}</td>
+            <td style="white-space:nowrap;">
+              <form method="post" style="display:inline;">{% csrf_token %}
+                <input type="hidden" name="action" value="term_toggle"><input type="hidden" name="pk" value="{{ t.pk }}">
+                <button class="btn btn-secondary btn-sm" type="submit">{% if t.is_active %}Zima{% else %}Washa{% endif %}</button>
+              </form>
+              <form method="post" style="display:inline;" onsubmit="return confirm('Futa {{ t.term|escapejs }}?');">{% csrf_token %}
+                <input type="hidden" name="action" value="term_delete"><input type="hidden" name="pk" value="{{ t.pk }}">
+                <button class="btn btn-danger btn-sm" type="submit">Futa</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="3" style="text-align:center;padding:24px;color:#9ca3af;">Kamusi ni tupu.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

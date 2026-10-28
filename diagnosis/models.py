@@ -542,6 +542,28 @@ class EngineSetting(models.Model):
         return f"{self.key} = {self.value}"
 
 
+class FarmerTerm(models.Model):
+    """
+    Kamusi ya lugha rahisi: neno/kifungu cha kiufundi cha dataset → maneno
+    ambayo mkulima anaelewa. Inatumika na diagnosis/plain.py kabla jibu
+    halijatumwa. Mteja anaibadilisha kwenye dashboard.
+    """
+    term = models.CharField(max_length=200, unique=True,
+                            help_text='Neno au kifungu kama kilivyo kwenye dataset (mf. frass)')
+    plain = models.CharField(max_length=300,
+                             help_text='Maneno rahisi ya Kiswahili (mf. kinyesi cha funza)')
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['term']
+        verbose_name = 'Neno la mkulima'
+        verbose_name_plural = 'Kamusi ya lugha rahisi'
+
+    def __str__(self):
+        return f"{self.term} → {self.plain}"
+
+
 # Chanzo kimoja cha defaults — get_setting() inaitumia; migration 0002 ina nakala.
 DEFAULT_SETTINGS = {
     'label_low': ('0.40', 'Confidence ya "Low" kwenye dataset'),
@@ -559,6 +581,7 @@ DEFAULT_SETTINGS = {
     'key_question_no_adjustment': ('-0.125', 'Ishara kuu ikikataliwa (katikati ya -0.05..-0.20 ya 007C)'),
     'rec_min_severity': ('high', 'Severity ya chini kwa Recommendation Rule (low/medium/high)'),
     'max_questions': ('4', 'Idadi ya juu ya maswali ya kufuatilia kwa uchunguzi mmoja'),
+    'show_rules_to_farmer': ('0', 'Onyesha kanuni (DR-…, CONF…) na chanzo kwenye jibu la mkulima: 1 = ndiyo (demo), 0 = trace tu'),
 }
 
 

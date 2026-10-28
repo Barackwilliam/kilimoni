@@ -1,11 +1,18 @@
 from django.urls import path
-from . import views
+from . import views, rx_views
 
 urlpatterns = [
     path('', views.home, name='dashboard_home'),
     path('login/', views.login_view, name='dashboard_login'),
     path('logout/', views.logout_view, name='dashboard_logout'),
     path('conversations/', views.conversations, name='conversations'),
+    path('conversations/<int:pk>/', rx_views.conversation_detail, name='conversation_detail'),
+    path('uchunguzi/', rx_views.rx_home, name='rx_home'),
+    path('uchunguzi/hakiki/', rx_views.rx_preview, name='rx_preview'),
+    path('uchunguzi/hifadhi/', rx_views.rx_confirm, name='rx_confirm'),
+    path('uchunguzi/ghairi/', rx_views.rx_cancel, name='rx_cancel'),
+    path('uchunguzi/mipangilio/', rx_views.rx_settings, name='rx_settings'),
+    path('uchunguzi/kesi/', rx_views.rx_cases, name='rx_cases'),
     path('users/', views.users_list, name='users_list'),
     path('crops/', views.crops_list, name='crops_list'),
     path('privacy/', views.privacy_policy, name='privacy_policy'),

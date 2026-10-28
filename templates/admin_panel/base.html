@@ -257,6 +257,17 @@ textarea.form-control { resize:vertical; min-height:100px; }
       {% if unresolved_count %}<span class="nav-badge">{{ unresolved_count }}</span>{% endif %}
     </a>
 
+    <div class="nav-section">Uchunguzi wa Matatizo</div>
+    <a href="{% url 'rx_cases' %}" class="nav-link {% if page == 'rx_cases' %}active{% endif %}">
+      <span class="icon">🔍</span> Kumbukumbu za Uchunguzi
+    </a>
+    <a href="{% url 'rx_home' %}" class="nav-link {% if page == 'rx_home' %}active{% endif %}">
+      <span class="icon">📥</span> Data ya Uchunguzi
+    </a>
+    <a href="{% url 'rx_settings' %}" class="nav-link {% if page == 'rx_settings' %}active{% endif %}">
+      <span class="icon">⚙️</span> Mipangilio na Kamusi
+    </a>
+
     <div class="nav-section">Maudhui</div>
     <a href="{% url 'crops_list' %}" class="nav-link {% if page == 'crops' %}active{% endif %}">
       <span class="icon">🌽</span> Mazao

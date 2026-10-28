@@ -157,7 +157,7 @@ CHEMICAL_PATTERN = re.compile(
 )
 
 LABEL_CAUTION = (
-    "⚠️ *Tahadhari:* Fuata maelekezo ya kwenye *label* ya bidhaa na "
+    "⚠️ *Tahadhari:* Fuata maelekezo ya kwenye *kibandiko (label)* cha bidhaa na "
     "ushauri wa afisa ugani. Tumia vifaa vya kujikinga, na zingatia "
     "muda wa kusubiri kabla ya kuvuna."
 )
@@ -202,7 +202,7 @@ def validate_output(text: str, crop_name: str, allow_chemical: bool):
     cleaned = '\n'.join(out_lines)
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
 
-    if CHEMICAL_PATTERN.search(cleaned) and 'label' not in cleaned.lower():
+    if CHEMICAL_PATTERN.search(cleaned) and not re.search(r'label|kibandiko', cleaned.lower()):
         cleaned += '\n\n' + LABEL_CAUTION
         report['added_caution'] = True
 
