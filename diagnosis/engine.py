@@ -763,9 +763,11 @@ def uncertain_message(state, crop_name):
     lines.append("Siwezi kukupa utambuzi wa uhakika kwa taarifa zilizopo.")
     ranked = [(cid, c) for cid, c in _ranked(state['candidates']) if not c['rejected']]
     if ranked:
-        lines += ['', '*Visababishi vinavyowezekana bado:*']
+        # Bila asilimia: "90%" kando ya "sina uhakika" kingemchanganya mkulima.
+        # Score ziko kwenye trace kwa ajili ya admin.
+        lines += ['', '*Visababishi vinavyowezekana (havijathibitishwa):*']
         for cid, c in ranked[:3]:
-            lines.append(f"• {_cause_name(_cause(cid))} — uhakika {round(c['score'] * 100)}%")
+            lines.append(f"• {_cause_name(_cause(cid))}")
     lines += ['', '*Hatua salama za sasa:*', SAFE_FIRST_STEPS, '', REFER_EXTENSION, '', DISCLAIMER]
     return '\n'.join(lines)
 
