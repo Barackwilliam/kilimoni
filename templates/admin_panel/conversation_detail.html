@@ -1,0 +1,153 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Mantiki ya Jibu{% endblock %}
+{% block page_title %}🔍 Mantiki ya Jibu{% endblock %}
+{% block content %}
+<style>
+.rx-msg{white-space:pre-wrap;font-size:13.5px;line-height:1.55;background:#f8fafc;border-radius:10px;padding:14px;border:1px solid #e5e7eb}
+.rx-thread .in{background:#eff6ff;border-color:#bfdbfe}
+.rx-thread .out{background:#f0fdf4;border-color:#bbf7d0}
+.rx-thread .rx-msg{margin-bottom:8px}
+.rx-thread .who{font-size:11px;color:#6b7280;margin-bottom:3px}
+.rx-bar{height:8px;background:#e5e7eb;border-radius:6px;overflow:hidden;min-width:120px}
+.rx-bar span{display:block;height:100%;background:var(--green)}
+.rx-kv{display:grid;grid-template-columns:170px 1fr;gap:6px 12px;font-size:13.5px}
+.rx-kv div:nth-child(odd){color:#6b7280}
+.up{color:#16a34a;font-weight:600}.down{color:#dc2626;font-weight:600}
+</style>
+
+<p style="margin-bottom:14px;"><a href="javascript:history.back()">← Rudi</a></p>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Mazungumzo — {{ c.user.phone_number }}</div></div>
+    <div class="rx-thread">
+      {% for m in thread %}
+      <div class="who">{% if m.message_direction == 'inbound' %}👨‍🌾 Mkulima{% else %}🤖 Kilimoni AI{% endif %} · {{ m.created_at|date:"d M H:i" }}</div>
+      <div class="rx-msg {% if m.message_direction == 'inbound' %}in{% else %}out{% endif %}"
+           {% if m.pk == c.pk %}style="outline:2px solid var(--green);"{% endif %}>{{ m.raw_message }}</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header"><div class="card-title">Muhtasari wa uamuzi</div></div>
+      {% if trace %}
+      <div class="rx-kv">
+        <div>Hali</div><div><strong>{{ decision_sw|default:"–" }}</strong>{% if trace.mode %} <span class="badge badge-gray">{{ trace.mode }}</span>{% endif %}</div>
+        {% if diagnosis_name %}<div>Tatizo</div><div><strong>{{ diagnosis_name }}</strong> <code>{{ trace.diagnosis }}</code></div>{% endif %}
+        {% if confidence_pct != None %}<div>Uhakika</div><div>{{ confidence_pct }}%</div>{% endif %}
+        {% if trace.severity %}<div>Ukali</div><div>{{ trace.severity }}{% if trace.extent != None %} ({{ trace.extent }}% ya shamba){% endif %}</div>{% endif %}
+        {% if trace.rules_text %}<div>Kanuni zilizotumika</div><div><code>{{ trace.rules_text }}</code></div>{% endif %}
+        {% if trace.asked %}<div>Swali lililoulizwa</div><div><code>{{ trace.asked }}</code>{% if trace.sources %} — chanzo: <code>{{ trace.sources|join:", " }}</code>{% endif %}</div>{% endif %}
+      </div>
+      {% else %}
+      <p style="color:#9ca3af;">Ujumbe huu hauna trace (si wa injini ya uchunguzi).</p>
+      {% endif %}
+    </div>
+
+    {% if gate %}
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header"><div class="card-title">Ukaguzi wa usalama (kemikali)</div></div>
+      <div class="rx-kv">
+        <div>Kemikali</div>
+        <div>{% if gate.chemical_allowed %}<span class="badge badge-blue">Imeruhusiwa (kwa aina tu, bila majina ya bidhaa)</span>{% else %}<span class="badge badge-gray">Imezuiwa</span>{% endif %}</div>
+        <div>Kanuni ya pendekezo</div><div><code>{{ gate.recommendation|default:"hakuna iliyotimia" }}</code></div>
+        {% if gate.escalations %}<div>Kupandishwa kwa afisa ugani</div><div><code>{{ gate.escalations|join:", " }}</code></div>{% endif %}
+        {% if gate.blocked_by %}<div>Imezuiwa na</div><div><code>{{ gate.blocked_by }}</code></div>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if scores %}
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">Ulinganisho wa visababishi</div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Kisababishi</th><th>Uhakika wa mwanzo</th><th>Uhakika wa mwisho</th><th></th></tr></thead>
+      <tbody>
+        {% for cid, name, pct in scores %}
+        <tr>
+          <td><strong>{{ name }}</strong> <code style="font-size:11px;">{{ cid }}</code></td>
+          <td>{% for k, v in initial.items %}{% if k == cid %}{{ v }}%{% endif %}{% endfor %}</td>
+          <td>{{ pct }}%</td>
+          <td><div class="rx-bar"><span style="width:{{ pct }}%"></span></div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if evidence %}
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">Ushahidi hatua kwa hatua</div></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Swali</th><th>Jibu</th><th>Mabadiliko ya uhakika</th><th>Chanzo</th></tr></thead>
+      <tbody>
+        {% for ev in evidence %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td style="max-width:380px;">{{ ev.question }}{% if ev.via == 'farmer_message' %}<br><span class="badge badge-gray">Kutoka maelezo ya mkulima</span>{% endif %}</td>
+          <td>{% if ev.answer == 'yes' %}<span class="badge badge-green">Ndiyo</span>{% elif ev.answer == 'no' %}<span class="badge badge-red">Hapana</span>{% else %}<span class="badge badge-gray">Sijui</span>{% endif %}</td>
+          <td style="font-size:13px;">
+            {% for name, d in ev.deltas %}
+              {{ name }}: <span class="{% if d >= 0 %}up{% else %}down{% endif %}">{% if d >= 0 %}+{% endif %}{{ d }}</span><br>
+            {% empty %}–{% endfor %}
+          </td>
+          <td><code style="font-size:11px;">{{ ev.sources|default:"–" }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if trace.ai %}
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">Kazi ya AI (lugha tu — haiamui)</div></div>
+  <p style="font-size:13px;color:#4b5563;margin:-4px 0 12px;">
+    AI inaelewa maneno ya mkulima na kuyaunganisha na dalili za dataset, inaelewa majibu yake,
+    na inaandika aya fupi ya kibinadamu. Kila matokeo yake yanakaguliwa; yasiyopita ukaguzi yanakataliwa.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Hatua</th><th>Maneno ya mkulima / ingizo</th><th>AI ilielewa</th><th>Ukaguzi</th></tr></thead>
+      <tbody>
+        {% for a in trace.ai %}
+        <tr>
+          <td style="white-space:nowrap;">
+            {% if a.step == 'symptoms' %}Dalili{% elif a.step == 'preanswered' %}Majibu ndani ya maelezo{% elif a.step == 'answer' %}Jibu la swali{% elif a.step == 'extent' %}Ukubwa wa tatizo{% elif a.step == 'summary' %}Muhtasari{% else %}{{ a.step }}{% endif %}
+          </td>
+          <td style="max-width:300px;font-size:13px;">{{ a.input }}</td>
+          <td style="max-width:340px;font-size:13px;">{{ a.output|default:"–" }}</td>
+          <td>{% if a.accepted %}<span class="badge badge-green">Imekubaliwa</span>{% else %}<span class="badge badge-red">Imekataliwa</span>{% endif %}
+              {% if a.note %}<br><span style="font-size:11px;color:#6b7280;">{{ a.note }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if trace.dropped_text %}
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">Maandishi ya dataset yasiyopelekwa kwa mkulima</div></div>
+  <p style="font-size:13px;color:#4b5563;margin:-4px 0 12px;">
+    Sentensi hizi ziliondolewa kwa sababu ni maelekezo ya mfumo au bado ziko kwa Kiingereza.
+    Zitafsiriwe kwenye dataset au ziongezwe kwenye <a href="{% url 'rx_settings' %}">kamusi</a>.
+  </p>
+  <ul style="font-size:13px;line-height:1.7;">
+    {% for d in trace.dropped_text %}
+    <li>{% if d.reason == 'english' %}<span class="badge badge-yellow">Kiingereza</span>{% else %}<span class="badge badge-gray">Maelekezo ya mfumo</span>{% endif %} {{ d.text }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

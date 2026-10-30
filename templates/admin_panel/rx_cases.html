@@ -1,0 +1,53 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Kumbukumbu za Uchunguzi{% endblock %}
+{% block page_title %}🔍 Kumbukumbu za Uchunguzi{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Uchunguzi uliokamilika ({{ cases|length }})</div>
+  </div>
+  <p style="font-size:13px;color:#4b5563;margin:-4px 0 14px;">
+    Kila uchunguzi una mantiki yake kamili: dalili zilizolingana, kanuni zilizotumika, jinsi uhakika
+    ulivyobadilika kwa kila jibu, na kwa nini kemikali iliruhusiwa au ilizuiwa. Bofya "Mantiki".
+  </p>
+  <form method="get" class="search-bar">
+    <select name="decision" class="form-control" style="max-width:260px;">
+      <option value="">Matokeo yote</option>
+      <option value="diagnosed" {% if decision == 'diagnosed' %}selected{% endif %}>Utambuzi umetolewa</option>
+      <option value="uncertain" {% if decision == 'uncertain' %}selected{% endif %}>Hakuna uhakika wa kutosha</option>
+      <option value="no_rule_matched" {% if decision == 'no_rule_matched' %}selected{% endif %}>Dalili hazilingani na kanuni</option>
+      <option value="crop_without_rules" {% if decision == 'crop_without_rules' %}selected{% endif %}>Zao halina kanuni</option>
+    </select>
+    <button class="btn btn-primary" type="submit">Chuja</button>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tarehe</th><th>Mkulima</th><th>Matokeo</th><th>Tatizo</th><th>Uhakika</th><th>Kemikali</th><th></th></tr></thead>
+      <tbody>
+        {% for c in cases %}
+        <tr>
+          <td style="font-size:12px;color:#6b7280;white-space:nowrap;">{{ c.created_at|date:"d M Y H:i" }}</td>
+          <td><span class="phone-num">{{ c.user.phone_number }}</span></td>
+          <td>
+            {% if c.trace.decision == 'diagnosed' %}<span class="badge badge-green">Utambuzi</span>
+            {% elif c.trace.decision == 'uncertain' %}<span class="badge badge-yellow">Hakuna uhakika</span>
+            {% else %}<span class="badge badge-gray">Hakuna kanuni</span>{% endif %}
+          </td>
+          <td>{{ c.cause_name|default:"–" }}</td>
+          <td>{% if c.conf_pct != None %}{{ c.conf_pct }}%{% else %}–{% endif %}</td>
+          <td>
+            {% if c.trace.gate %}
+              {% if c.trace.gate.chemical_allowed %}<span class="badge badge-blue">Imeruhusiwa</span>
+              {% else %}<span class="badge badge-gray">Imezuiwa</span>{% endif %}
+            {% else %}–{% endif %}
+          </td>
+          <td style="white-space:nowrap;"><a class="btn btn-secondary btn-sm" href="{% url 'conversation_detail' c.pk %}">🔍 Mantiki</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:#9ca3af;">Bado hakuna uchunguzi uliokamilika.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

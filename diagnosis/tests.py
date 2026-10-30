@@ -191,3 +191,61 @@ class RulesEngineTests(TestCase):
     def test_unmatched_symptoms_are_not_invented(self):
         replies, traces, _ = self.run_turns(['majani yana madoa ya kijivu'])
         self.assertEqual(traces[-1]['decision'], 'no_rule_matched')   # [6]
+
+
+class PlainLanguageTests(TestCase):
+    """Jibu kwa mkulima: Kiswahili rahisi, bila maelekezo ya mfumo."""
+
+    def setUp(self):
+        self.maize = Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize',
+                                         crop_group='cereals')
+        import_mhd007(FIXTURES)
+
+    def test_clean_rules(self):
+        from .plain import clean
+        text, dropped = clean('Thibitisha FAW kwa kutumia confidence kutoka MHD-007D kabla ya treatment.')
+        self.assertEqual(text, '')
+        self.assertEqual(dropped[0][1], 'system_note')
+        text, _ = clean('AI imechagua FAW kwa sababu mashimo makubwa na frass ndani ya whorl vinaendana.')
+        self.assertTrue(text.startswith('Mashimo makubwa'))
+        self.assertIn('kitovu cha mmea', text)
+        self.assertNotIn('AI', text)
+        text, _ = clean('Ondoa volunteer maize and grassy weeds; maintain field hygiene; '
+                        'synchronize planting where possible.')
+        self.assertIn('magugu ya nyasi', text)
+        self.assertIn('weka shamba safi', text.lower())
+        text, dropped = clean('Remove the plants and burn them where possible.')
+        self.assertEqual(text, '')
+        self.assertEqual(dropped[0][1], 'english')
+
+    def test_faw_answer_is_plain_and_rules_stay_in_trace(self):
+        from . import engine as E
+        st = E.new_state()
+        replies, trace = [], None
+        for i, text in enumerate(['majani yana mashimo makubwa', 'ndiyo', 'hapana', 'nusu ya shamba']):
+            reply, trace, done = E.step(st, text, self.maize if i == 0 else None)
+            replies.append(reply)
+        final = replies[-1]
+        for word in ('frass', 'whorl', 'scouting', 'MHD-', 'confidence', 'DR-MZ', 'AI imechagua'):
+            self.assertNotIn(word.lower(), ' '.join(replies).lower())
+        self.assertIn('kitovu cha mmea', replies[0])
+        self.assertIn('DR-MZ-0001', trace['rules_text'])
+        self.assertTrue(any(d['reason'] == 'system_note' for d in trace['dropped_text']))
+        self.assertIn('kibandiko', final)
+
+    def test_rules_shown_when_setting_on(self):
+        from . import engine as E
+        from .models import EngineSetting
+        EngineSetting.objects.update_or_create(key='show_rules_to_farmer', defaults={'value': '1'})
+        st = E.new_state()
+        for i, text in enumerate(['majani yana mashimo makubwa', 'ndiyo', 'hapana', 'nusu ya shamba']):
+            reply, trace, done = E.step(st, text, self.maize if i == 0 else None)
+        self.assertIn('Kanuni zilizotumika', reply)
+
+    def test_glossary_editable(self):
+        from .models import FarmerTerm
+        from .plain import clean
+        FarmerTerm.objects.update_or_create(term='buu', defaults={'plain': 'funza mdogo'})
+        self.assertIn('funza mdogo', clean('Kagua buu ndani ya shina.')[0])
+        FarmerTerm.objects.filter(term='buu').update(is_active=False)
+        self.assertIn('buu', clean('Kagua buu ndani ya shina.')[0])

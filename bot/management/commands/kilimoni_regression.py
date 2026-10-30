@@ -37,6 +37,15 @@ def _single_crop(text, crop):
     return not any(re.search(r'\b' + re.escape(c) + r'\b', low) for c in others)
 
 
+JARGON = re.compile(r'\b(frass|whorl|scouting|biopesticides?|mode of action|natural enemies'
+                    r'|confidence|dataset|MHD-\d+\w*|DR-MZ|CONF\d+|AI\s+(imechagua|imependekeza|inachagua))\b',
+                    re.IGNORECASE)
+
+
+def _plain(text):
+    return not JARGON.search(text or '')
+
+
 def _questions(replies):
     return [m.group(1).strip() for r in replies for m in re.finditer(r'\*Swali \d+:\* (.+)', r)]
 
@@ -84,12 +93,15 @@ SCENARIOS = [
              lambda r, t: all(x.get('sources') for x in t if x.get('asked') not in (None, 'crop', 'symptoms', 'extent'))),
             ('[3] Inalinganisha visababishi (orodha + "kwa nini si vingine")',
              lambda r, t: 'kusababishwa na' in r[2].lower() and 'kwa nini si vingine' in r[-1].lower()),
-            ('[4] Uhakika unatokana na kanuni (zimetajwa kwenye jibu na trace)',
-             lambda r, t: 'kanuni zilizotumika' in r[-1].lower()
-             and any(x.startswith('DR-') for x in t[-1].get('rules_used', []))),
+            ('[4] Uhakika unatokana na kanuni (zimeandikwa kwenye trace)',
+             lambda r, t: any(x.startswith('DR-') for x in t[-1].get('rules_used', []))
+             and 'DR-' in t[-1].get('rules_text', '') and '%' in r[-1]),
             ('[5] Kemikali kwa category tu, kwa REC rule + tahadhari ya label',
-             lambda r, t: t[-1]['gate']['recommendation'] and 'label' in r[-1].lower()),
-            ('[6] Jibu linataja chanzo cha dataset', lambda r, t: 'chanzo' in r[-1].lower()),
+             lambda r, t: t[-1]['gate']['recommendation'] and 'kibandiko' in r[-1].lower()),
+            ('[6] Jibu linataja kwamba ushauri unatoka taarifa za kitaalamu',
+             lambda r, t: 'taarifa za kitaalamu' in r[-1].lower()),
+            ('Lugha rahisi: hakuna maneno ya kiufundi wala maelekezo ya mfumo',
+             lambda r, t: all(_plain(x) for x in r)),
             ('Inachagua tatizo mahsusi', lambda r, t: 'fall armyworm' in r[-1].lower()),
             ('Jibu linahusu mahindi pekee', lambda r, t: _single_crop(r[-1], 'mahindi')),
         ],
@@ -120,6 +132,8 @@ SCENARIOS = [
              lambda r, t: any('siwezi kukupa utambuzi' in x.lower() for x in r)),
             ('Hakuna jibu lenye dawa wala dosage', lambda r, t: all(_no_chemical(x) for x in r)),
             ('Inaelekeza kwa afisa ugani', lambda r, t: any('afisa ugani' in x.lower() for x in r)),
+            ('Haionyeshi asilimia ikiwa haina uhakika',
+             lambda r, t: '%' not in r[-1]),
             ('[1] Haiulizi dhana moja mara mbili (frass/kinyesi)',
              lambda r, t: sum('frass' in q.lower() or 'kinyesi' in q.lower() for q in _questions(r)) == 1),
         ],
@@ -163,6 +177,9 @@ SCENARIOS = [
             ('Inatambua MLN baada ya ishara kuu', lambda r, t: 'mln' in r[-1].lower()),
             ('Hakuna dawa (escalation inazuia)', lambda r, t: not t[-1]['gate']['chemical_allowed']),
             ('Inaelekeza kwa afisa ugani', lambda r, t: 'afisa ugani' in r[-1].lower()),
+            ('Lugha rahisi kwenye jibu la ugonjwa', lambda r, t: all(_plain(x) for x in r)),
+            ('Hakuna sentensi ya Kiingereza kwenye jibu', lambda r, t: 'maintain' not in r[-1].lower()
+             and 'registered products' not in r[-1].lower()),
         ],
     },
     {
@@ -208,8 +225,10 @@ class Command(BaseCommand):
 
         passed = failed = 0
         ctx = patch('bot.groq_ai.get_groq_response', return_value='') if opts['offline'] else None
+        ai_ctx = patch('diagnosis.ai_layer._chat', return_value=None) if opts['offline'] else None
         if ctx:
             ctx.start()
+            ai_ctx.start()
 
         try:
             for i, sc in enumerate(SCENARIOS):
@@ -257,6 +276,7 @@ class Command(BaseCommand):
         finally:
             if ctx:
                 ctx.stop()
+                ai_ctx.stop()
 
         self.stdout.write('\n' + '═' * 64)
         total = passed + failed
