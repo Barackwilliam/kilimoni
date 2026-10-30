@@ -1,0 +1,15 @@
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">🗓️ Mantiki ya wakati wa kupanda</div></div>
+  <div style="display:grid;grid-template-columns:190px 1fr;gap:6px 12px;font-size:13.5px;">
+    <div style="color:#6b7280;">Uamuzi</div><div><strong>{{ t.decision }}</strong></div>
+    <div style="color:#6b7280;">Eneo</div><div>{{ t.location|default:"–" }} {% if t.aez %}<code>{{ t.aez }}</code>{% endif %}</div>
+    <div style="color:#6b7280;">Tarehe ya ushauri</div><div>{{ t.today }}</div>
+    <div style="color:#6b7280;">Kipindi</div><div>{{ t.phase|default:"–" }}</div>
+    <div style="color:#6b7280;">Hali ya mvua (mkulima)</div><div>{{ t.rain|default:"haijathibitishwa" }}</div>
+    <div style="color:#6b7280;">Umwagiliaji</div><div>{% if t.irrigation == True %}Ndiyo{% elif t.irrigation == False %}Hapana{% else %}Haijatajwa{% endif %}</div>
+    {% if t.days_left != None %}<div style="color:#6b7280;">Siku hadi mvua kuisha</div><div>{{ t.days_left }}</div>{% endif %}
+    <div style="color:#6b7280;">Kalenda / Msimu</div><div><code>{{ t.calendar|default:"–" }}</code> · <code>{{ t.season|default:"–" }}</code></div>
+    {% if t.varieties %}<div style="color:#6b7280;">Mbegu zinazotosha</div><div>{{ t.varieties|join:", " }}</div>{% endif %}
+    <div style="color:#6b7280;">Kanuni zilizotumika</div><div><code>{{ t.rules_used|join:", "|default:"–" }}</code></div>
+  </div>
+</div>

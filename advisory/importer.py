@@ -20,6 +20,7 @@ from diagnosis.importer import (
 )
 
 from .models import (
+    AezAlias, ClimateRisk, CropCalendar, PlantingRule, SeasonProfile,
     AdvisoryConfidenceBand, AdvisoryRule, Aez, ExplainTemplate, LocationRule, LocationSynonym,
     SeedDecisionRule, SeedIntent, VarietyAgronomy, VarietyRegistry, VarietySynonym, WardLocation,
 )
@@ -174,6 +175,160 @@ class _Importer:
                 f"MHD-001 kisawe '{m['term']}' kinaelekeza kata {m['n']} tofauti — bot itakitumia "
                 "kutambua wilaya/mkoa tu, si kata mahsusi")
 
+    # ─────────────── MHD-006: Wakati wa kupanda (R1, R2, R3) ───────────────
+
+    def _aez(self, row, ext_col='aez_id', sw_col=None, en_col='aez_name'):
+        ext = row.get(ext_col)
+        if not ext:
+            return '', None
+        alias = AezAlias.objects.filter(dataset='MHD-006', external_id=ext).first()
+        if alias:
+            return ext, alias.aez
+        return ext, map_aez('MHD-006', ext, row.get(sw_col) if sw_col else '', row.get(en_col) or '')
+
+    def import_006(self, wb):
+        code = 'MHD-006'
+        names = {ws.title for ws in wb.worksheets}
+
+        if 'National_Crop_Calendar_Master' in names:
+            def zone(sid, row, source):
+                map_aez(code, sid, row.get('jina_la_kiswahili') or '', row.get('aez_name_en') or '',
+                        extra={'rainfall_pattern': (row.get('rainfall_pattern') or '')[:120],
+                               'rainfall_months': (row.get('rainfall_months_general') or '')[:120]})
+                return None
+
+            def calendar(sid, row, source):
+                ext, aez = self._aez(row)
+                crop = _crop(row.get('jina_la_zao'))
+                if crop is None:
+                    self.r.warnings.append(f"{source} {sid}: zao '{row.get('jina_la_zao')}' halipo kwenye Mazao")
+                _, created = self.upsert(
+                    CropCalendar, sid, source, row, crop=crop, ext_aez_id=ext, aez=aez,
+                    farming_system=(row.get('farming_system') or '')[:200],
+                    main_season=(row.get('main_season') or '')[:100],
+                    secondary_season=(row.get('secondary_or_irrigation_season') or '')[:200],
+                    early_window=row.get('early_planting_window') or '',
+                    normal_window=row.get('normal_planting_window') or '',
+                    late_window=row.get('late_planting_window') or '',
+                    harvest_window=row.get('expected_harvest_window') or '',
+                    min_days=int(_float(row.get('minimum_days')) or 0) or None,
+                    avg_days=int(_float(row.get('average_days')) or 0) or None,
+                    max_days=int(_float(row.get('maximum_days')) or 0) or None,
+                    priority=(row.get('recommendation_priority') or '')[:30],
+                    confidence=_float(row.get('confidence_score')),
+                    advisory_sw=row.get('AI_calendar_advisory') or '', explain_sw=row.get('explainability_text') or '')
+                return created
+
+            self.rows(wb, code, 'AEZ_Calendar_Zones', 'Kanda za kalenda', 'aez_id', zone)
+            self.rows(wb, code, 'National_Crop_Calendar_Master', 'Kalenda za mazao', 'calendar_id', calendar)
+            self.generic_rules(wb, code, 'Calendar_AI_Rules', 'planting')
+            self.explain_templates(wb, code, 'planting')
+
+        if 'AEZ_Seasonal_Master' in names:
+            def season(sid, row, source):
+                ext, aez = self._aez(row, sw_col='jina_la_kiswahili', en_col='aez_name_en')
+                if not AezAlias.objects.filter(dataset=code, external_id=ext).exists():
+                    aez = map_aez(code, ext, row.get('jina_la_kiswahili') or '', row.get('aez_name_en') or '')
+                _, created = self.upsert(
+                    SeasonProfile, sid, source, row, ext_aez_id=ext, aez=aez,
+                    name_sw=row.get('jina_la_kiswahili') or '', rainfall_pattern=(row.get('rainfall_pattern') or '')[:120],
+                    onset_window=row.get('rainfall_onset_window') or '',
+                    cessation_window=row.get('rainfall_cessation_window') or '',
+                    peak_months=row.get('peak_rainfall_months') or '',
+                    lgp_min=int(_float(row.get('lgp_min_days')) or 0) or None,
+                    lgp_avg=int(_float(row.get('lgp_avg_days')) or 0) or None,
+                    lgp_max=int(_float(row.get('lgp_max_days')) or 0) or None,
+                    reliability=(row.get('seasonal_reliability') or '')[:40],
+                    dry_spell_risk=(row.get('dry_spell_risk') or '')[:40],
+                    advisory_sw=row.get('AI_seasonal_advisory') or '')
+                return created
+
+            def by_aez(field_map):
+                def handler(sid, row, source):
+                    ext = row.get('aez_id')
+                    sp = SeasonProfile.objects.filter(ext_aez_id=ext).first()
+                    if sp is None:
+                        raise ValueError(f"hakuna AEZ_Seasonal_Master ya {ext}")
+                    for model_field, col in field_map.items():
+                        setattr(sp, model_field, row.get(col) or '')
+                    sp.raw = {**sp.raw, sid: {k: v for k, v in row.items() if v is not None}}
+                    sp.save()
+                    return False
+                return handler
+
+            def risk(sid, row, source):
+                ext, aez = self._aez(row)
+                _, created = self.upsert(
+                    ClimateRisk, sid, source, row, ext_aez_id=ext, aez=aez,
+                    risk_type=(row.get('risk_type') or '')[:60], risk_level=(row.get('risk_level') or '')[:40],
+                    risk_window=(row.get('risk_window') or '')[:120], farmer_message_sw=row.get('farmer_message_sw') or '')
+                return created
+
+            self.rows(wb, code, 'AEZ_Seasonal_Master', 'Misimu ya kanda', 'season_profile_id', season)
+            self.rows(wb, code, 'Rainfall_Onset_Intelligence', 'Misimu ya kanda', 'onset_id',
+                      by_aez({'onset_message_sw': 'farmer_message_sw', 'onset_trigger_sw': 'reliable_planting_trigger'}))
+            self.rows(wb, code, 'Rainfall_Cessation_Intelligence', 'Misimu ya kanda', 'cessation_id',
+                      by_aez({'cessation_message_sw': 'farmer_message_sw'}))
+            self.rows(wb, code, 'Length_Growing_Period', 'Misimu ya kanda', 'lgp_id',
+                      by_aez({'lgp_logic': 'variety_maturity_logic'}))
+            self.rows(wb, code, 'Climate_Risk_Intelligence', 'Hatari za hali ya hewa', 'risk_id', risk)
+            self.generic_rules(wb, code, 'AI_Seasonal_Rules', 'planting')
+            self.explain_templates(wb, code, 'planting')
+
+        if 'Planting_Decision_Engine' in names:
+            sheets = [
+                ('Planting_Decision_Engine', 'decision_rule_id', 'decision', 'decision_output', 'input_condition'),
+                ('Planting_Eligibility_Rules', 'eligibility_id', 'eligibility', 'decision_output', 'conditions_required'),
+                ('Planting_Window_Validation', 'window_rule_id', 'window', 'AI_decision', 'condition'),
+                ('Variety_Selection_Logic', 'variety_logic_id', 'variety_logic', 'planting_context', 'lgp_condition'),
+                ('Alternative_Crop_Rules', 'alternative_id', 'alternative', '', 'trigger_condition'),
+                ('Irrigation_Override_Rules', 'irrigation_rule_id', 'irrigation', 'AI_decision', 'condition'),
+                ('Climate_Exception_Rules', 'exception_id', 'climate_exception', 'AI_decision', 'trigger'),
+                ('Rule_Precedence', 'precedence_id', 'precedence', 'rule_group', 'conflict_resolution'),
+            ]
+            for sheet, id_col, kind, dec_col, cond_col in sheets:
+                def handler(sid, row, source, kind=kind, dec_col=dec_col, cond_col=cond_col):
+                    ext, aez = self._aez(row) if row.get('aez_id') else ('', None)
+                    extra = {k: v for k, v in row.items() if v is not None and k not in (
+                        'farmer_message_sw', 'hadhi_ya_CMS', 'source_ids', 'toleo', 'tarehe')}
+                    _, created = self.upsert(
+                        PlantingRule, sid, source, row, kind=kind,
+                        decision=(row.get(dec_col) or '')[:60] if dec_col else '',
+                        condition=row.get(cond_col) or '', farmer_message_sw=row.get('farmer_message_sw') or '',
+                        ext_aez_id=ext or '', aez=aez, extra=extra,
+                        confidence=_float(row.get('confidence_score')),
+                        priority=int(_float(row.get('priority_level') or row.get('priority')
+                                            or row.get('priority_order')) or 0))
+                    return created
+                self.rows(wb, code, sheet, 'Kanuni za kupanda', id_col, handler)
+            self.explain_templates_sheet(wb, code, 'Decision_Explainability', 'planting')
+
+        if 'Crop_Rotation_Family_Master' in names:
+            self.r.warnings.append(f"{code}: Crop Rotation (Release 4) itaingizwa kwenye hatua ya 5 — imerukwa kwa sasa")
+
+
+    def qa_006(self):
+        code = 'MHD-006'
+        # QA: AEZ za MHD-006 zina namba tofauti na MHD-001 — onyesha ulinganisho
+        for alias in AezAlias.objects.filter(dataset=code):
+            if alias.aez is None:
+                self.r.warnings.append(
+                    f"{code} {alias.external_id} ({alias.name_sw or alias.name_en}): haijaunganishwa na AEZ ya MHD-001 "
+                    "— weka kwenye dashboard (Maeneo na Kanda); data yake haitatumika mpaka hapo")
+            elif alias.aez.source_id != alias.external_id:
+                self.r.warnings.append(
+                    f"{code} {alias.external_id} ({alias.name_sw or alias.name_en}) ≠ MHD-001 {alias.external_id}; "
+                    f"imeunganishwa kwa jina na MHD-001 {alias.aez.source_id} ({alias.aez.name_sw}) — thibitisha")
+
+    def explain_templates_sheet(self, wb, code, sheet, module):
+        def tpl(sid, row, source):
+            _, created = self.upsert(
+                ExplainTemplate, sid, source, row, module=module,
+                situation=row.get('decision_output') or row.get('hali') or '',
+                template_sw=row.get('template_ya_jibu') or '', fields=row.get('fields_zinazotumika') or '')
+            return created
+        self.rows(wb, code, sheet, 'Violezo vya maelezo', 'template_id', tpl)
+
     # ─────────────── MHD-003A: Mbegu (Release 1, 2, 3) ───────────────
 
     def generic_rules(self, wb, code, sheet, module):
@@ -306,19 +461,68 @@ class _Importer:
 
 
 def _release_order(wb):
-    """MHD-003A ina workbooks 3 zenye msimbo mmoja: sajili → agronomy → uamuzi."""
+    """
+    Workbooks zenye msimbo mmoja zina releases: MHD-003A sajili → agronomy →
+    uamuzi; MHD-006 kalenda → msimu → planting engine → mzunguko.
+    """
     names = {ws.title for ws in wb.worksheets}
-    if 'Sajili_Aina_Mbegu_Mahindi' in names:
-        return 1
-    if 'Agronomy_Profile_Mahindi' in names:
-        return 2
-    return 3
+    for i, sheet in enumerate(('Sajili_Aina_Mbegu_Mahindi', 'Agronomy_Profile_Mahindi', 'AI_Decision_Engine',
+                               'National_Crop_Calendar_Master', 'AEZ_Seasonal_Master',
+                               'Planting_Decision_Engine', 'Crop_Rotation_Family_Master'), 1):
+        if sheet in names:
+            return i
+    return 99
+
+
+# ─────────────── AEZ za MHD-006 → AEZ za MHD-001 ───────────────
+
+AEZ_STOP = {'kanda', 'ya', 'za', 'na', 'wa', 'yenye', 'ukanda', 'nusu', 'wastani', 'the', 'zone', 'belt'}
+
+
+def _aez_tokens(name):
+    words = set(re.findall(r'[a-z]+', (name or '').lower())) - AEZ_STOP
+    return {'kame' if w == 'ukame' else w for w in words}
+
+
+def apply_alias(alias):
+    """Baada ya mteja kubadilisha ulinganisho wa AEZ: sasisha records zote za kanda hiyo."""
+    if alias.dataset != 'MHD-006':
+        return 0
+    n = 0
+    for model in (CropCalendar, SeasonProfile, ClimateRisk, PlantingRule):
+        n += model.objects.filter(ext_aez_id=alias.external_id).update(aez=alias.aez)
+    return n
+
+
+def map_aez(dataset, ext_id, name_sw='', name_en='', report=None, extra=None):
+    """Unganisha AEZ ya dataset nyingine na AEZ ya MHD-001 kwa majina (si kwa namba)."""
+    alias = AezAlias.objects.filter(dataset=dataset, external_id=ext_id).first()
+    if alias and not alias.auto_matched:
+        return alias.aez                       # mteja ameweka mwenyewe — usibadilishe
+    tokens = _aez_tokens(name_sw) or _aez_tokens(name_en)
+    scored = []
+    for a in Aez.objects.all():
+        t = _aez_tokens(a.name_sw)
+        common = tokens & t
+        if common:
+            scored.append((len(common) / len(tokens | t), a))
+    scored.sort(key=lambda x: -x[0])
+    match = None
+    if scored and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+        match = scored[0][1]
+    alias, _ = AezAlias.objects.update_or_create(
+        dataset=dataset, external_id=ext_id,
+        defaults={'name_sw': name_sw or (alias.name_sw if alias else ''),
+                  'name_en': name_en or (alias.name_en if alias else ''),
+                  'aez': match, 'auto_matched': True, **(extra or {})})
+    return match
 
 
 # Mpangilio wa import: eneo kwanza (wengine wanategemea AEZ).
 WORKBOOKS = [
     ('MHD-001', 'import_001'),
     ('MHD-003A', 'import_003a'),
+    ('MHD-006', 'import_006'),
 ]
 SUPPORTED_CODES = [code for code, _ in WORKBOOKS]
 
@@ -342,6 +546,8 @@ def import_files(files, dry_run=False):
             for code, method in WORKBOOKS:
                 for wb in sorted(books.get(code, []), key=_release_order):
                     getattr(imp, method)(wb)
+            if 'MHD-006' in books:
+                imp.qa_006()
             if report.failure_ratio > MAX_FAILURE_RATIO:
                 report.rolled_back = True
                 raise _Rollback()

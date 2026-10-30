@@ -19,6 +19,7 @@ from bot import diagnostic as dg
 from diagnosis import engine as rx
 from advisory import location as adv_location
 from advisory import seed as adv_seed
+from advisory import planting as adv_planting
 from analytics.models import AnalyticsLog
 
 logger = logging.getLogger(__name__)
@@ -885,6 +886,12 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     if updates:
         user.save(update_fields=list(updates.keys()) + ['last_seen_at'])
 
+    # ── Wakati wa kupanda kwa kanuni (MHD-006 + eneo + mbegu) ──
+    if adv_planting.wants_planting(normalized, intent) and not adv_seed.mentioned_variety(normalized):
+        handled = _planting_turn(user, raw_message, normalized, crop, start_time, message_id)
+        if handled is not None:
+            return handled
+
     # ── Ushauri wa mbegu kwa kanuni (MHD-003A + eneo la MHD-001) ──
     if adv_seed.wants_seed(normalized, intent):
         handled = _seed_turn(user, raw_message, normalized, crop, start_time, message_id)
@@ -1176,12 +1183,83 @@ def _seed_turn(user, raw_message, normalized, crop, start_time, message_id, text
     return response
 
 
+def _planting_has_data(crop):
+    from advisory.models import CropCalendar, SeasonProfile
+    return SeasonProfile.objects.filter(is_active=True, aez__isnull=False).exists() or \
+        CropCalendar.objects.filter(crop=crop, is_active=True).exists()
+
+
+def _planting_turn(user, raw_message, normalized, crop, start_time, message_id, text=None, rain=None,
+                   attempts=0):
+    """Wakati wa kupanda. None = hakuna data ya MHD-006 (mtiririko wa zamani unaendelea)."""
+    if not _planting_has_data(crop):
+        return None
+    loc = _seed_location(user, normalized)
+    state = {}
+    response, trace = adv_planting.advise(crop, loc, text or normalized, state, rain=rain)
+    dec = trace.get('decision')
+    if dec == 'need_location':
+        _set_adv(user, {'module': 'planting', 'stage': 'location', 'crop_id': crop.id if crop else None,
+                        'text': text or normalized, 'attempts': attempts})
+    elif dec == 'need_crop':
+        _set_adv(user, {'module': 'planting', 'stage': 'crop', 'text': text or normalized, 'attempts': 0})
+    elif trace.get('ask_rain'):
+        _set_adv(user, {'module': 'planting', 'stage': 'rain', 'crop_id': crop.id, 'text': text or normalized,
+                        'attempts': 0})
+    else:
+        _set_adv(user, None)
+    zone = adv_location.zone_for(loc) if loc and loc.get('level') != 'ambiguous' else None
+    _log_all(user, raw_message, normalized, crop, None, adv_location.display_name(loc) if loc else '',
+             zone, response, dec not in ('need_location', 'need_crop', 'INFO_ONLY'),
+             start_time, answer_ref=','.join(r for r in trace.get('rules_used', []) if r),
+             message_id=message_id, trace=trace)
+    return response
+
+
+def _handle_planting_pending(user, raw_message, normalized, start_time, message_id, pend):
+    crop = Crop.objects.filter(id=pend.get('crop_id')).first() if pend.get('crop_id') else None
+    if pend.get('stage') == 'crop':
+        crop = detect_crop(normalized)
+        if not crop:
+            _set_adv(user, None)
+            return None
+        return _planting_turn(user, raw_message, normalized, crop, start_time, message_id,
+                              text=pend.get('text', '') + ' ' + normalized)
+    if pend.get('stage') == 'rain':
+        rain = adv_planting.rain_status(normalized, {})
+        if rain is None:
+            _set_adv(user, None)
+            return None                      # si jibu la swali la mvua — shughulikia kawaida
+        return _planting_turn(user, raw_message, normalized, crop, start_time, message_id,
+                              text=pend.get('text', ''), rain=rain)
+    if pend.get('stage') == 'location':
+        res = resolve_farm_location(normalized)
+        if res and res['level'] != 'ambiguous':
+            return _planting_turn(user, raw_message, normalized, crop, start_time, message_id,
+                                  text=pend.get('text', ''), attempts=pend.get('attempts', 0) + 1)
+        attempts = pend.get('attempts', 0) + 1
+        if attempts >= 2 or detect_intent(normalized, detect_crop(normalized), '') or dg.is_problem_message(normalized, None):
+            _set_adv(user, None)
+            return None
+        pend['attempts'] = attempts
+        _set_adv(user, pend)
+        response = ("Sijaweza kutambua eneo hilo. 🙏\n\nTafadhali taja *wilaya au kata* yako kwa jina, "
+                    "_mfano: Kondoa, au kata ya Changaa_.")
+        _log_all(user, raw_message, normalized, crop, None, '', None, response, False, start_time,
+                 message_id=message_id, trace={'mode': 'planting_advisor', 'decision': 'location_not_found'})
+        return response
+    _set_adv(user, None)
+    return None
+
+
 def _handle_advisory_pending(user, raw_message, normalized, start_time, message_id):
     """Jibu la mkulima kwa swali la zao/eneo la ushauri wa mbegu. None = shughulikia kawaida."""
     pend = dict((user.session_state or {}).get('adv') or {})
     if rx.is_cancel(normalized) or is_greeting(normalized):
         _set_adv(user, None)
         return None
+    if pend.get('module') == 'planting':
+        return _handle_planting_pending(user, raw_message, normalized, start_time, message_id, pend)
     if pend.get('stage') == 'crop':
         crop = detect_crop(normalized)
         if not crop:

@@ -1,0 +1,52 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Wakati wa Kupanda{% endblock %}
+{% block page_title %}🗓️ Wakati wa Kupanda (MHD-006){% endblock %}
+{% block content %}
+<style>.rx-msg{white-space:pre-wrap;font-size:13.5px;line-height:1.55;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px}</style>
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Jaribu: bot ingemjibu nini mkulima, siku yoyote?</div></div>
+  <form method="get" class="search-bar" style="flex-wrap:wrap;">
+    <input name="q" class="form-control" value="{{ q }}" placeholder="mf. 'nipande lini? niko Changaa'" style="min-width:260px;">
+    <select name="crop" class="form-control" style="max-width:150px;">{% for c in crops %}<option value="{{ c.id }}" {% if c == crop %}selected{% endif %}>{{ c.crop_name_sw }}</option>{% endfor %}</select>
+    <input type="date" name="date" value="{{ date }}" class="form-control" style="max-width:170px;" title="Acha tupu = leo">
+    <select name="rain" class="form-control" style="max-width:200px;">
+      <option value="">Mvua: kutoka ujumbe</option>
+      <option value="confirmed" {% if rain == 'confirmed' %}selected{% endif %}>Mvua zimeanza</option>
+      <option value="not_started" {% if rain == 'not_started' %}selected{% endif %}>Mvua bado</option>
+      <option value="false_start" {% if rain == 'false_start' %}selected{% endif %}>Ilinyesha mara moja ikakata</option>
+    </select>
+    <button class="btn btn-primary" type="submit">🔎 Jaribu</button>
+  </form>
+  {% if preview %}
+  <div class="grid-2">
+    <div><div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Jibu kwa mkulima (WhatsApp)</div><div class="rx-msg">{{ preview }}</div></div>
+    <div>{% with t=trace %}{% include 'admin_panel/_planting_trace.html' %}{% endwith %}</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Misimu ya kanda ({{ seasons|length }})</div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>MHD-006</th><th>→ AEZ (MHD-001)</th><th>Mvua huanza</th><th>Mvua huisha</th><th>Msimu (siku)</th><th>Ukame</th></tr></thead>
+    <tbody>{% for s in seasons %}
+      <tr><td><code>{{ s.ext_aez_id }}</code> {{ s.name_sw }}</td>
+          <td>{% if s.aez %}<code>{{ s.aez.source_id }}</code> {{ s.aez.name_sw }}{% else %}<span class="badge badge-red">Haijaunganishwa</span>{% endif %}</td>
+          <td>{{ s.onset_window }}</td><td>{{ s.cessation_window }}</td>
+          <td>{{ s.lgp_min }}–{{ s.lgp_max }}</td><td>{{ s.dry_spell_risk }}</td></tr>
+    {% empty %}<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:20px;">Hakuna.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <div class="card-header"><div class="card-title">Kalenda za mazao ({{ calendars|length }})</div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Zao</th><th>Kanda</th><th>Mapema</th><th>Kawaida</th><th>Kuchelewa</th><th>Mavuno</th></tr></thead>
+    <tbody>{% for c in calendars %}
+      <tr><td>{{ c.crop.crop_name_sw|default:"?" }}</td>
+          <td><code>{{ c.ext_aez_id }}</code> → {% if c.aez %}<code>{{ c.aez.source_id }}</code>{% else %}<span class="badge badge-red">?</span>{% endif %}</td>
+          <td>{{ c.early_window }}</td><td><strong>{{ c.normal_window }}</strong></td><td>{{ c.late_window }}</td><td>{{ c.harvest_window }}</td></tr>
+    {% empty %}<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:20px;">Hakuna.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endblock %}

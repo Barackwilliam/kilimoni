@@ -209,6 +209,18 @@ SCENARIOS = [
         ],
     },
     {
+        'name': 'P1 — Wakati wa kupanda: eneo kwanza, kisha uamuzi wa kanuni za msimu (MHD-006)',
+        'turns': ['nipande lini mahindi?', 'niko changaa'],
+        'checks': [
+            ('Inauliza eneo kwanza (PDE-0011)', lambda r, t: 'kata' in r[0].lower()),
+            ('Inatoa uamuzi wa kanuni kwa kanda ya mkulima', lambda r, t: 'Wakati wa kupanda Mahindi' in r[1]
+             and t[-1].get('decision') in ('PANDA_SASA', 'PANDA_KWA_TAHADHARI', 'SUBIRI', 'WAIT',
+                                           'WAIT_OR_EARLY_VARIETY', 'DO_NOT_PLANT', 'ALLOW_IRRIGATION_PLANTING')),
+            ('Msimu wa Kanda ya Kati (MHD-006 AEZ-002 → MHD-001 AEZ-003)',
+             lambda r, t: t[-1].get('season') == 'SEAS-AEZ-002'),
+        ],
+    },
+    {
         'name': 'T7 — Bei ya soko inaonya kwamba si bei ya leo',
         'turns': ['bei ya mahindi Dodoma ikoje'],
         'checks': [
