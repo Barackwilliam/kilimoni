@@ -10,8 +10,15 @@ import os
 
 from django.core.management.base import BaseCommand, CommandError
 
-from advisory.importer import import_files
-from advisory.models import WardLocation
+from advisory.importer import import_files, workbook_code
+from advisory.models import VarietyRegistry, WardLocation
+
+# --if-empty inaangaliwa kwa KILA workbook: data ya MHD-001 ikiwepo, sample
+# ya MHD-003A bado inaingizwa kama mbegu hazipo (na kinyume chake).
+HAS_DATA = {
+    'MHD-001': lambda: WardLocation.objects.exists(),
+    'MHD-003A': lambda: VarietyRegistry.objects.exists(),
+}
 
 
 class Command(BaseCommand):
@@ -24,9 +31,6 @@ class Command(BaseCommand):
                             help='Ruka kama tayari kuna data (kwa deploy)')
 
     def handle(self, paths, dry_run, if_empty, **opts):
-        if if_empty and WardLocation.objects.exists():
-            self.stdout.write('Data ya ushauri ipo tayari — import ya sample imerukwa.')
-            return
         files = []
         for p in paths:
             if os.path.isdir(p):
@@ -35,6 +39,13 @@ class Command(BaseCommand):
                 files.append(p)
             else:
                 raise CommandError(f"Haipo: {p}")
+        if if_empty:
+            skipped = [f for f in files if HAS_DATA.get(workbook_code(f), lambda: False)()]
+            for f in skipped:
+                self.stdout.write(f"{workbook_code(f)}: data ipo tayari — sample imerukwa ({os.path.basename(f)})")
+            files = [f for f in files if f not in skipped]
+            if not files:
+                return
         if not files:
             raise CommandError('Hakuna faili la MHD-001…006')
         report = import_files(files, dry_run=dry_run)

@@ -96,3 +96,15 @@ class BotIntegrationTests(TestCase):
         loc = detect_location('niko hondomairo')
         self.assertEqual(loc, 'Hondomairo, Kondoa')
         self.assertEqual(map_location_to_zone(loc), z)
+
+
+class IfEmptyTests(TestCase):
+    def test_if_empty_is_per_workbook(self):
+        from django.core.management import call_command
+        from crops.models import Crop
+        from .models import VarietyRegistry
+        Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize', crop_group='cereals')
+        _load()                                              # MHD-001 tu (deploy ya hatua 1)
+        self.assertFalse(VarietyRegistry.objects.exists())
+        call_command('import_advisory', FIXTURES, if_empty=True, stdout=open(os.devnull, 'w'))
+        self.assertTrue(VarietyRegistry.objects.exists())   # MHD-003A imeingizwa
