@@ -31,6 +31,32 @@
   {% endif %}
 </div>
 
+{% if aliases %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Ulinganisho wa AEZ kati ya datasets</div></div>
+  <div class="alert alert-warning" style="margin-bottom:12px;">
+    MHD-006 inatumia namba za AEZ tofauti na MHD-001 (mf. MHD-006 AEZ-002 ni Kanda ya Kati, lakini MHD-001 AEZ-002
+    ni Kanda ya Ziwa). Mfumo umeziunganisha kwa <strong>majina</strong>. Thibitisha kila mstari; kanda isiyounganishwa
+    haitumiki kwenye ushauri.
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Dataset</th><th>AEZ yake</th><th>→ AEZ ya MHD-001 (eneo)</th><th>Hali</th></tr></thead>
+    <tbody>{% for a in aliases %}
+      <tr><td>{{ a.dataset }}</td>
+          <td><code>{{ a.external_id }}</code> {{ a.name_sw|default:a.name_en }}</td>
+          <td><form method="post" style="display:flex;gap:6px;">{% csrf_token %}
+                <input type="hidden" name="alias" value="{{ a.pk }}">
+                <select name="aez" class="form-control" style="max-width:320px;">
+                  <option value="">— haijaunganishwa —</option>
+                  {% for z in all_aez %}<option value="{{ z.pk }}" {% if a.aez_id == z.pk %}selected{% endif %}>{{ z.source_id }} — {{ z.name_sw }}</option>{% endfor %}
+                </select>
+                <button class="btn btn-secondary btn-sm" type="submit">Hifadhi</button></form></td>
+          <td>{% if not a.aez %}<span class="badge badge-red">Haijaunganishwa</span>{% elif a.auto_matched %}<span class="badge badge-yellow">Kwa jina — thibitisha</span>{% else %}<span class="badge badge-green">Imethibitishwa</span>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
+
 <div class="grid-2">
   <div class="card">
     <div class="card-header"><div class="card-title">Kanda za kilimo (AEZ)</div></div>

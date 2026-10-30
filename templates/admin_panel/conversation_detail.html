@@ -61,6 +61,7 @@
   </div>
 </div>
 
+{% if trace.mode == 'planting_advisor' %}{% with t=trace %}{% include 'admin_panel/_planting_trace.html' %}{% endwith %}{% endif %}
 {% if trace.mode == 'seed_advisor' %}{% with t=trace %}{% include 'admin_panel/_seed_trace.html' %}{% endwith %}{% endif %}
 
 {% if scores %}

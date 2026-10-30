@@ -223,3 +223,117 @@ class AdvisoryConfidenceBand(SourceRecord):
     class Meta(SourceRecord.Meta):
         verbose_name = 'Kiwango cha uhakika (ushauri)'
         verbose_name_plural = 'Viwango vya uhakika (ushauri)'
+
+
+# ─────────────────────────── MHD-006: Wakati wa kupanda ───────────────────────────
+
+class AezAlias(models.Model):
+    """
+    AEZ za datasets nyingine → AEZ ya MHD-001 (eneo).
+
+    MHD-006 inatumia namba tofauti na MHD-001 (mf. MHD-006 AEZ-002 = Kanda ya
+    Kati, lakini MHD-001 AEZ-002 = Kanda ya Ziwa). Importer inaunganisha kwa
+    majina na kuonyesha onyo; mteja anaweza kurekebisha kwenye dashboard.
+    """
+    dataset = models.CharField(max_length=20)
+    external_id = models.CharField(max_length=20)
+    name_en = models.CharField(max_length=150, blank=True)
+    name_sw = models.CharField(max_length=150, blank=True)
+    aez = models.ForeignKey(Aez, on_delete=models.SET_NULL, null=True, blank=True, related_name='aliases')
+    auto_matched = models.BooleanField(default=True)
+    rainfall_pattern = models.CharField(max_length=120, blank=True)
+    rainfall_months = models.CharField(max_length=120, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['dataset', 'external_id']
+        ordering = ['dataset', 'external_id']
+        verbose_name = 'Ulinganisho wa AEZ'
+        verbose_name_plural = 'Ulinganisho wa AEZ kati ya datasets'
+
+    def __str__(self):
+        return f"{self.dataset} {self.external_id} ({self.name_sw or self.name_en}) → {self.aez_id or '?'}"
+
+
+class CropCalendar(SourceRecord):
+    """MHD-006 R1 — National_Crop_Calendar_Master: madirisha ya kupanda kwa zao + kanda."""
+    ext_aez_id = models.CharField(max_length=20)
+    aez = models.ForeignKey(Aez, on_delete=models.SET_NULL, null=True, blank=True, related_name='calendars')
+    farming_system = models.CharField(max_length=200, blank=True)
+    main_season = models.CharField(max_length=100, blank=True)
+    secondary_season = models.CharField(max_length=200, blank=True)
+    early_window = models.CharField(max_length=60, blank=True)
+    normal_window = models.CharField(max_length=60, blank=True)
+    late_window = models.CharField(max_length=60, blank=True)
+    harvest_window = models.CharField(max_length=60, blank=True)
+    min_days = models.IntegerField(null=True, blank=True)
+    avg_days = models.IntegerField(null=True, blank=True)
+    max_days = models.IntegerField(null=True, blank=True)
+    priority = models.CharField(max_length=30, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+    advisory_sw = models.TextField(blank=True)
+    explain_sw = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Kalenda ya zao'
+        verbose_name_plural = 'Kalenda za mazao (MHD-006)'
+
+
+class SeasonProfile(SourceRecord):
+    """MHD-006 R2 — AEZ_Seasonal_Master (+ onset, cessation, LGP za kanda hiyo)."""
+    ext_aez_id = models.CharField(max_length=20)
+    aez = models.ForeignKey(Aez, on_delete=models.SET_NULL, null=True, blank=True, related_name='seasons')
+    name_sw = models.CharField(max_length=150, blank=True)
+    rainfall_pattern = models.CharField(max_length=120, blank=True)
+    onset_window = models.CharField(max_length=60, blank=True)
+    cessation_window = models.CharField(max_length=60, blank=True)
+    peak_months = models.CharField(max_length=60, blank=True)
+    lgp_min = models.IntegerField(null=True, blank=True)
+    lgp_avg = models.IntegerField(null=True, blank=True)
+    lgp_max = models.IntegerField(null=True, blank=True)
+    reliability = models.CharField(max_length=40, blank=True)
+    dry_spell_risk = models.CharField(max_length=40, blank=True)
+    advisory_sw = models.TextField(blank=True)
+    onset_message_sw = models.TextField(blank=True)
+    onset_trigger_sw = models.TextField(blank=True)
+    cessation_message_sw = models.TextField(blank=True)
+    lgp_logic = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Msimu wa kanda'
+        verbose_name_plural = 'Misimu ya kanda (MHD-006)'
+
+
+class ClimateRisk(SourceRecord):
+    """MHD-006 R2 — Climate_Risk_Intelligence."""
+    ext_aez_id = models.CharField(max_length=20)
+    aez = models.ForeignKey(Aez, on_delete=models.SET_NULL, null=True, blank=True, related_name='climate_risks')
+    risk_type = models.CharField(max_length=60)
+    risk_level = models.CharField(max_length=40, blank=True)
+    risk_window = models.CharField(max_length=120, blank=True)
+    farmer_message_sw = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Hatari ya hali ya hewa'
+        verbose_name_plural = 'Hatari za hali ya hewa'
+
+
+class PlantingRule(SourceRecord):
+    """
+    MHD-006 R3 — Planting Decision Engine. Sheets zote za kanuni kwenye table
+    moja, `kind` inaonyesha chanzo: decision, eligibility, window, variety_logic,
+    alternative, irrigation, climate_exception, precedence.
+    """
+    kind = models.CharField(max_length=30, db_index=True)
+    decision = models.CharField(max_length=60, blank=True, help_text='mf. PANDA_SASA, SUBIRI, DO_NOT_PLANT')
+    condition = models.TextField(blank=True)
+    farmer_message_sw = models.TextField(blank=True)
+    ext_aez_id = models.CharField(max_length=20, blank=True)
+    aez = models.ForeignKey(Aez, on_delete=models.SET_NULL, null=True, blank=True, related_name='planting_rules')
+    extra = models.JSONField(default=dict, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+    priority = models.IntegerField(default=1)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Kanuni ya kupanda'
+        verbose_name_plural = 'Kanuni za kupanda (MHD-006)'

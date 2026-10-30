@@ -11,13 +11,14 @@ import os
 from django.core.management.base import BaseCommand, CommandError
 
 from advisory.importer import import_files, workbook_code
-from advisory.models import VarietyRegistry, WardLocation
+from advisory.models import CropCalendar, SeasonProfile, VarietyRegistry, WardLocation
 
 # --if-empty inaangaliwa kwa KILA workbook: data ya MHD-001 ikiwepo, sample
 # ya MHD-003A bado inaingizwa kama mbegu hazipo (na kinyume chake).
 HAS_DATA = {
     'MHD-001': lambda: WardLocation.objects.exists(),
     'MHD-003A': lambda: VarietyRegistry.objects.exists(),
+    'MHD-006': lambda: SeasonProfile.objects.exists() or CropCalendar.objects.exists(),
 }
 
 

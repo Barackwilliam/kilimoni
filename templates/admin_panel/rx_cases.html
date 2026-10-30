@@ -15,6 +15,7 @@
       <option value="">Aina zote</option>
       <option value="rules_engine" {% if module == 'rules_engine' %}selected{% endif %}>Uchunguzi wa matatizo</option>
       <option value="seed_advisor" {% if module == 'seed_advisor' %}selected{% endif %}>Ushauri wa mbegu</option>
+      <option value="planting_advisor" {% if module == 'planting_advisor' %}selected{% endif %}>Wakati wa kupanda</option>
     </select>
     <select name="decision" class="form-control" style="max-width:260px;">
       <option value="">Matokeo yote</option>
@@ -35,10 +36,10 @@
         <tr>
           <td style="font-size:12px;color:#6b7280;white-space:nowrap;">{{ c.created_at|date:"d M Y H:i" }}</td>
           <td><span class="phone-num">{{ c.user.phone_number }}</span></td>
-          <td>{% if c.trace.mode == 'seed_advisor' %}<span class="badge badge-blue">🌱 Mbegu</span>{% else %}<span class="badge badge-gray">🔍 Uchunguzi</span>{% endif %}</td>
+          <td>{% if c.trace.mode == 'seed_advisor' %}<span class="badge badge-blue">🌱 Mbegu</span>{% elif c.trace.mode == 'planting_advisor' %}<span class="badge badge-yellow">🗓️ Kupanda</span>{% else %}<span class="badge badge-gray">🔍 Uchunguzi</span>{% endif %}</td>
           <td>
-            {% if c.trace.decision == 'diagnosed' or c.trace.decision == 'recommended' or c.trace.decision == 'variety_fits' %}<span class="badge badge-green">{{ c.decision_sw }}</span>
-            {% elif c.trace.decision == 'uncertain' or c.trace.decision == 'variety_not_fit' %}<span class="badge badge-yellow">{{ c.decision_sw }}</span>
+            {% if c.trace.decision == 'diagnosed' or c.trace.decision == 'recommended' or c.trace.decision == 'variety_fits' or c.trace.decision == 'PANDA_SASA' %}<span class="badge badge-green">{{ c.decision_sw }}</span>
+            {% elif c.trace.decision == 'uncertain' or c.trace.decision == 'variety_not_fit' or c.trace.decision == 'DO_NOT_PLANT' %}<span class="badge badge-yellow">{{ c.decision_sw }}</span>
             {% else %}<span class="badge badge-gray">{{ c.decision_sw }}</span>{% endif %}
           </td>
           <td>{{ c.cause_name|default:"–" }}</td>

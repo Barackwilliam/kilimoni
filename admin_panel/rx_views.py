@@ -26,8 +26,8 @@ from diagnosis import models as dm
 from diagnosis.importer import import_mhd007
 from advisory import importer as adv_importer
 from advisory import location as adv_location
-from advisory.models import (Aez, LocationSynonym, SeedDecisionRule, VarietyAgronomy, VarietyRegistry,
-                             WardLocation)
+from advisory.models import (Aez, AezAlias, ClimateRisk, CropCalendar, LocationSynonym, PlantingRule,
+                             SeasonProfile, SeedDecisionRule, VarietyAgronomy, VarietyRegistry, WardLocation)
 from diagnosis.models import DEFAULT_SETTINGS, EngineSetting, FarmerTerm
 
 MAX_UPLOAD_MB = 15
@@ -51,6 +51,9 @@ DATA_COUNTS = [
     ('Aina za mbegu — sajili (MHD-003A)', VarietyRegistry),
     ('Mbegu zenye sifa za kilimo (MHD-003A)', VarietyAgronomy),
     ('Kanuni za uamuzi wa mbegu (MHD-003A)', SeedDecisionRule),
+    ('Kalenda za mazao (MHD-006)', CropCalendar),
+    ('Misimu ya kanda (MHD-006)', SeasonProfile),
+    ('Kanuni za kupanda (MHD-006)', PlantingRule),
 ]
 
 # Maelezo ya settings kwa lugha ya mteja + aina ya thamani inayokubalika
@@ -193,6 +196,17 @@ def rx_confirm(request):
 def rx_locations(request):
     """Kanda (AEZ) na kata za MHD-001 + kujaribu kutambua eneo kwa maneno ya mkulima."""
     from django.db.models import Count
+    if request.method == 'POST':
+        from advisory.importer import apply_alias
+        alias = AezAlias.objects.filter(pk=request.POST.get('alias')).first()
+        if alias:
+            alias.aez = Aez.objects.filter(pk=request.POST.get('aez')).first()
+            alias.auto_matched = False
+            alias.save()
+            n = apply_alias(alias)
+            messages.success(request, f"{alias.dataset} {alias.external_id} sasa → "
+                                      f"{alias.aez.source_id if alias.aez else 'haijaunganishwa'} ({n} records zimesasishwa).")
+        return redirect('rx_locations')
     q = request.GET.get('q', '').strip()
     result = adv_location.resolve(q) if q else None
     aezs = Aez.objects.annotate(n=Count('wards')).select_related('zone')
@@ -201,6 +215,7 @@ def rx_locations(request):
     return render(request, 'admin_panel/rx_locations.html', {
         'page': 'rx_locations', 'q': q, 'result': result, 'tried': bool(q),
         'aezs': aezs, 'regions': regions, 'ward_total': WardLocation.objects.filter(is_active=True).count(),
+        'aliases': AezAlias.objects.select_related('aez'), 'all_aez': Aez.objects.all(),
     })
 
 
@@ -296,7 +311,7 @@ def rx_cases(request):
     decision = request.GET.get('decision', '')
     module = request.GET.get('module', '')
     finals = {'rules_engine': ['diagnosed', 'uncertain', 'no_rule_matched', 'crop_without_rules'],
-              'seed_advisor': SEED_FINAL}
+              'seed_advisor': SEED_FINAL, 'planting_advisor': PLANT_FINAL}
     q = Q()
     for mode, decisions in finals.items():
         if not module or module == mode:
@@ -314,11 +329,16 @@ def rx_cases(request):
         c.decision_sw = DECISION_SW.get(c.trace.get('decision'), c.trace.get('decision'))
         if c.trace.get('mode') == 'seed_advisor':
             c.cause_name = ', '.join(c.trace.get('recommended') or []) or c.trace.get('variety', '')
+        elif c.trace.get('mode') == 'planting_advisor':
+            c.cause_name = f"{c.trace.get('crop', '')} · {c.trace.get('location', '')}"
+
     return render(request, 'admin_panel/rx_cases.html', {
         'page': 'rx_cases', 'cases': cases, 'decision': decision, 'module': module,
     })
 
 
+PLANT_FINAL = ['PANDA_SASA', 'PANDA_KWA_TAHADHARI', 'SUBIRI', 'WAIT', 'WAIT_OR_EARLY_VARIETY',
+               'ALLOW_IRRIGATION_PLANTING', 'DO_NOT_PLANT', 'INFO_ONLY']
 SEED_FINAL = ['recommended', 'variety_fits', 'variety_not_fit', 'variety_no_profile', 'no_suitable_variety']
 
 
@@ -330,6 +350,10 @@ DECISION_SW = {
     'variety_not_fit': 'Mbegu aliyoitaja haifai kanda yake', 'variety_no_profile': 'Mbegu haina sifa za kilimo',
     'no_suitable_variety': 'Hakuna mbegu iliyoorodheshwa kwa kanda', 'need_location': 'Imeuliza eneo',
     'need_crop': 'Imeuliza zao',
+    'PANDA_SASA': 'Panda sasa', 'PANDA_KWA_TAHADHARI': 'Panda kwa tahadhari', 'SUBIRI': 'Subiri',
+    'WAIT': 'Subiri mvua ziendelee', 'WAIT_OR_EARLY_VARIETY': 'Subiri / mbegu ya muda mfupi',
+    'ALLOW_IRRIGATION_PLANTING': 'Panda kwa umwagiliaji', 'DO_NOT_PLANT': 'Usipande sasa',
+    'INFO_ONLY': 'Taarifa ya jumla tu',
 }
 
 
@@ -378,4 +402,30 @@ def rx_seeds(request):
         'profiles': VarietyAgronomy.objects.filter(is_active=True).order_by('maturity_days_max'),
         'rules': SeedDecisionRule.objects.filter(is_active=True),
         'registry_only': VarietyRegistry.objects.filter(is_active=True, agronomy__isnull=True),
+    })
+
+
+@login_required
+def rx_planting(request):
+    """Wakati wa kupanda (MHD-006) + kujaribu kwa tarehe yoyote na hali ya mvua."""
+    import datetime
+    from crops.models import Crop
+    from advisory import planting as adv_planting
+    q = request.GET.get('q', '').strip()
+    crops = Crop.objects.all()
+    crop = crops.filter(id=request.GET.get('crop')).first() or crops.filter(crop_name_sw__iexact='mahindi').first()
+    try:
+        day = datetime.date.fromisoformat(request.GET.get('date', ''))
+    except ValueError:
+        day = None
+    rain = request.GET.get('rain') or None
+    preview, trace = None, None
+    if q and crop:
+        preview, trace = adv_planting.advise(crop, adv_location.resolve(q), q, {}, today=day, rain=rain)
+    return render(request, 'admin_panel/rx_planting.html', {
+        'page': 'rx_planting', 'q': q, 'crops': crops, 'crop': crop, 'date': request.GET.get('date', ''),
+        'rain': rain or '', 'preview': preview, 'trace': trace,
+        'seasons': SeasonProfile.objects.select_related('aez'),
+        'calendars': CropCalendar.objects.select_related('aez', 'crop'),
+        'risks': ClimateRisk.objects.select_related('aez'),
     })
