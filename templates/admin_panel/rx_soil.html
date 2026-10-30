@@ -1,0 +1,49 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Udongo{% endblock %}
+{% block page_title %}🟤 Udongo (MHD-004){% endblock %}
+{% block content %}
+<style>.rx-msg{white-space:pre-wrap;font-size:13.5px;line-height:1.55;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px}</style>
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Jaribu: bot ingemjibu nini mkulima?</div></div>
+  <form method="get" class="search-bar">
+    <input name="q" class="form-control" value="{{ q }}" placeholder="mf. 'udongo wangu ni mwekundu' au 'nina udongo wa kichanga'">
+    <select name="crop" class="form-control" style="max-width:170px;"><option value="">— bila zao —</option>{% for c in crops %}<option value="{{ c.id }}" {% if c == crop %}selected{% endif %}>{{ c.crop_name_sw }}</option>{% endfor %}</select>
+    <button class="btn btn-primary" type="submit">🔎 Jaribu</button>
+  </form>
+  {% if preview %}
+  <div class="grid-2">
+    <div><div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Jibu kwa mkulima (WhatsApp)</div><div class="rx-msg">{{ preview }}</div></div>
+    <div>{% with t=trace %}{% include 'admin_panel/_soil_trace.html' %}{% endwith %}</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Aina za udongo ({{ soils|length }})</div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Udongo</th><th>Jina la kawaida</th><th>Maneno ya mkulima (visawe)</th><th>Maelezo</th></tr></thead>
+    <tbody>{% for s in soils %}
+      <tr><td><strong>{{ s.name_sw }}</strong><br><code style="font-size:11px;">{{ s.source_id }}</code> {{ s.wrb_name }}</td>
+          <td>{{ s.farmer_name|default:"–" }}</td>
+          <td style="font-size:12.5px;">{% for y in s.synonyms.all %}{{ y.term }}{% if not forloop.last %}, {% endif %}{% empty %}–{% endfor %}</td>
+          <td style="font-size:12.5px;">{{ s.description_sw }}</td></tr>
+    {% empty %}<tr><td colspan="4" style="text-align:center;color:#9ca3af;padding:20px;">Hakuna data ya MHD-004.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Ufaafu wa udongo kwa mazao</div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Udongo</th><th>Zao</th><th>Score</th></tr></thead>
+      <tbody>{% for x in suits %}<tr><td>{{ x.soil.wrb_name|default:x.soil.name_sw }}</td><td>{{ x.crop.crop_name_sw|default:"?" }}</td><td>{{ x.score }}/100 · {{ x.rating }}</td></tr>{% empty %}<tr><td colspan="3">–</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <h4 style="margin:14px 0 6px;font-size:13.5px;">Udongo bora kwa kila zao</h4>
+    <ul style="font-size:13px;line-height:1.7;">{% for r in ranks %}<li>{{ r.crop.crop_name_sw|default:"?" }} #{{ r.rank }}: {{ r.soil_wrb }} ({{ r.score }}/100){% if not r.soil %} <span class="badge badge-yellow">haipo R1</span>{% endif %}</li>{% endfor %}</ul>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">Changamoto za udongo</div></div>
+    <ul style="font-size:13px;line-height:1.7;">{% for c in constraints %}<li><strong>{{ c.name_sw }}</strong> — {{ c.soil_groups|join:", " }}<br><span style="color:#6b7280;">{{ c.farmer_signs_sw }}</span></li>{% endfor %}</ul>
+  </div>
+</div>
+{% endblock %}

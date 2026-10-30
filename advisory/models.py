@@ -337,3 +337,96 @@ class PlantingRule(SourceRecord):
     class Meta(SourceRecord.Meta):
         verbose_name = 'Kanuni ya kupanda'
         verbose_name_plural = 'Kanuni za kupanda (MHD-006)'
+
+
+# ─────────────────────────── MHD-004: Udongo ───────────────────────────
+
+class SoilType(SourceRecord):
+    """
+    R1 — Soil_Master_Registry (kind='wrb') na Soil_Local_Texture_Registry (kind='local').
+    """
+    kind = models.CharField(max_length=10, default='wrb')
+    wrb_name = models.CharField(max_length=100, blank=True)
+    name_sw = models.CharField(max_length=200)
+    farmer_name = models.CharField(max_length=200, blank=True)
+    description_sw = models.TextField(blank=True)
+    environment_sw = models.TextField(blank=True)
+    ai_usage = models.TextField(blank=True)
+    caution_sw = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Aina ya udongo'
+        verbose_name_plural = 'Aina za udongo (MHD-004)'
+
+    def __str__(self):
+        return f"{self.name_sw} ({self.wrb_name or self.kind})"
+
+
+class SoilSynonym(SourceRecord):
+    """R1 — Soil_Synonyms: maneno ya mkulima → udongo."""
+    term = models.CharField(max_length=200, db_index=True)
+    soil = models.ForeignKey(SoilType, on_delete=models.CASCADE, related_name='synonyms')
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Kisawe cha udongo'
+        verbose_name_plural = 'Visawe vya udongo'
+
+
+class SoilProperty(SourceRecord):
+    """R2 — Soil_Property_Profile."""
+    soil = models.ForeignKey(SoilType, on_delete=models.CASCADE, related_name='properties')
+    texture = models.CharField(max_length=300, blank=True)
+    drainage = models.CharField(max_length=300, blank=True)
+    water_holding = models.CharField(max_length=100, blank=True)
+    ph_tendency = models.CharField(max_length=100, blank=True)
+    organic_matter = models.CharField(max_length=100, blank=True)
+    fertility = models.CharField(max_length=100, blank=True)
+    main_challenges = models.TextField(blank=True)
+    management = models.TextField(blank=True)
+    advisory_sw = models.TextField(blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Sifa za udongo'
+        verbose_name_plural = 'Sifa za udongo'
+
+
+class SoilConstraint(SourceRecord):
+    """R2 — Soil_Constraint_Master."""
+    name_sw = models.CharField(max_length=200)
+    farmer_signs_sw = models.TextField(blank=True)
+    soil_groups = models.JSONField(default=list, blank=True)
+    first_action_sw = models.TextField(blank=True)
+    message_sw = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Changamoto ya udongo'
+        verbose_name_plural = 'Changamoto za udongo'
+
+
+class SoilSuitability(SourceRecord):
+    """R3 — Soil_Crop_Suitability_Master: udongo + zao → score."""
+    soil = models.ForeignKey(SoilType, on_delete=models.CASCADE, related_name='suitability')
+    score = models.IntegerField(null=True, blank=True)
+    rating = models.CharField(max_length=40, blank=True)
+    ai_action = models.TextField(blank=True)
+    reason_sw = models.TextField(blank=True)
+    limitations_sw = models.TextField(blank=True)
+    improvements_sw = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Ufaafu wa udongo kwa zao'
+        verbose_name_plural = 'Ufaafu wa udongo kwa mazao'
+
+
+class SoilRanking(SourceRecord):
+    """R3 — Crop_Top_Soil_Ranking."""
+    soil = models.ForeignKey(SoilType, on_delete=models.SET_NULL, null=True, blank=True, related_name='rankings')
+    soil_wrb = models.CharField(max_length=100, blank=True)
+    score = models.IntegerField(null=True, blank=True)
+    rank = models.IntegerField(null=True, blank=True)
+
+    class Meta(SourceRecord.Meta):
+        ordering = ['crop', 'rank']
+        verbose_name = 'Udongo bora kwa zao'
+        verbose_name_plural = 'Udongo bora kwa mazao'

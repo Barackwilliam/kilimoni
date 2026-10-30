@@ -20,6 +20,7 @@ from diagnosis.importer import (
 )
 
 from .models import (
+    SoilConstraint, SoilProperty, SoilRanking, SoilSuitability, SoilSynonym, SoilType,
     AezAlias, ClimateRisk, CropCalendar, PlantingRule, SeasonProfile,
     AdvisoryConfidenceBand, AdvisoryRule, Aez, ExplainTemplate, LocationRule, LocationSynonym,
     SeedDecisionRule, SeedIntent, VarietyAgronomy, VarietyRegistry, VarietySynonym, WardLocation,
@@ -174,6 +175,107 @@ class _Importer:
             self.r.warnings.append(
                 f"MHD-001 kisawe '{m['term']}' kinaelekeza kata {m['n']} tofauti — bot itakitumia "
                 "kutambua wilaya/mkoa tu, si kata mahsusi")
+
+    # ─────────────── MHD-004: Udongo (R1, R2, R3) ───────────────
+
+    def import_004(self, wb):
+        code = 'MHD-004'
+        names = {ws.title for ws in wb.worksheets}
+
+        def soil_ref(sid, where):
+            soil = SoilType.objects.filter(source_id=sid).first() if sid else None
+            if sid and soil is None:
+                self.r.warnings.append(f"{where}: udongo '{sid}' haupo kwenye Soil_Master_Registry (R1)")
+            return soil
+
+        if 'Soil_Master_Registry' in names:
+            def wrb(sid, row, source):
+                _, created = self.upsert(
+                    SoilType, sid, source, row, kind='wrb', wrb_name=row.get('jina_la_udongo_WRB') or '',
+                    name_sw=row.get('jina_la_kiswahili') or sid, farmer_name=row.get('jina_la_kawaida_kwa_mkulima') or '',
+                    description_sw=row.get('sifa_kwa_lugha_rahisi') or '',
+                    environment_sw=row.get('mazingira_ambako_hupatikana_mara_nyingi') or '',
+                    ai_usage=row.get('matumizi_katika_Mkulima_AI') or '', caution_sw=row.get('tahadhari_ya_awali') or '')
+                return created
+
+            def local(sid, row, source):
+                _, created = self.upsert(
+                    SoilType, sid, source, row, kind='local', wrb_name='',
+                    name_sw=row.get('jina_la_kiswahili') or sid, farmer_name=row.get('jina_la_udongo_kawaida') or '',
+                    description_sw=row.get('sifa_rahisi') or '', ai_usage=row.get('matumizi_katika_AI') or '')
+                return created
+
+            def synonym(sid, row, source):
+                soil = soil_ref(row.get('soil_id_inayolingana'), f"{source} {sid}")
+                if soil is None:
+                    raise ValueError('udongo haupo')
+                _, created = self.upsert(SoilSynonym, sid, source, row,
+                                         term=str(row.get('neno_la_mkulima') or '').strip().lower(), soil=soil)
+                return created
+
+            self.rows(wb, code, 'Soil_Master_Registry', 'Aina za udongo', 'soil_id', wrb)
+            self.rows(wb, code, 'Soil_Local_Texture_Registry', 'Aina za udongo', 'soil_local_id', local)
+            self.rows(wb, code, 'Soil_Synonyms', 'Visawe vya udongo', 'synonym_id', synonym)
+            self.generic_rules(wb, code, 'Soil_Decision_Rules', 'soil')
+
+        if 'Soil_Property_Profile' in names:
+            def prop(sid, row, source):
+                soil = soil_ref(row.get('soil_id_release1'), f"{source} {sid}")
+                if soil is None:
+                    raise ValueError('udongo haupo')
+                _, created = self.upsert(
+                    SoilProperty, sid, source, row, soil=soil, texture=(row.get('texture_kawaida') or '')[:300],
+                    drainage=(row.get('drainage_kawaida') or '')[:300],
+                    water_holding=(row.get('uwezo_wa_kushika_maji') or '')[:100],
+                    ph_tendency=(row.get('pH_tendency') or '')[:100],
+                    organic_matter=(row.get('organic_matter_tendency') or '')[:100],
+                    fertility=(row.get('fertility_rating_awali') or '')[:100],
+                    main_challenges=row.get('changamoto_kuu') or '',
+                    management=row.get('soil_management_recommendation') or '',
+                    advisory_sw=row.get('AI_advisory_kiswahili') or '', confidence=_float(row.get('confidence_score')))
+                return created
+
+            def constraint(sid, row, source):
+                _, created = self.upsert(
+                    SoilConstraint, sid, source, row, name_sw=row.get('jina_la_changamoto') or sid,
+                    farmer_signs_sw=row.get('dalili_kwa_mkulima') or '',
+                    soil_groups=_list(row.get('soil_groups_husika')),
+                    first_action_sw=row.get('hatua_ya_awali') or '', message_sw=row.get('ujumbe_wa_AI') or '')
+                return created
+
+            self.rows(wb, code, 'Soil_Property_Profile', 'Sifa za udongo', 'soil_property_id', prop)
+            self.rows(wb, code, 'Soil_Constraint_Master', 'Changamoto za udongo', 'constraint_id', constraint)
+            self.generic_rules(wb, code, 'Soil_Property_AI_Rules', 'soil')
+
+        if 'Soil_Crop_Suitability_Master' in names:
+            def suit(sid, row, source):
+                soil = soil_ref(row.get('soil_id'), f"{source} {sid}")
+                if soil is None:
+                    raise ValueError('udongo haupo')
+                _, created = self.upsert(
+                    SoilSuitability, sid, source, row, soil=soil, crop=_crop(row.get('jina_la_zao')),
+                    score=int(_float(row.get('suitability_score')) or 0) or None,
+                    rating=(row.get('suitability_rating') or '')[:40], ai_action=row.get('hatua_ya_AI') or '',
+                    reason_sw=row.get('sababu_kuu') or '', limitations_sw=row.get('vikwazo_vinavyoweza_kutokea') or '',
+                    improvements_sw=row.get('maboresho_kabla_ya_kupanda') or '')
+                return created
+
+            def rank(sid, row, source):
+                soil = SoilType.objects.filter(source_id=row.get('soil_id')).first()
+                if soil is None:
+                    self.r.warnings.append(f"{source} {sid}: udongo '{row.get('soil_id')}' "
+                                           f"({row.get('jina_la_udongo_WRB')}) haupo kwenye R1 — utaonyeshwa kwa jina tu")
+                _, created = self.upsert(
+                    SoilRanking, sid, source, row, soil=soil, crop=_crop(row.get('jina_la_zao')),
+                    soil_wrb=row.get('jina_la_udongo_WRB') or '',
+                    score=int(_float(row.get('suitability_score')) or 0) or None,
+                    rank=int(_float(row.get('rank_kwa_zao')) or 0) or None)
+                return created
+
+            self.rows(wb, code, 'Soil_Crop_Suitability_Master', 'Ufaafu wa udongo kwa mazao', 'suitability_id', suit)
+            self.rows(wb, code, 'Crop_Top_Soil_Ranking', 'Udongo bora kwa mazao', 'rank_id', rank)
+            self.generic_rules(wb, code, 'Soil_Crop_AI_Rules', 'soil')
+            self.explain_templates(wb, code, 'soil')
 
     # ─────────────── MHD-006: Wakati wa kupanda (R1, R2, R3) ───────────────
 
@@ -467,6 +569,7 @@ def _release_order(wb):
     """
     names = {ws.title for ws in wb.worksheets}
     for i, sheet in enumerate(('Sajili_Aina_Mbegu_Mahindi', 'Agronomy_Profile_Mahindi', 'AI_Decision_Engine',
+                               'Soil_Master_Registry', 'Soil_Property_Profile', 'Soil_Crop_Suitability_Master',
                                'National_Crop_Calendar_Master', 'AEZ_Seasonal_Master',
                                'Planting_Decision_Engine', 'Crop_Rotation_Family_Master'), 1):
         if sheet in names:
@@ -522,6 +625,7 @@ def map_aez(dataset, ext_id, name_sw='', name_en='', report=None, extra=None):
 WORKBOOKS = [
     ('MHD-001', 'import_001'),
     ('MHD-003A', 'import_003a'),
+    ('MHD-004', 'import_004'),
     ('MHD-006', 'import_006'),
 ]
 SUPPORTED_CODES = [code for code, _ in WORKBOOKS]
