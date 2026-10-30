@@ -18,6 +18,7 @@ from bot.models import User, Conversation, UnresolvedQuery
 from bot import diagnostic as dg
 from diagnosis import engine as rx
 from advisory import location as adv_location
+from advisory import seed as adv_seed
 from analytics.models import AnalyticsLog
 
 logger = logging.getLogger(__name__)
@@ -705,6 +706,12 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
         if handled is not None:
             return handled
 
+    # ── Ushauri wa kanuni unaosubiri jibu (zao/eneo kwa ajili ya mbegu) ──
+    if (user.session_state or {}).get('adv'):
+        handled = _handle_advisory_pending(user, raw_message, normalized, start_time, message_id)
+        if handled is not None:
+            return handled
+
     # ── Kukubali / shukrani ("sawa", "asante") ───────
     # Bila hii, "sawa" hupelekwa kwenye injini ya maswali na
     # mkulima anapata fallback isiyo na maana.
@@ -821,7 +828,7 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
         # kuuliza swali la nje ya kilimo.
         _fresh_crop = detect_crop(normalized)
         _fresh_loc = detect_location(normalized)
-        if _kind and not _fresh_crop and not _fresh_loc:
+        if _kind and not _fresh_crop and not _fresh_loc and not adv_seed.wants_seed(normalized):
             if _kind == 'identity':
                 response = build_identity_message()
             elif _kind == 'capability':
@@ -877,6 +884,12 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
         updates['session_state'] = new_session
     if updates:
         user.save(update_fields=list(updates.keys()) + ['last_seen_at'])
+
+    # ── Ushauri wa mbegu kwa kanuni (MHD-003A + eneo la MHD-001) ──
+    if adv_seed.wants_seed(normalized, intent):
+        handled = _seed_turn(user, raw_message, normalized, crop, start_time, message_id)
+        if handled is not None:
+            return handled
 
     # ── Ombi pana: uliza lengo kwanza, usitoe ushauri ──
     _fresh_c = detect_crop(normalized)
@@ -1110,6 +1123,99 @@ def _save_rx(user, state):
         sess[rx.STATE_KEY] = state
     user.session_state = sess
     user.save(update_fields=['session_state'])
+
+
+def _set_adv(user, value):
+    sess = dict(user.session_state or {})
+    if value:
+        sess['adv'] = value
+    else:
+        sess.pop('adv', None)
+    user.session_state = sess
+    user.save(update_fields=['session_state'])
+
+
+def _seed_location(user, normalized):
+    """Eneo la ujumbe huu (likihifadhiwa kwenye profile), au la profile ya mkulima."""
+    loc = remember_farm_location(user, normalized)
+    if loc and loc.get('aez_id'):
+        return loc
+    prof = adv_seed.location_from_user(user)
+    if loc and loc['level'] == 'region' and prof and prof.get('region') != loc['region']:
+        return loc                      # mkoa mpya wenye kanda nyingi → uliza wilaya/kata
+    return prof or loc
+
+
+def _seed_turn(user, raw_message, normalized, crop, start_time, message_id, text=None, attempts=0):
+    """Ushauri wa mbegu. Inarudisha jibu, au None kama zao halina data ya mbegu."""
+    if crop is None:
+        named = adv_seed.mentioned_variety(normalized)
+        crop = named.crop if named else None        # "SC 403" → mahindi
+    if crop is None:
+        _set_adv(user, {'module': 'seed', 'stage': 'crop', 'text': normalized, 'attempts': 0})
+        response = ("Sawa, nitakusaidia kuchagua mbegu. 🌱\n\nNi mbegu ya *zao gani*?\n"
+                    "_Mfano: mahindi_")
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True, start_time,
+                 message_id=message_id, trace={'mode': 'seed_advisor', 'decision': 'need_crop'})
+        return response
+    if not adv_seed.has_data(crop):
+        return None                     # mtiririko wa zamani (templates) unaendelea
+    loc = _seed_location(user, normalized)
+    state = {}
+    response, trace = adv_seed.advise(crop, loc, text or normalized, state)
+    if trace.get('decision') == 'need_location':
+        _set_adv(user, {'module': 'seed', 'stage': 'location', 'crop_id': crop.id,
+                        'text': text or normalized, 'attempts': attempts})
+    else:
+        _set_adv(user, None)
+    zone = adv_location.zone_for(loc) if loc and loc.get('level') != 'ambiguous' else None
+    _log_all(user, raw_message, normalized, crop, None, adv_location.display_name(loc) if loc else '',
+             zone, response, trace.get('decision') not in ('need_location', 'no_suitable_variety'),
+             start_time, answer_ref=','.join(r for r in trace.get('rules_used', []) if r),
+             message_id=message_id, trace=trace)
+    return response
+
+
+def _handle_advisory_pending(user, raw_message, normalized, start_time, message_id):
+    """Jibu la mkulima kwa swali la zao/eneo la ushauri wa mbegu. None = shughulikia kawaida."""
+    pend = dict((user.session_state or {}).get('adv') or {})
+    if rx.is_cancel(normalized) or is_greeting(normalized):
+        _set_adv(user, None)
+        return None
+    if pend.get('stage') == 'crop':
+        crop = detect_crop(normalized)
+        if not crop:
+            _set_adv(user, None)
+            return None
+        if not adv_seed.has_data(crop):
+            _set_adv(user, None)
+            response = (f"Samahani, kwa sasa sina taarifa za kutosha za mbegu za *{crop.crop_name_sw}* "
+                        "kwenye mfumo, kwa hiyo sitabahatisha jina la mbegu. 🌱\n\n"
+                        "📞 Afisa ugani wa kata yako atakusaidia kuchagua mbegu ya eneo lako.")
+            _log_all(user, raw_message, normalized, crop, None, '', None, response, False, start_time,
+                     message_id=message_id, trace={'mode': 'seed_advisor', 'decision': 'crop_without_seed_data'})
+            return response
+        return _seed_turn(user, raw_message, normalized, crop, start_time, message_id,
+                          text=pend.get('text', '') + ' ' + normalized)
+    if pend.get('stage') == 'location':
+        crop = Crop.objects.filter(id=pend.get('crop_id')).first()
+        res = resolve_farm_location(normalized)
+        if crop and res and res['level'] != 'ambiguous':
+            return _seed_turn(user, raw_message, normalized, crop, start_time, message_id,
+                              text=pend.get('text', ''), attempts=pend.get('attempts', 0) + 1)
+        attempts = pend.get('attempts', 0) + 1
+        if attempts >= 2 or detect_intent(normalized, detect_crop(normalized), '') or dg.is_problem_message(normalized, None):
+            _set_adv(user, None)
+            return None
+        pend['attempts'] = attempts
+        _set_adv(user, pend)
+        response = ("Sijaweza kutambua eneo hilo. 🙏\n\nTafadhali taja *wilaya au kata* yako kwa jina, "
+                    "_mfano: Kondoa, au kata ya Changaa_.")
+        _log_all(user, raw_message, normalized, crop, None, '', None, response, False, start_time,
+                 message_id=message_id, trace={'mode': 'seed_advisor', 'decision': 'location_not_found'})
+        return response
+    _set_adv(user, None)
+    return None
 
 
 def _rx_reply(user, state, raw_message, normalized, response, trace, done,

@@ -17,6 +17,7 @@ import tempfile
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -25,7 +26,8 @@ from diagnosis import models as dm
 from diagnosis.importer import import_mhd007
 from advisory import importer as adv_importer
 from advisory import location as adv_location
-from advisory.models import Aez, LocationSynonym, WardLocation
+from advisory.models import (Aez, LocationSynonym, SeedDecisionRule, VarietyAgronomy, VarietyRegistry,
+                             WardLocation)
 from diagnosis.models import DEFAULT_SETTINGS, EngineSetting, FarmerTerm
 
 MAX_UPLOAD_MB = 15
@@ -46,6 +48,9 @@ DATA_COUNTS = [
     ('Kata (MHD-001)', WardLocation),
     ('Kanda za kilimo — AEZ (MHD-001)', Aez),
     ('Visawe vya maeneo (MHD-001)', LocationSynonym),
+    ('Aina za mbegu — sajili (MHD-003A)', VarietyRegistry),
+    ('Mbegu zenye sifa za kilimo (MHD-003A)', VarietyAgronomy),
+    ('Kanuni za uamuzi wa mbegu (MHD-003A)', SeedDecisionRule),
 ]
 
 # Maelezo ya settings kwa lugha ya mteja + aina ya thamani inayokubalika
@@ -289,9 +294,14 @@ def _cause_names(ids):
 @login_required
 def rx_cases(request):
     decision = request.GET.get('decision', '')
-    qs = (Conversation.objects.select_related('user')
-          .filter(message_direction='outbound', trace__mode='rules_engine',
-                  trace__decision__in=['diagnosed', 'uncertain', 'no_rule_matched', 'crop_without_rules']))
+    module = request.GET.get('module', '')
+    finals = {'rules_engine': ['diagnosed', 'uncertain', 'no_rule_matched', 'crop_without_rules'],
+              'seed_advisor': SEED_FINAL}
+    q = Q()
+    for mode, decisions in finals.items():
+        if not module or module == mode:
+            q |= Q(trace__mode=mode, trace__decision__in=decisions)
+    qs = Conversation.objects.select_related('user').filter(message_direction='outbound').filter(q)
     if decision:
         qs = qs.filter(trace__decision=decision)
     cases = list(qs.order_by('-created_at')[:200])
@@ -300,15 +310,26 @@ def rx_cases(request):
         c.cause_name = names.get(c.trace.get('diagnosis'), '')
         conf = c.trace.get('confidence')
         c.conf_pct = round(conf * 100) if isinstance(conf, (int, float)) else None
+    for c in cases:
+        c.decision_sw = DECISION_SW.get(c.trace.get('decision'), c.trace.get('decision'))
+        if c.trace.get('mode') == 'seed_advisor':
+            c.cause_name = ', '.join(c.trace.get('recommended') or []) or c.trace.get('variety', '')
     return render(request, 'admin_panel/rx_cases.html', {
-        'page': 'rx_cases', 'cases': cases, 'decision': decision,
+        'page': 'rx_cases', 'cases': cases, 'decision': decision, 'module': module,
     })
+
+
+SEED_FINAL = ['recommended', 'variety_fits', 'variety_not_fit', 'variety_no_profile', 'no_suitable_variety']
 
 
 DECISION_SW = {
     'diagnosed': 'Utambuzi umetolewa', 'uncertain': 'Hakuna uhakika wa kutosha',
     'no_rule_matched': 'Dalili hazilingani na kanuni', 'crop_without_rules': 'Zao halina kanuni',
     'cancelled': 'Mkulima amesitisha',
+    'recommended': 'Mbegu zimependekezwa', 'variety_fits': 'Mbegu aliyoitaja inafaa',
+    'variety_not_fit': 'Mbegu aliyoitaja haifai kanda yake', 'variety_no_profile': 'Mbegu haina sifa za kilimo',
+    'no_suitable_variety': 'Hakuna mbegu iliyoorodheshwa kwa kanda', 'need_location': 'Imeuliza eneo',
+    'need_crop': 'Imeuliza zao',
 }
 
 
@@ -337,4 +358,24 @@ def conversation_detail(request, pk):
         'decision_sw': DECISION_SW.get(trace.get('decision'), trace.get('decision') or ''),
         'gate': trace.get('gate') or {}, 'thread': list(reversed(list(thread))),
         'confidence_pct': round(trace['confidence'] * 100) if isinstance(trace.get('confidence'), (int, float)) else None,
+    })
+
+
+@login_required
+def rx_seeds(request):
+    """Mbegu za MHD-003A + kujaribu ushauri wa mbegu kwa maneno ya mkulima na eneo."""
+    from crops.models import Crop
+    from advisory import seed as adv_seed
+    q = request.GET.get('q', '').strip()
+    crop_id = request.GET.get('crop')
+    crops = Crop.objects.filter(id__in=VarietyAgronomy.objects.values('crop_id'))
+    crop = crops.filter(id=crop_id).first() if crop_id else crops.first()
+    preview, trace = None, None
+    if q and crop:
+        preview, trace = adv_seed.advise(crop, adv_location.resolve(q), q, {})
+    return render(request, 'admin_panel/rx_seeds.html', {
+        'page': 'rx_seeds', 'q': q, 'crops': crops, 'crop': crop, 'preview': preview, 'trace': trace,
+        'profiles': VarietyAgronomy.objects.filter(is_active=True).order_by('maturity_days_max'),
+        'rules': SeedDecisionRule.objects.filter(is_active=True),
+        'registry_only': VarietyRegistry.objects.filter(is_active=True, agronomy__isnull=True),
     })

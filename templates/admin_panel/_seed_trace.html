@@ -1,0 +1,16 @@
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">🌱 Mantiki ya ushauri wa mbegu</div></div>
+  <div class="rx-kv" style="display:grid;grid-template-columns:190px 1fr;gap:6px 12px;font-size:13.5px;">
+    <div style="color:#6b7280;">Eneo</div><div>{{ t.location|default:"–" }} {% if t.aez %}<code>{{ t.aez }}</code>{% endif %}</div>
+    <div style="color:#6b7280;">Mvua chache (RULE-AGR-002)</div><div>{% if t.low_rain %}Ndiyo{% else %}Hapana{% endif %}</div>
+    <div style="color:#6b7280;">Kigezo cha mkulima</div><div>{{ t.criterion|default:"hakutaja" }}</div>
+    {% if t.variety %}<div style="color:#6b7280;">Mbegu aliyoitaja</div><div><code>{{ t.variety }}</code></div>{% endif %}
+    <div style="color:#6b7280;">Zilizopendekezwa</div><div><strong>{{ t.recommended|join:" → "|default:"–" }}</strong></div>
+    {% if t.confidence %}<div style="color:#6b7280;">Uhakika</div><div>{{ t.confidence }} ({{ t.band|default:"–" }})</div>{% endif %}
+    <div style="color:#6b7280;">Kanuni zilizotumika</div><div><code>{{ t.rules_used|join:", "|default:"–" }}</code></div>
+  </div>
+  {% if t.excluded %}
+  <h4 style="margin:14px 0 6px;font-size:13.5px;">Hazikupendekezwa</h4>
+  <ul style="font-size:13px;line-height:1.7;">{% for e in t.excluded %}<li><strong>{{ e.variety }}</strong> — {{ e.reason }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>

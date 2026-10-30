@@ -191,6 +191,24 @@ SCENARIOS = [
         ],
     },
     {
+        'name': 'S1 — Mbegu bila eneo: haitaji jina la mbegu kabla ya eneo (MHD003A-AI-005)',
+        'turns': ['mbegu gani ya mahindi nipande?', 'niko changaa'],
+        'checks': [
+            ('Inauliza eneo kwanza', lambda r, t: 'kata' in r[0].lower() and not re.search(r'SC ?\d{3}', r[0])),
+            ('Inapendekeza kwa kanuni ya kanda (SC 403 kwanza)', lambda r, t: '1. *SC 403*' in r[1]),
+            ('Inaeleza sababu', lambda r, t: 'kwa nini' in r[1].lower()),
+            ('Kanuni zimeandikwa kwenye trace', lambda r, t: 'MHD003A-AI-001' in t[-1].get('rules_used', [])),
+        ],
+    },
+    {
+        'name': 'S2 — Mkulima ametaja mbegu: inalinganishwa na kanda yake (RULE-SEEDREG-001/002)',
+        'turns': ['je sc403 inafaa?', 'nipo kikore'],
+        'checks': [
+            ('Inatambua mbegu na kuuliza eneo', lambda r, t: 'SC 403' in r[0] and 'kata' in r[0].lower()),
+            ('Inasema inafaa kanda yake', lambda r, t: 'Ndiyo, *SC 403*' in r[1]),
+        ],
+    },
+    {
         'name': 'T7 — Bei ya soko inaonya kwamba si bei ya leo',
         'turns': ['bei ya mahindi Dodoma ikoje'],
         'checks': [
