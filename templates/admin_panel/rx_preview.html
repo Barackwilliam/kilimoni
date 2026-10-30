@@ -1,51 +1,52 @@
 {% extends 'admin_panel/base.html' %}
 {% block title %}Hakiki ya Data{% endblock %}
-{% block page_title %}🔎 Hakiki ya Data ya Uchunguzi{% endblock %}
+{% block page_title %}🔎 Hakiki ya Data ya Kanuni{% endblock %}
 {% block content %}
 <div class="card">
   <div class="card-header">
     <div class="card-title">Faili: {{ files|join:", "|default:"—" }}</div>
-    {% if report %}<span class="badge badge-blue">Hakiki tu — hakuna kilichohifadhiwa</span>{% endif %}
+    {% if reports %}<span class="badge badge-blue">Hakiki tu — hakuna kilichohifadhiwa</span>{% endif %}
   </div>
 
   {% for s in skipped %}<div class="alert alert-warning">Imerukwa — {{ s }}</div>{% endfor %}
   {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
 
-  {% if report %}
+  {% for title, report in reports %}
+  <h3 style="margin:18px 0 8px;">{{ title }}</h3>
     {% if report.rolled_back %}
     <div class="alert alert-error">
       Makosa {{ report.errors|length }} kati ya rows {{ report.rows_total }} — yanazidi kiwango kinachoruhusiwa.
       Rekebisha faili kisha upakie tena. Hakuna kitakachohifadhiwa.
     </div>
-    {% elif not report.workbooks %}
-    <div class="alert alert-error">Hakuna workbook ya MHD-007 iliyotambuliwa. Hakikisha jina la faili lina msimbo (mf. MHD-007A).</div>
-    {% else %}
+    {% elif report.workbooks %}
     <div class="alert alert-success">Workbooks zilizotambuliwa: {{ report.workbooks|join:", " }}</div>
+    {% else %}
+    <div class="alert alert-error">Hakuna workbook iliyotambuliwa. Hakikisha jina la faili lina msimbo (mf. MHD-001, MHD-007A).</div>
     {% endif %}
 
+    {% if report.counts %}
     <div class="table-wrap">
       <table>
         <thead><tr><th>Aina ya rekodi</th><th>Mpya</th><th>Zitasasishwa</th></tr></thead>
         <tbody>
           {% for label, c in report.counts.items %}
           <tr><td>{{ label }}</td><td><strong>{{ c.created }}</strong></td><td>{{ c.updated }}</td></tr>
-          {% empty %}
-          <tr><td colspan="3" style="text-align:center;color:#9ca3af;padding:24px;">Hakuna rekodi zilizosomwa.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% endif %}
 
     {% if report.errors %}
-    <h4 style="margin:18px 0 8px;color:#dc2626;">Makosa ({{ report.errors|length }})</h4>
+    <h4 style="margin:14px 0 8px;color:#dc2626;">Makosa ({{ report.errors|length }})</h4>
     <ul style="font-size:13px;line-height:1.7;">{% for e in report.errors %}<li>{{ e }}</li>{% endfor %}</ul>
     {% endif %}
     {% if report.warnings %}
-    <h4 style="margin:18px 0 8px;color:#d97706;">Tahadhari ({{ report.warnings|length }})</h4>
+    <h4 style="margin:14px 0 8px;color:#d97706;">Tahadhari ({{ report.warnings|length }})</h4>
     <ul style="font-size:13px;line-height:1.7;">{% for w in report.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
-    <p style="font-size:12px;color:#6b7280;">Tahadhari haizuii kuhifadhi; ni mambo ya kurekebisha kwenye dataset.</p>
     {% endif %}
-  {% endif %}
+  {% endfor %}
+  {% if reports %}<p style="font-size:12px;color:#6b7280;">Tahadhari haizuii kuhifadhi; ni mambo ya kurekebisha kwenye dataset.</p>{% endif %}
 
   <div style="display:flex;gap:10px;margin-top:20px;">
     {% if can_save %}

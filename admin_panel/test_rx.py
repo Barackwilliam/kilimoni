@@ -107,3 +107,31 @@ class RxAITraceTests(TestCase):
         r = self.client.get(reverse('conversation_detail', args=[c.pk]))
         self.assertContains(r, 'Kazi ya AI')
         self.assertContains(r, 'Imekubaliwa')
+
+
+class RxLocationDashboardTests(TestCase):
+    def setUp(self):
+        AuthUser.objects.create_user('kilimoni', password='x', is_staff=True)
+        self.client.login(username='kilimoni', password='x')
+
+    def test_upload_mhd001_and_try_location(self):
+        from advisory.models import WardLocation
+        path = glob.glob(os.path.join(os.path.dirname(__file__), '..', 'advisory', 'fixtures', 'MHD-001*.xlsx'))[0]
+        r = self.client.post(reverse('rx_preview'), {'files': [_upload(path)]})
+        self.assertContains(r, 'Ushauri wa kilimo (MHD-001')
+        self.assertContains(r, 'Hifadhi data hii')
+        self.assertEqual(WardLocation.objects.count(), 0)
+        self.client.post(reverse('rx_confirm'))
+        self.assertEqual(WardLocation.objects.count(), 20)
+        r = self.client.get(reverse('rx_locations'), {'q': 'niko hondomairo'})
+        self.assertContains(r, 'Hondomairo')
+        self.assertContains(r, 'AEZ-003')
+        r = self.client.get(reverse('rx_home'))
+        self.assertContains(r, 'Kata (MHD-001)')
+
+    def test_mixed_upload_routes_to_both_importers(self):
+        files = [_upload(p) for p in sorted(glob.glob(os.path.join(FIXTURES, '*.xlsx')))]
+        files.append(_upload(glob.glob(os.path.join(os.path.dirname(__file__), '..', 'advisory', 'fixtures', 'MHD-001*.xlsx'))[0]))
+        r = self.client.post(reverse('rx_preview'), {'files': files})
+        self.assertContains(r, 'Uchunguzi wa matatizo (MHD-007)')
+        self.assertContains(r, 'Ushauri wa kilimo (MHD-001')

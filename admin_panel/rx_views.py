@@ -23,6 +23,9 @@ from django.views.decorators.http import require_POST
 from bot.models import Conversation
 from diagnosis import models as dm
 from diagnosis.importer import import_mhd007
+from advisory import importer as adv_importer
+from advisory import location as adv_location
+from advisory.models import Aez, LocationSynonym, WardLocation
 from diagnosis.models import DEFAULT_SETTINGS, EngineSetting, FarmerTerm
 
 MAX_UPLOAD_MB = 15
@@ -40,6 +43,9 @@ DATA_COUNTS = [
     ('Kanuni za usalama (007E)', dm.SafetyRule),
     ('Kanuni za mapendekezo (007E)', dm.RecommendationRule),
     ('Kanuni za kupandisha kwa afisa ugani (007D)', dm.EscalationRule),
+    ('Kata (MHD-001)', WardLocation),
+    ('Kanda za kilimo — AEZ (MHD-001)', Aez),
+    ('Visawe vya maeneo (MHD-001)', LocationSynonym),
 ]
 
 # Maelezo ya settings kwa lugha ya mteja + aina ya thamani inayokubalika
@@ -121,18 +127,38 @@ def rx_preview(request):
         saved.append(dest)
     request.session[SESSION_KEY] = folder
 
-    report = None
-    error = None
+    reports, error = [], None
     if saved:
         try:
-            report = import_mhd007(saved, dry_run=True)
+            reports = _run_imports(saved, dry_run=True)
         except Exception as exc:          # faili lililoharibika, n.k.
             error = f"Faili halikusomeka: {exc}"
+    can_save = bool(reports) and not error and all(not r.rolled_back for _, r in reports) \
+        and any(r.workbooks for _, r in reports)
     return render(request, 'admin_panel/rx_preview.html', {
-        'page': 'rx_home', 'report': report, 'error': error, 'skipped': skipped,
-        'files': [os.path.basename(p) for p in saved],
-        'can_save': bool(report and report.workbooks and not report.rolled_back and not error),
+        'page': 'rx_home', 'reports': reports, 'error': error, 'skipped': skipped,
+        'files': [os.path.basename(p) for p in saved], 'can_save': can_save,
     })
+
+
+def _run_imports(files, dry_run):
+    """Gawa faili kwa aina: MHD-007 → uchunguzi; MHD-001…006 → ushauri."""
+    rx_files = [f for f in files if 'MHD-007' in os.path.basename(f).upper()]
+    adv_files = [f for f in files if adv_importer.workbook_code(f)]
+    unknown = [os.path.basename(f) for f in files if f not in rx_files and f not in adv_files]
+    reports = []
+    if rx_files:
+        reports.append(('Uchunguzi wa matatizo (MHD-007)', import_mhd007(rx_files, dry_run=dry_run)))
+    if adv_files:
+        reports.append(('Ushauri wa kilimo (MHD-001…006)', adv_importer.import_files(adv_files, dry_run=dry_run)))
+    if unknown and reports:
+        reports[0][1].warnings.append(f"Hazijatambuliwa (jina halina msimbo wa MHD): {', '.join(unknown)}")
+    elif unknown:
+        from diagnosis.importer import ImportReport
+        rep = ImportReport(dry_run)
+        rep.warnings.append(f"Hazijatambuliwa (jina halina msimbo wa MHD): {', '.join(unknown)}")
+        reports.append(('Faili zisizotambuliwa', rep))
+    return reports
 
 
 @login_required
@@ -143,17 +169,34 @@ def rx_confirm(request):
         messages.error(request, 'Hakuna faili lililosubiri kuhifadhiwa. Pakia upya.')
         return redirect('rx_home')
     try:
-        report = import_mhd007(files, dry_run=False)
+        reports = _run_imports(files, dry_run=False)
     finally:
         _cleanup_upload(request)
-    if report.rolled_back:
-        messages.error(request, 'Hakuna kilichohifadhiwa: makosa yalikuwa mengi kuliko kiwango kinachoruhusiwa.')
-    else:
-        created = sum(c['created'] for c in report.counts.values())
-        updated = sum(c['updated'] for c in report.counts.values())
-        messages.success(request, f"Data imehifadhiwa ({', '.join(report.workbooks)}): "
-                                  f"mpya {created}, zilizosasishwa {updated}. Bot inaitumia mara moja.")
+    for title, report in reports:
+        if report.rolled_back:
+            messages.error(request, f"{title}: hakuna kilichohifadhiwa — makosa yalikuwa mengi kuliko "
+                                    "kiwango kinachoruhusiwa.")
+        elif report.workbooks:
+            created = sum(c['created'] for c in report.counts.values())
+            updated = sum(c['updated'] for c in report.counts.values())
+            messages.success(request, f"Data imehifadhiwa ({', '.join(report.workbooks)}): "
+                                      f"mpya {created}, zilizosasishwa {updated}. Bot inaitumia mara moja.")
     return redirect('rx_home')
+
+
+@login_required
+def rx_locations(request):
+    """Kanda (AEZ) na kata za MHD-001 + kujaribu kutambua eneo kwa maneno ya mkulima."""
+    from django.db.models import Count
+    q = request.GET.get('q', '').strip()
+    result = adv_location.resolve(q) if q else None
+    aezs = Aez.objects.annotate(n=Count('wards')).select_related('zone')
+    regions = (WardLocation.objects.filter(is_active=True).values('region_name', 'district_name')
+               .annotate(n=Count('id')).order_by('region_name', 'district_name'))
+    return render(request, 'admin_panel/rx_locations.html', {
+        'page': 'rx_locations', 'q': q, 'result': result, 'tried': bool(q),
+        'aezs': aezs, 'regions': regions, 'ward_total': WardLocation.objects.filter(is_active=True).count(),
+    })
 
 
 @login_required

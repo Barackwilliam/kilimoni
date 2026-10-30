@@ -17,6 +17,7 @@ from crops.models import (
 from bot.models import User, Conversation, UnresolvedQuery
 from bot import diagnostic as dg
 from diagnosis import engine as rx
+from advisory import location as adv_location
 from analytics.models import AnalyticsLog
 
 logger = logging.getLogger(__name__)
@@ -173,6 +174,42 @@ def _word_match(name: str, text: str) -> bool:
 AMBIGUOUS_LOCATIONS = {'mara', 'hai', 'pwani', 'tanga', 'sasa'}
 
 
+def resolve_farm_location(text: str):
+    """Eneo kutoka MHD-001 (kata/wilaya/mkoa + AEZ), au None."""
+    try:
+        return adv_location.resolve(text)
+    except Exception as e:
+        logger.error(f"MHD-001 location error: {e}")
+        return None
+
+
+def remember_farm_location(user, text: str):
+    """
+    Hifadhi eneo la shamba kwenye profile ya mkulima (kata, wilaya, mkoa, AEZ)
+    ili ushauri unaotegemea kanda usimuulize eneo kila mara.
+    """
+    res = resolve_farm_location(text)
+    if not res or res['level'] == 'ambiguous':
+        return None
+    fields = {'region': res['region'][:100]}
+    if res['district']:
+        fields['district'] = res['district'][:100]
+    if res['level'] == 'ward':
+        fields['ward'] = res['ward'][:100]
+    elif res['district'] and res['district'] != user.district:
+        fields['ward'] = ''
+    if res.get('aez_id'):
+        fields['aez_code'] = res['aez_id']
+    elif res['level'] != 'ward':
+        fields['aez_code'] = ''
+    changed = [k for k, v in fields.items() if getattr(user, k) != v]
+    if changed:
+        for k in changed:
+            setattr(user, k, fields[k])
+        user.save(update_fields=changed)
+    return res
+
+
 def detect_location(text: str) -> str:
     """
     Tafuta eneo lililotajwa — mkoa, wilaya au kata.
@@ -180,6 +217,11 @@ def detect_location(text: str) -> str:
     2. Database (word-boundary matching)
     3. Fallback lists (word-boundary matching)
     """
+    # 0. Dataset ya maeneo ya mteja (MHD-001): kata → wilaya → mkoa
+    adv = resolve_farm_location(text)
+    if adv and adv['level'] != 'ambiguous':
+        return adv_location.display_name(adv)
+
     # 1. Muktadha wa wazi — hushinda vyote, na huruhusu hata maneno ambiguous
     ctx = re.search(
         r"(?:mkoa wa|wilaya ya|niko|nipo|natoka|kutoka)\s+([a-z\']+(?:\s+[a-z\']+)?)",
@@ -233,6 +275,12 @@ def map_location_to_zone(location: str):
         ).select_related('zone').first()
         if mapping:
             return mapping.zone
+
+        # Kata kutoka MHD-001 ("Changaa, Kondoa") → AEZ yake au wilaya yake
+        if ',' in location:
+            zone = adv_location.zone_for(resolve_farm_location(location))
+            if zone:
+                return zone
 
         mapping = LocationMapping.objects.filter(
             region_name__iexact=location
@@ -673,6 +721,7 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
         # User is replying with their location
         location = detect_location(normalized)
         if location:
+            remember_farm_location(user, normalized)
             # Retrieve saved context and continue
             saved_intent_name = session.get('saved_intent', '')
             saved_crop_id = user.last_crop_id
@@ -747,6 +796,8 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
 
     # ── MODULE 6: Location Detection ─────────────────
     location = detect_location(normalized)
+    if location:
+        remember_farm_location(user, normalized)
 
     # Restore last location from session — TU ndani ya dakika 30
     # (mazungumzo yanayoendelea), isije ikagandamana milele
