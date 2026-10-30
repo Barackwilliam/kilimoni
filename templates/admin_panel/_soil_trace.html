@@ -1,0 +1,10 @@
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">🟤 Mantiki ya ushauri wa udongo</div></div>
+  <div style="display:grid;grid-template-columns:190px 1fr;gap:6px 12px;font-size:13.5px;">
+    <div style="color:#6b7280;">Uamuzi</div><div><strong>{{ t.decision }}</strong></div>
+    <div style="color:#6b7280;">Udongo uliotambuliwa</div><div>{{ t.soil_name|default:"–" }} {% if t.soil %}<code>{{ t.soil }}</code>{% endif %}</div>
+    <div style="color:#6b7280;">Zao</div><div>{{ t.crop|default:"–" }}</div>
+    {% if t.score != None %}<div style="color:#6b7280;">Ufaafu</div><div>{{ t.rating }} ({{ t.score }}/100)</div>{% endif %}
+    <div style="color:#6b7280;">Kanuni / records zilizotumika</div><div><code>{{ t.rules_used|join:", "|default:"–" }}</code></div>
+  </div>
+</div>

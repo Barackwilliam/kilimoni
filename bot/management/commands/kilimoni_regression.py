@@ -221,6 +221,15 @@ SCENARIOS = [
         ],
     },
     {
+        'name': 'U1 — Udongo: inauliza aina ya udongo, kisha ufaafu kwa zao (MHD-004)',
+        'turns': ['udongo wangu unafaa mahindi?', 'ni mwekundu'],
+        'checks': [
+            ('Inauliza udongo kwa maneno ya mkulima (RULE-SOIL-001)', lambda r, t: 'kichanga' in r[0].lower()),
+            ('Inatoa score ya ufaafu na maboresho', lambda r, t: '62/100' in r[1] and 'Kabla ya kupanda' in r[1]),
+            ('Haibuni: kanuni na records ziko kwenye trace', lambda r, t: 'SCROP-00001' in t[-1].get('rules_used', [])),
+        ],
+    },
+    {
         'name': 'T7 — Bei ya soko inaonya kwamba si bei ya leo',
         'turns': ['bei ya mahindi Dodoma ikoje'],
         'checks': [

@@ -27,7 +27,8 @@ from diagnosis.importer import import_mhd007
 from advisory import importer as adv_importer
 from advisory import location as adv_location
 from advisory.models import (Aez, AezAlias, ClimateRisk, CropCalendar, LocationSynonym, PlantingRule,
-                             SeasonProfile, SeedDecisionRule, VarietyAgronomy, VarietyRegistry, WardLocation)
+                             SeasonProfile, SeedDecisionRule, SoilConstraint, SoilRanking, SoilSuitability,
+                             SoilType, VarietyAgronomy, VarietyRegistry, WardLocation)
 from diagnosis.models import DEFAULT_SETTINGS, EngineSetting, FarmerTerm
 
 MAX_UPLOAD_MB = 15
@@ -54,6 +55,8 @@ DATA_COUNTS = [
     ('Kalenda za mazao (MHD-006)', CropCalendar),
     ('Misimu ya kanda (MHD-006)', SeasonProfile),
     ('Kanuni za kupanda (MHD-006)', PlantingRule),
+    ('Aina za udongo (MHD-004)', SoilType),
+    ('Ufaafu wa udongo kwa mazao (MHD-004)', SoilSuitability),
 ]
 
 # Maelezo ya settings kwa lugha ya mteja + aina ya thamani inayokubalika
@@ -311,7 +314,7 @@ def rx_cases(request):
     decision = request.GET.get('decision', '')
     module = request.GET.get('module', '')
     finals = {'rules_engine': ['diagnosed', 'uncertain', 'no_rule_matched', 'crop_without_rules'],
-              'seed_advisor': SEED_FINAL, 'planting_advisor': PLANT_FINAL}
+              'seed_advisor': SEED_FINAL, 'planting_advisor': PLANT_FINAL, 'soil_advisor': SOIL_FINAL}
     q = Q()
     for mode, decisions in finals.items():
         if not module or module == mode:
@@ -329,6 +332,9 @@ def rx_cases(request):
         c.decision_sw = DECISION_SW.get(c.trace.get('decision'), c.trace.get('decision'))
         if c.trace.get('mode') == 'seed_advisor':
             c.cause_name = ', '.join(c.trace.get('recommended') or []) or c.trace.get('variety', '')
+        elif c.trace.get('mode') == 'soil_advisor':
+            c.cause_name = c.trace.get('soil_name', '') + (f" · {c.trace['crop']}" if c.trace.get('crop') else '')
+            c.conf_pct = c.trace.get('score')
         elif c.trace.get('mode') == 'planting_advisor':
             c.cause_name = f"{c.trace.get('crop', '')} · {c.trace.get('location', '')}"
 
@@ -337,6 +343,7 @@ def rx_cases(request):
     })
 
 
+SOIL_FINAL = ['suitable', 'suitable_with_conditions', 'not_suitable_without_improvement', 'no_assessment', 'soil_info']
 PLANT_FINAL = ['PANDA_SASA', 'PANDA_KWA_TAHADHARI', 'SUBIRI', 'WAIT', 'WAIT_OR_EARLY_VARIETY',
                'ALLOW_IRRIGATION_PLANTING', 'DO_NOT_PLANT', 'INFO_ONLY']
 SEED_FINAL = ['recommended', 'variety_fits', 'variety_not_fit', 'variety_no_profile', 'no_suitable_variety']
@@ -354,6 +361,9 @@ DECISION_SW = {
     'WAIT': 'Subiri mvua ziendelee', 'WAIT_OR_EARLY_VARIETY': 'Subiri / mbegu ya muda mfupi',
     'ALLOW_IRRIGATION_PLANTING': 'Panda kwa umwagiliaji', 'DO_NOT_PLANT': 'Usipande sasa',
     'INFO_ONLY': 'Taarifa ya jumla tu',
+    'suitable': 'Udongo unafaa', 'suitable_with_conditions': 'Unafaa kwa masharti',
+    'not_suitable_without_improvement': 'Haufai bila maboresho', 'no_assessment': 'Hakuna tathmini ya zao',
+    'soil_info': 'Taarifa ya udongo', 'need_soil': 'Imeuliza udongo',
 }
 
 
@@ -428,4 +438,23 @@ def rx_planting(request):
         'seasons': SeasonProfile.objects.select_related('aez'),
         'calendars': CropCalendar.objects.select_related('aez', 'crop'),
         'risks': ClimateRisk.objects.select_related('aez'),
+    })
+
+
+@login_required
+def rx_soil(request):
+    """Udongo (MHD-004) + kujaribu ushauri wa udongo kwa maneno ya mkulima."""
+    from crops.models import Crop
+    from advisory import soil as adv_soil
+    q = request.GET.get('q', '').strip()
+    crops = Crop.objects.all()
+    crop = crops.filter(id=request.GET.get('crop')).first() if request.GET.get('crop') else None
+    preview, trace = None, None
+    if q:
+        preview, trace = adv_soil.advise(crop, q, {})
+    return render(request, 'admin_panel/rx_soil.html', {
+        'page': 'rx_soil', 'q': q, 'crops': crops, 'crop': crop, 'preview': preview, 'trace': trace,
+        'soils': SoilType.objects.prefetch_related('synonyms'),
+        'suits': SoilSuitability.objects.select_related('soil', 'crop'),
+        'ranks': SoilRanking.objects.select_related('crop'), 'constraints': SoilConstraint.objects.all(),
     })

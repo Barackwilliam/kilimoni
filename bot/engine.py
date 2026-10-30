@@ -20,6 +20,7 @@ from diagnosis import engine as rx
 from advisory import location as adv_location
 from advisory import seed as adv_seed
 from advisory import planting as adv_planting
+from advisory import soil as adv_soil
 from analytics.models import AnalyticsLog
 
 logger = logging.getLogger(__name__)
@@ -898,6 +899,12 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
         if handled is not None:
             return handled
 
+    # ── Ushauri wa udongo kwa kanuni (MHD-004) ──
+    if adv_soil.wants_soil(normalized) and not dg.is_problem_message(normalized, None):
+        handled = _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
+        if handled is not None:
+            return handled
+
     # ── Ombi pana: uliza lengo kwanza, usitoe ushauri ──
     _fresh_c = detect_crop(normalized)
     _fresh_l = detect_location(normalized)
@@ -1252,6 +1259,23 @@ def _handle_planting_pending(user, raw_message, normalized, start_time, message_
     return None
 
 
+def _soil_turn(user, raw_message, normalized, crop, start_time, message_id, text=None):
+    """Ushauri wa udongo. None = hakuna data ya MHD-004."""
+    from advisory.models import SoilType
+    if not SoilType.objects.filter(is_active=True).exists():
+        return None
+    state = {}
+    response, trace = adv_soil.advise(crop, text or normalized, state)
+    if trace.get('decision') == 'need_soil':
+        _set_adv(user, {'module': 'soil', 'stage': 'soil', 'crop_id': crop.id if crop else None,
+                        'text': text or normalized})
+    else:
+        _set_adv(user, None)
+    _log_all(user, raw_message, normalized, crop, None, '', None, response, trace.get('decision') != 'need_soil',
+             start_time, answer_ref=','.join(trace.get('rules_used', [])), message_id=message_id, trace=trace)
+    return response
+
+
 def _handle_advisory_pending(user, raw_message, normalized, start_time, message_id):
     """Jibu la mkulima kwa swali la zao/eneo la ushauri wa mbegu. None = shughulikia kawaida."""
     pend = dict((user.session_state or {}).get('adv') or {})
@@ -1260,6 +1284,12 @@ def _handle_advisory_pending(user, raw_message, normalized, start_time, message_
         return None
     if pend.get('module') == 'planting':
         return _handle_planting_pending(user, raw_message, normalized, start_time, message_id, pend)
+    if pend.get('module') == 'soil':
+        crop = Crop.objects.filter(id=pend.get('crop_id')).first() if pend.get('crop_id') else detect_crop(normalized)
+        if adv_soil.identify(normalized, {}) is None:
+            _set_adv(user, None)
+            return None
+        return _soil_turn(user, raw_message, normalized, crop, start_time, message_id, text=normalized)
     if pend.get('stage') == 'crop':
         crop = detect_crop(normalized)
         if not crop:
