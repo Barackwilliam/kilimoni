@@ -19,8 +19,14 @@ class Command(BaseCommand):
         parser.add_argument('paths', nargs='+', help='Faili za .xlsx au folder yenye faili hizo')
         parser.add_argument('--dry-run', action='store_true',
                             help='Endesha bila kuhifadhi (ripoti tu)')
+        parser.add_argument('--if-empty', action='store_true',
+                            help='Ruka kama tayari kuna data (kwa deploy — isifute data ya mteja)')
 
-    def handle(self, paths, dry_run, **opts):
+    def handle(self, paths, dry_run, if_empty=False, **opts):
+        from diagnosis.models import Pest
+        if if_empty and Pest.objects.exists():
+            self.stdout.write('Data ya MHD-007 ipo tayari — import ya sample imerukwa.')
+            return
         files = []
         for p in paths:
             if os.path.isdir(p):

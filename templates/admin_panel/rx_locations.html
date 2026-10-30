@@ -1,0 +1,55 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Maeneo na Kanda{% endblock %}
+{% block page_title %}📍 Maeneo na Kanda za Kilimo (MHD-001){% endblock %}
+{% block content %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Jaribu: bot inatambuaje eneo hili?</div></div>
+  <form method="get" class="search-bar">
+    <input name="q" class="form-control" value="{{ q }}" placeholder="Andika kama mkulima, mf. 'niko Changaa Kondoa' au 'hondomairo'">
+    <button class="btn btn-primary" type="submit">🔎 Jaribu</button>
+  </form>
+  {% if tried %}
+    {% if result %}
+    <div class="table-wrap"><table>
+      <tr><th style="width:220px;">Ngazi iliyotambuliwa</th><td>
+        {% if result.level == 'ward' %}<span class="badge badge-green">Kata</span>{% elif result.level == 'district' %}<span class="badge badge-blue">Wilaya</span>{% else %}<span class="badge badge-yellow">Mkoa</span>{% endif %}
+        <span style="font-size:12px;color:#6b7280;">(neno: "{{ result.matched }}")</span></td></tr>
+      {% if result.ward %}<tr><th>Kata</th><td>{{ result.ward }} <code>{{ result.location_id }}</code></td></tr>{% endif %}
+      {% if result.district %}<tr><th>Wilaya</th><td>{{ result.district }}</td></tr>{% endif %}
+      <tr><th>Mkoa</th><td>{{ result.region }}</td></tr>
+      <tr><th>Kanda ya kilimo (AEZ)</th><td>
+        {% if result.aez_id %}<strong>{{ result.aez_name }}</strong> <code>{{ result.aez_id }}</code>
+        {% else %}<span style="color:#d97706;">Haijulikani kwa ngazi hii — kata zake ziko kanda tofauti; bot itauliza kata.</span>{% endif %}</td></tr>
+      {% if result.planting_window %}<tr><th>Dirisha la kupanda</th><td>{{ result.planting_window }}</td></tr>{% endif %}
+      {% if result.harvest_window %}<tr><th>Dirisha la kuvuna</th><td>{{ result.harvest_window }}</td></tr>{% endif %}
+      {% if result.latitude %}<tr><th>Coordinates</th><td>{{ result.latitude }}, {{ result.longitude }}</td></tr>{% endif %}
+      {% if result.candidates %}<tr><th>Kata zenye jina hili</th><td>{{ result.candidates|join:"; " }}</td></tr>{% endif %}
+    </table></div>
+    {% else %}
+    <div class="alert alert-warning">Eneo halikutambuliwa kwenye data ya MHD-001. Ongeza kisawe kwenye dataset (Production_Location_Synonyms) au pakia data kamili.</div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Kanda za kilimo (AEZ)</div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>AEZ</th><th>Mvua (mm)</th><th>Kupanda</th><th>Kata</th></tr></thead>
+      <tbody>
+        {% for a in aezs %}
+        <tr><td><strong>{{ a.name_sw }}</strong><br><code style="font-size:11px;">{{ a.source_id }}</code></td>
+            <td>{{ a.rainfall_band_mm|default:"–" }}</td><td>{{ a.planting_window_sw|default:"–" }}</td><td>{{ a.n }}</td></tr>
+        {% empty %}<tr><td colspan="4" style="text-align:center;color:#9ca3af;padding:24px;">Bado hakuna data ya MHD-001.</td></tr>{% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">Wilaya zilizopo ({{ ward_total }} kata)</div></div>
+    <div class="table-wrap" style="max-height:480px;overflow:auto;"><table>
+      <thead><tr><th>Mkoa</th><th>Wilaya</th><th>Kata</th></tr></thead>
+      <tbody>{% for r in regions %}<tr><td>{{ r.region_name }}</td><td>{{ r.district_name }}</td><td>{{ r.n }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>
+{% endblock %}

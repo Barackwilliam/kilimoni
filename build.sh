@@ -3,5 +3,7 @@ set -o errexit
 pip install -r requirements.txt
 python manage.py collectstatic --no-input
 python manage.py migrate
-# Data ya rules engine (MHD-007). Upsert kwa ID — salama kurudia kila deploy.
-python manage.py import_mhd007 diagnosis/fixtures/mhd007
+# Data ya sample ya kanuni — inaingizwa TU kama database haina data bado,
+# ili deploy isifute data ambayo mteja amepakia kupitia dashboard.
+python manage.py import_mhd007 diagnosis/fixtures/mhd007 --if-empty
+python manage.py import_advisory advisory/fixtures --if-empty

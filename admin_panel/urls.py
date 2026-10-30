@@ -13,6 +13,7 @@ urlpatterns = [
     path('uchunguzi/ghairi/', rx_views.rx_cancel, name='rx_cancel'),
     path('uchunguzi/mipangilio/', rx_views.rx_settings, name='rx_settings'),
     path('uchunguzi/kesi/', rx_views.rx_cases, name='rx_cases'),
+    path('uchunguzi/maeneo/', rx_views.rx_locations, name='rx_locations'),
     path('users/', views.users_list, name='users_list'),
     path('crops/', views.crops_list, name='crops_list'),
     path('privacy/', views.privacy_policy, name='privacy_policy'),

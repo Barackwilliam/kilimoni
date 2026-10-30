@@ -18,6 +18,10 @@ class User(models.Model):
     preferred_language = models.CharField(max_length=5, choices=LANGUAGES, default='sw')
     region = models.CharField(max_length=100, blank=True)
     district = models.CharField(max_length=100, blank=True)
+    # Eneo la shamba kutoka MHD-001 (kata + kanda ya kilimo). Linakumbukwa
+    # ili ushauri wa mbegu/msimu/udongo usimuulize mkulima eneo kila mara.
+    ward = models.CharField(max_length=100, blank=True)
+    aez_code = models.CharField(max_length=20, blank=True)
     active_status = models.CharField(max_length=20, choices=STATUS, default='active')
     message_count = models.PositiveIntegerField(default=0)
     session_state = models.JSONField(default=dict, blank=True)
