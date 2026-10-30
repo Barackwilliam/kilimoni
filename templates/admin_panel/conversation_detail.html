@@ -61,6 +61,8 @@
   </div>
 </div>
 
+{% if trace.mode == 'seed_advisor' %}{% with t=trace %}{% include 'admin_panel/_seed_trace.html' %}{% endwith %}{% endif %}
+
 {% if scores %}
 <div class="card" style="margin-top:20px;">
   <div class="card-header"><div class="card-title">Ulinganisho wa visababishi</div></div>

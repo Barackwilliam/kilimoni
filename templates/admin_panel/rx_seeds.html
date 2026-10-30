@@ -1,0 +1,54 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Mbegu{% endblock %}
+{% block page_title %}🌱 Mbegu (MHD-003A){% endblock %}
+{% block content %}
+<style>.rx-msg{white-space:pre-wrap;font-size:13.5px;line-height:1.55;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px}</style>
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Jaribu: bot ingemjibu nini mkulima?</div></div>
+  <form method="get" class="search-bar">
+    <input name="q" class="form-control" value="{{ q }}" placeholder="mf. 'nataka mbegu ya kukomaa mapema, niko Changaa' au 'SC 403 inafaa Kondoa?'">
+    {% if crops|length > 1 %}<select name="crop" class="form-control" style="max-width:160px;">{% for c in crops %}<option value="{{ c.id }}" {% if c == crop %}selected{% endif %}>{{ c.crop_name_sw }}</option>{% endfor %}</select>{% endif %}
+    <button class="btn btn-primary" type="submit">🔎 Jaribu</button>
+  </form>
+  {% if preview %}
+  <div class="grid-2">
+    <div><div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Jibu kwa mkulima (WhatsApp)</div><div class="rx-msg">{{ preview }}</div></div>
+    <div>{% with t=trace %}{% include 'admin_panel/_seed_trace.html' %}{% endwith %}</div>
+  </div>
+  {% endif %}
+  {% if not crop %}<div class="alert alert-warning">Bado hakuna data ya MHD-003A. Pakia kwenye "Data ya Kanuni (MHD)".</div>{% endif %}
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Mbegu zenye sifa za kilimo ({{ profiles|length }})</div></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Mbegu</th><th>Kukomaa</th><th>Mwinuko (m)</th><th>Kanda zinazofaa</th><th>Mavuno</th></tr></thead>
+    <tbody>{% for p in profiles %}
+      <tr><td><strong>{{ p.name }}</strong><br><span style="font-size:12px;color:#6b7280;">{{ p.company }}</span></td>
+          <td>{{ p.days_text|default:"–" }}<br><span style="font-size:12px;color:#6b7280;">{{ p.maturity_class }}</span></td>
+          <td>{% if p.altitude_min %}{{ p.altitude_min }}–{{ p.altitude_max }}{% else %}–{% endif %}</td>
+          <td><code style="font-size:11px;">{{ p.aez_codes|join:", " }}</code></td>
+          <td style="font-size:13px;">{{ p.yield_text|default:"–" }}</td></tr>
+    {% empty %}<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:24px;">Hakuna.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Kanuni za uamuzi (Release 3)</div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Kanuni</th><th>Kanda</th><th>Kipaumbele</th></tr></thead>
+      <tbody>{% for r in rules %}
+        <tr><td><code>{{ r.source_id }}</code><br><span style="font-size:12px;">{{ r.farmer_criterion }}</span></td>
+            <td><code style="font-size:11px;">{{ r.aez_codes|join:", "|default:"–" }}</code></td>
+            <td>{{ r.priority_varieties|join:" → "|default:"(uliza eneo)" }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">Zimesajiliwa, hazina sifa za kilimo ({{ registry_only|length }})</div></div>
+    <p style="font-size:13px;color:#4b5563;margin:-4px 0 10px;">Bot inazitambua mkulima akizitaja, lakini haizipendekezi mpaka sifa zake za kilimo (Release 2) ziongezwe.</p>
+    <ul style="font-size:13px;line-height:1.8;">{% for v in registry_only %}<li><strong>{{ v.name }}</strong> — {{ v.registrant }}</li>{% empty %}<li>Hakuna.</li>{% endfor %}</ul>
+  </div>
+</div>
+{% endblock %}

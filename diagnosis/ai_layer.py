@@ -253,6 +253,27 @@ def interpret_extent(reply, state=None):
     return pct, out.get('spreading') is True
 
 
+def match_option(text, options, state=None, step='option'):
+    """
+    Chagua chaguo MOJA kutoka orodha funge {code: maelezo} kwa maana ya maneno
+    ya mkulima, au None. Jibu lisilo kwenye orodha linakataliwa.
+    """
+    if not available() or not options:
+        return None
+    listing = '\n'.join(f"- {code}: {desc}" for code, desc in options.items())
+    user = (
+        f"Ujumbe wa mkulima: \"{text}\"\n\nCHAGUO:\n{listing}\n\n"
+        "Chagua code MOJA ambayo maana yake inalingana na kile mkulima anataka, au null kama "
+        "hakuna inayolingana. Usikisie.\n"
+        'JSON: {"code": null}'
+    )
+    out = _chat(BASE_RULES, user, max_tokens=500)
+    code = (out or {}).get('code')
+    ok = code in options
+    _log(state, step, text, code, ok or code is None)
+    return code if ok else None
+
+
 # ─────────────────────────── 5. Muhtasari wa kibinadamu ───────────────────────────
 
 SUMMARY_MAX_WORDS = 60

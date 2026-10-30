@@ -259,13 +259,16 @@ textarea.form-control { resize:vertical; min-height:100px; }
 
     <div class="nav-section">Ushauri wa Kanuni</div>
     <a href="{% url 'rx_cases' %}" class="nav-link {% if page == 'rx_cases' %}active{% endif %}">
-      <span class="icon">🔍</span> Kumbukumbu za Uchunguzi
+      <span class="icon">🔍</span> Kumbukumbu za Ushauri
     </a>
     <a href="{% url 'rx_home' %}" class="nav-link {% if page == 'rx_home' %}active{% endif %}">
       <span class="icon">📥</span> Data ya Kanuni (MHD)
     </a>
     <a href="{% url 'rx_locations' %}" class="nav-link {% if page == 'rx_locations' %}active{% endif %}">
       <span class="icon">📍</span> Maeneo na Kanda
+    </a>
+    <a href="{% url 'rx_seeds' %}" class="nav-link {% if page == 'rx_seeds' %}active{% endif %}">
+      <span class="icon">🌱</span> Mbegu
     </a>
     <a href="{% url 'rx_settings' %}" class="nav-link {% if page == 'rx_settings' %}active{% endif %}">
       <span class="icon">⚙️</span> Mipangilio na Kamusi
