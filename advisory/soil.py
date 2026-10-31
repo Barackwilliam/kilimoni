@@ -73,8 +73,13 @@ def _index():
     return {t: [by_id[i] for i in ids] for t, ids in terms.items() if len(ids) == 1}
 
 
+FILLER = {'wangu', 'yangu', 'langu', 'wetu', 'ni', 'huu', 'shambani', 'kwangu', 'sana', 'kweli'}
+
+
 def identify(text, state=None):
-    low = f" {_norm(text)} "
+    # "udongo wangu ni wa kichanga" → "udongo wa kichanga" (maneno ya kujaza yanaondolewa)
+    words = _norm(text).split()
+    low = f" {' '.join(w for w in words if w not in FILLER)} "
     best = None
     for term, soils in _index().items():
         if re.search(r'(?<![a-z])' + re.escape(term) + r'(?![a-z])', low) and (best is None or len(term) > len(best[0])):
@@ -96,7 +101,7 @@ def wants_soil(text):
 
 
 def identify_quick(text):
-    low = f" {_norm(text)} "
+    low = f" {' '.join(w for w in _norm(text).split() if w not in FILLER)} "
     for term, soils in _index().items():
         if ' ' in term and term in low:
             return soils[0]

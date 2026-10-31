@@ -254,7 +254,7 @@ def _variety_line(i, p):
     return line
 
 
-def advise(crop, loc, text, state=None, variety=None):
+def advise(crop, loc, text, state=None, variety=None, soil=None):
     """
     Rudisha (jibu, trace). loc = dict ya eneo (location.resolve au profile).
     Kama eneo/AEZ halijulikani → jibu ni swali la eneo na trace['decision']='need_location'.
@@ -335,6 +335,12 @@ def advise(crop, loc, text, state=None, variety=None):
     if d['suggested_missing']:
         lines += ['', f"_({', '.join(d['suggested_missing'])} bado hazina taarifa kamili za kilimo kwenye mfumo, "
                       "kwa hiyo sijazipendekeza.)_"]
+    from .profile import soil_note
+    note, note_ids = soil_note(soil, crop)
+    if note:
+        lines += [''] + note
+        trace['rules_used'] += note_ids
+        trace['soil'] = soil.source_id
     if d['band'].lower() != 'high':
         lines += ['', f"ℹ️ {VERIFY_NOTE}"]
     lines += ['', DISCLAIMER]

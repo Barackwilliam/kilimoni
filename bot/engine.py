@@ -22,6 +22,7 @@ from advisory import seed as adv_seed
 from advisory import planting as adv_planting
 from advisory import soil as adv_soil
 from advisory import rotation as adv_rotation
+from advisory import profile as adv_profile
 from analytics.models import AnalyticsLog
 
 logger = logging.getLogger(__name__)
@@ -894,6 +895,24 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
         if handled is not None:
             return handled
 
+    # ── Swali la udongo lililo wazi ("udongo wangu…") — kabla ya mbegu/kupanda,
+    #    kwa sababu intent ya zamani inaweza kudhani ni swali la mbegu ──
+    if 'udongo' in normalized.split() and not dg.is_problem_message(normalized, None):
+        handled = _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
+        if handled is not None:
+            return handled
+
+    # ── Mkulima ametaja eneo tu ("niko Changaa") → likumbuke na umkaribishe ──
+    _only_loc = resolve_farm_location(normalized)
+    if (_only_loc and _only_loc['level'] in ('ward', 'district') and len(normalized.split()) <= 4
+            and not detect_crop(normalized) and not adv_seed.wants_seed(normalized)
+            and not adv_planting.wants_planting(normalized) and not dg.is_problem_message(normalized, None)):
+        response = _profile_ack(user, _only_loc)
+        _log_all(user, raw_message, normalized, None, None, adv_location.display_name(_only_loc),
+                 adv_location.zone_for(_only_loc), response, True, start_time, message_id=message_id,
+                 trace={'mode': 'profile', 'decision': 'location_saved', 'aez': _only_loc.get('aez_id')})
+        return response
+
     # ── Wakati wa kupanda kwa kanuni (MHD-006 + eneo + mbegu) ──
     if adv_planting.wants_planting(normalized, intent) and not adv_seed.mentioned_variety(normalized):
         handled = _planting_turn(user, raw_message, normalized, crop, start_time, message_id)
@@ -909,6 +928,25 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── Ushauri wa udongo kwa kanuni (MHD-004) ──
     if adv_soil.wants_soil(normalized) and not dg.is_problem_message(normalized, None):
         handled = _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
+        if handled is not None:
+            return handled
+
+    # ── AI router: ujumbe bila neno la moduli → AI inachagua moduli (orodha funge) ──
+    if intent is None and len(normalized.split()) >= 4 and not dg.is_problem_message(normalized, None):
+        _rs = {}
+        module = adv_profile.route(raw_message, _rs)
+        handled = None
+        if module == 'diagnosis':
+            handled = _start_diagnostic(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
+        elif module == 'seed':
+            handled = _seed_turn(user, raw_message, normalized, crop, start_time, message_id, state=_rs)
+        elif module == 'planting':
+            handled = _planting_turn(user, raw_message, normalized, crop, start_time, message_id, state=_rs)
+        elif module == 'soil':
+            handled = _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id,
+                                 state=_rs)
+        elif module == 'rotation':
+            handled = _rotation_turn(user, raw_message, normalized, start_time, message_id, state=_rs)
         if handled is not None:
             return handled
 
@@ -1146,6 +1184,29 @@ def _save_rx(user, state):
     user.save(update_fields=['session_state'])
 
 
+def _profile_ack(user, loc):
+    place = adv_location.display_name(loc)
+    zone = f" ({loc['aez_name']})" if loc.get('aez_name') else ''
+    soil = adv_profile.profile_soil(user)
+    lines = [f"📍 Nimekumbuka eneo la shamba lako: *{place}*{zone}."]
+    if soil:
+        lines.append(f"🟤 Udongo: {soil.name_sw}.")
+    lines += ['', 'Sasa unaweza kuniuliza, kwa mfano:',
+              '• _Mbegu gani ya mahindi nipande?_', '• _Nipande lini?_',
+              '• _Udongo wangu unafaa mahindi?_', '• _Baada ya mahindi nipande nini?_',
+              '• _Mahindi yangu yana mashimo kwenye majani_']
+    return '\n'.join(lines)
+
+
+def _farm_soil(user, normalized):
+    """Udongo uliotajwa sasa (unakumbukwa) au wa profile ya mkulima."""
+    named = adv_profile.soil_in_text(normalized)
+    if named:
+        adv_profile.remember_soil(user, named)
+        return named
+    return adv_profile.profile_soil(user)
+
+
 def _set_adv(user, value):
     sess = dict(user.session_state or {})
     if value:
@@ -1167,7 +1228,7 @@ def _seed_location(user, normalized):
     return prof or loc
 
 
-def _seed_turn(user, raw_message, normalized, crop, start_time, message_id, text=None, attempts=0):
+def _seed_turn(user, raw_message, normalized, crop, start_time, message_id, text=None, attempts=0, state=None):
     """Ushauri wa mbegu. Inarudisha jibu, au None kama zao halina data ya mbegu."""
     if crop is None:
         named = adv_seed.mentioned_variety(normalized)
@@ -1182,8 +1243,8 @@ def _seed_turn(user, raw_message, normalized, crop, start_time, message_id, text
     if not adv_seed.has_data(crop):
         return None                     # mtiririko wa zamani (templates) unaendelea
     loc = _seed_location(user, normalized)
-    state = {}
-    response, trace = adv_seed.advise(crop, loc, text or normalized, state)
+    state = state if state is not None else {}
+    response, trace = adv_seed.advise(crop, loc, text or normalized, state, soil=_farm_soil(user, normalized))
     if trace.get('decision') == 'need_location':
         _set_adv(user, {'module': 'seed', 'stage': 'location', 'crop_id': crop.id,
                         'text': text or normalized, 'attempts': attempts})
@@ -1204,12 +1265,12 @@ def _planting_has_data(crop):
 
 
 def _planting_turn(user, raw_message, normalized, crop, start_time, message_id, text=None, rain=None,
-                   attempts=0):
+                   attempts=0, state=None):
     """Wakati wa kupanda. None = hakuna data ya MHD-006 (mtiririko wa zamani unaendelea)."""
     if not _planting_has_data(crop):
         return None
     loc = _seed_location(user, normalized)
-    state = {}
+    state = state if state is not None else {}
     response, trace = adv_planting.advise(crop, loc, text or normalized, state, rain=rain)
     dec = trace.get('decision')
     if dec == 'need_location':
@@ -1266,14 +1327,14 @@ def _handle_planting_pending(user, raw_message, normalized, start_time, message_
     return None
 
 
-def _rotation_turn(user, raw_message, normalized, start_time, message_id, text=None):
+def _rotation_turn(user, raw_message, normalized, start_time, message_id, text=None, state=None):
     """Mzunguko wa mazao. None = hakuna data ya MHD-006 R4."""
     from advisory.models import CropFamily, RotationCompatibility
     if not (CropFamily.objects.exists() or RotationCompatibility.objects.exists()):
         return None
     loc = _seed_location(user, normalized)
-    state = {}
-    response, trace = adv_rotation.advise(text or normalized, loc, state)
+    state = state if state is not None else {}
+    response, trace = adv_rotation.advise(text or normalized, loc, state, soil=_farm_soil(user, normalized))
     if trace.get('decision') == 'need_crop':
         _set_adv(user, {'module': 'rotation', 'stage': 'crop', 'text': text or normalized})
     else:
@@ -1284,13 +1345,23 @@ def _rotation_turn(user, raw_message, normalized, start_time, message_id, text=N
     return response
 
 
-def _soil_turn(user, raw_message, normalized, crop, start_time, message_id, text=None):
+def _soil_turn(user, raw_message, normalized, crop, start_time, message_id, text=None, state=None):
     """Ushauri wa udongo. None = hakuna data ya MHD-004."""
     from advisory.models import SoilType
     if not SoilType.objects.filter(is_active=True).exists():
         return None
-    state = {}
-    response, trace = adv_soil.advise(crop, text or normalized, state)
+    state = state if state is not None else {}
+    named = adv_soil.identify(text or normalized, state)
+    soil = named or adv_profile.profile_soil(user)
+    if named:
+        adv_profile.remember_soil(user, named)
+    crop = crop or (Crop.objects.filter(id=user.last_crop_id).first() if soil and not named and user.last_crop_id else None)
+    response, trace = adv_soil.advise(crop, text or normalized, state, soil=soil)
+    if soil and not named:
+        trace['soil_from_profile'] = True
+        head, _, rest = response.partition('\n')
+        response = (f"{head}\n_(Nimetumia udongo uliouniambia awali. Kama ni tofauti, niambie aina yake.)_"
+                    f"\n{rest}")
     if trace.get('decision') == 'need_soil':
         _set_adv(user, {'module': 'soil', 'stage': 'soil', 'crop_id': crop.id if crop else None,
                         'text': text or normalized})
