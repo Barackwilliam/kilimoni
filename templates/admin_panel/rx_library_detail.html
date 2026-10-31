@@ -1,0 +1,74 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}{{ up.code|default:up.file_name }} — Maktaba{% endblock %}
+{% block page_title %}📚 {{ up.code|default:"Dataset" }}{% endblock %}
+{% block content %}
+<p style="margin-bottom:14px;"><a href="{% url 'rx_library' %}">← Maktaba</a></p>
+<div class="card">
+  <div class="card-header" style="flex-wrap:wrap;gap:8px;">
+    <div class="card-title" style="word-break:break-all;">{{ up.file_name }}</div>
+    {% if up.status == 'engine' %}<span class="badge badge-green">Inatumiwa: {{ up.engine }}</span>{% else %}<span class="badge badge-gray">Imehifadhiwa tu — moduli bado</span>{% endif %}
+  </div>
+  <div style="font-size:13px;color:#374151;">
+    Ilipakiwa {{ up.uploaded_at|date:"d M Y H:i" }}{% if up.uploaded_by %} na {{ up.uploaded_by }}{% endif %} ·
+    Rows za data: <strong>{{ up.data_rows }}</strong>
+    {% if up.crops %} · Mazao: {% for name, n in up.crops.items %}<span class="badge badge-blue">{{ name }} ({{ n }})</span> {% endfor %}{% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">Uchambuzi wakati wa upakiaji ({{ up.issues|length }})</div></div>
+  {% if up.issues %}
+  <div class="table-wrap"><table>
+    <thead><tr><th style="width:90px;">Kiwango</th><th style="width:200px;">Sheet</th><th>Kilichoonekana</th></tr></thead>
+    <tbody>{% for i in up.issues %}
+    <tr><td>{% if i.level == 'high' %}<span class="badge badge-red">{{ i.level_sw }}</span>{% elif i.level == 'medium' %}<span class="badge badge-yellow">{{ i.level_sw }}</span>{% else %}<span class="badge badge-gray">{{ i.level_sw }}</span>{% endif %}</td>
+        <td style="font-size:12px;">{{ i.sheet|default:"–" }}</td>
+        <td style="font-size:13px;">{{ i.text }}{% if i.examples %}<br><span style="font-size:11.5px;color:#6b7280;">Mfano: {{ i.examples|join:" · " }}</span>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p style="font-size:13px;color:#16a34a;">Hakuna tatizo lililoonekana.</p>{% endif %}
+  {% if up.sheets %}
+  <details style="margin-top:10px;font-size:13px;"><summary style="cursor:pointer;color:#4b5563;">Sheets ({{ up.sheets|length }})</summary>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Sheet</th><th>Aina</th><th>Rows</th><th>Columns</th><th>ID</th></tr></thead>
+      <tbody>{% for s in up.sheets %}<tr><td>{{ s.name }}</td><td>{% if s.kind == 'data' %}Data{% else %}Maelezo{% endif %}</td><td>{{ s.rows }}</td><td>{{ s.columns }}</td><td><code>{{ s.id_col|default:"–" }}</code></td></tr>{% endfor %}</tbody>
+    </table></div>
+  </details>
+  {% endif %}
+</div>
+
+{% if sheets %}
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">Data iliyohifadhiwa</div></div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+    {% for s in sheets %}
+    <a class="btn btn-sm {% if s.pk == current.pk %}btn-primary{% else %}btn-secondary{% endif %}" href="?sheet={{ s.pk }}">{{ s.name }} ({{ s.row_count }})</a>
+    {% endfor %}
+  </div>
+  {% if current %}
+  <form method="get" class="search-bar">
+    <input type="hidden" name="sheet" value="{{ current.pk }}">
+    <input class="form-control" name="q" value="{{ q }}" placeholder="Tafuta kwenye {{ current.name }}…" style="max-width:320px;">
+    <button class="btn btn-primary" type="submit">Tafuta</button>
+  </form>
+  <p style="font-size:12px;color:#6b7280;">Columns {{ current.columns|length }}{% if current.columns|length > 14 %} (14 za kwanza zinaonyeshwa){% endif %} · ID: <code>{{ current.id_col|default:"–" }}</code></p>
+  <div class="table-wrap"><table>
+    <thead><tr>{% for c in columns %}<th style="white-space:nowrap;">{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for row in table %}<tr>{% for v in row %}<td style="font-size:12.5px;max-width:260px;">{{ v }}</td>{% endfor %}</tr>
+    {% empty %}<tr><td colspan="{{ columns|length|default:1 }}" style="color:#9ca3af;text-align:center;padding:20px;">Hakuna rows.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% if rows.has_other_pages %}
+  <div style="display:flex;gap:8px;margin-top:10px;align-items:center;font-size:13px;">
+    {% if rows.has_previous %}<a class="btn btn-secondary btn-sm" href="?sheet={{ current.pk }}&q={{ q|urlencode }}&p={{ rows.previous_page_number }}">← Nyuma</a>{% endif %}
+    Ukurasa {{ rows.number }} / {{ rows.paginator.num_pages }}
+    {% if rows.has_next %}<a class="btn btn-secondary btn-sm" href="?sheet={{ current.pk }}&q={{ q|urlencode }}&p={{ rows.next_page_number }}">Mbele →</a>{% endif %}
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+{% elif up.status == 'engine' %}
+<p style="font-size:13px;color:#6b7280;margin-top:14px;">Data ya workbook hii iko kwenye injini ({{ up.engine }}) — iangalie kwenye kurasa za moduli hiyo.</p>
+{% endif %}
+{% endblock %}

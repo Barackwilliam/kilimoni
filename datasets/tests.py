@@ -264,3 +264,51 @@ class RenamedSchemaTests(TestCase):
         self.assertEqual(hit[0]['method'], 'ai')
         self.assertEqual(hit[0]['expected'], 'jina_la_kiswahili')
         self.assertTrue(calls and all('local_label' in opts for _, opts in calls[:1]))
+
+
+class LibraryTests(TestCase):
+    def setUp(self):
+        Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize', crop_group='cereals')
+        AuthUser.objects.create_user('kilimoni', password='x', is_staff=True)
+        self.client.login(username='kilimoni', password='x')
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        # aina mpya ya dataset ambayo bado haina moduli
+        self.new_type = shutil.copy(SUIT, os.path.join(self.tmp, 'MHD-005_Fertilizer_Recommendations_v1_0.xlsx'))
+
+    def test_new_type_is_previewed_stored_and_browsable(self):
+        from .models import DatasetRow, DatasetUpload
+        r = self.client.post(reverse('rx_preview'), {'files': [_upload(self.new_type)]})
+        self.assertContains(r, 'Maktaba ya Dataset')
+        self.assertContains(r, 'Haina moduli ya kanuni bado')
+        self.assertContains(r, 'Hifadhi data hii')
+        self.assertEqual(DatasetRow.objects.count(), 0)              # hakiki = rollback
+        r = self.client.post(reverse('rx_confirm'), follow=True)
+        self.assertContains(r, 'Zimehifadhiwa kwenye Maktaba ya Dataset (MHD-005)')
+        up = DatasetUpload.objects.get(code='MHD-005')
+        self.assertEqual(up.status, 'stored')
+        self.assertGreater(DatasetRow.objects.filter(sheet__upload=up).count(), 0)
+        r = self.client.get(reverse('rx_library'))
+        self.assertContains(r, 'Imehifadhiwa tu')
+        sheet = up.stored_sheets.get(name='Soil_Crop_Suitability_Master')
+        r = self.client.get(reverse('rx_library_detail', args=[up.pk]), {'sheet': sheet.pk, 'q': 'Mahindi'})
+        self.assertContains(r, 'suitability_id')
+        self.assertContains(r, 'Mahindi')
+
+    def test_reupload_replaces_old_rows(self):
+        from .models import DatasetRow
+        for _ in range(2):
+            self.client.post(reverse('rx_preview'), {'files': [_upload(self.new_type)]})
+            self.client.post(reverse('rx_confirm'))
+        rows = DatasetRow.objects.filter(sheet__name='Soil_Crop_Suitability_Master').count()
+        self.assertEqual(rows, 2)
+
+    def test_engine_upload_is_recorded(self):
+        from .models import DatasetUpload
+        self.client.post(reverse('rx_preview'), {'files': [_upload(p) for p in SOIL]})
+        self.client.post(reverse('rx_confirm'))
+        ups = DatasetUpload.objects.filter(code='MHD-004')
+        self.assertEqual(ups.count(), 3)
+        self.assertTrue(all(u.status == 'engine' and u.engine == 'Udongo' for u in ups))
+        self.assertTrue(any(u.high for u in ups))                     # viungo vya udongo vilivyokatika
+        self.assertContains(self.client.get(reverse('rx_library')), 'Inatumiwa: Udongo')

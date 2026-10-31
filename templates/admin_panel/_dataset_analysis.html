@@ -22,7 +22,7 @@
   <div class="table-wrap" style="margin-top:10px;"><table>
     <thead><tr><th>Msimbo</th><th>Faili</th><th>Rows</th><th>Mazao</th></tr></thead>
     <tbody>{% for b in analysis.clean %}
-      <tr><td><strong>{{ b.code }}</strong></td><td style="font-size:12px;">{{ b.file }}</td><td>{{ b.data_rows }}</td>
+      <tr><td><strong>{{ b.code }}</strong></td><td style="font-size:12px;word-break:break-all;">{{ b.file }}</td><td>{{ b.data_rows }}</td>
           <td>{% for name, n in b.crops.items %}<span class="badge badge-blue">{{ name }} ({{ n }})</span> {% empty %}–{% endfor %}</td></tr>
     {% endfor %}</tbody>
   </table></div>

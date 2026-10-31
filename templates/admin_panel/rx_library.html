@@ -1,0 +1,89 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Maktaba ya Dataset{% endblock %}
+{% block page_title %}📚 Maktaba ya Dataset{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">Workbooks zilizopo ({{ latest|length }})</div>
+    <a class="btn btn-primary btn-sm" href="{% url 'rx_home' %}">📥 Pakia dataset</a>
+  </div>
+  <p style="font-size:13px;color:#4b5563;margin:-4px 0 14px;">
+    Kila workbook iliyowahi kupakiwa kupitia dashboard, toleo la mwisho. <strong>Inatumiwa na injini</strong> = bot inaitumia
+    kujibu wakulima. <strong>Imehifadhiwa tu</strong> = data yake yote iko salama na imechambuliwa, lakini bado haina moduli
+    ya kanuni, kwa hiyo bot haiitumii (ingebidi AI ibuni). Hizo ndizo moduli za kujenga zinazofuata.
+  </p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Msimbo</th><th>Faili</th><th>Hali</th><th>Rows</th><th>Mazao</th><th>Uchambuzi</th><th>Ilipakiwa</th><th></th></tr></thead>
+    <tbody>
+    {% for u in latest %}
+    <tr>
+      <td><strong>{{ u.code|default:"–" }}</strong></td>
+      <td style="font-size:12px;max-width:260px;word-break:break-all;">{{ u.file_name }}</td>
+      <td>{% if u.status == 'engine' %}<span class="badge badge-green">Inatumiwa: {{ u.engine }}</span>{% else %}<span class="badge badge-gray">Imehifadhiwa tu — moduli bado</span>{% endif %}</td>
+      <td>{{ u.data_rows }}</td>
+      <td>{% for name, n in u.crops.items %}<span class="badge badge-blue">{{ name }}</span> {% empty %}–{% endfor %}</td>
+      <td>{% if u.high %}<span class="badge badge-red">Muhimu {{ u.high }}</span> {% endif %}{% if u.medium %}<span class="badge badge-yellow">Rekebisha {{ u.medium }}</span>{% endif %}{% if not u.high and not u.medium %}<span style="color:#16a34a;">Safi</span>{% endif %}</td>
+      <td style="font-size:12px;color:#6b7280;white-space:nowrap;">{{ u.uploaded_at|date:"d M Y H:i" }}{% if u.uploaded_by %}<br>{{ u.uploaded_by }}{% endif %}</td>
+      <td><a class="btn btn-secondary btn-sm" href="{% url 'rx_library_detail' u.pk %}">Fungua</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="8" style="text-align:center;padding:30px;color:#9ca3af;">Bado hakuna upakiaji uliohifadhiwa kupitia dashboard.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+
+<div class="grid-2" style="margin-top:20px;">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Moduli za kanuni zilizopo</div></div>
+    <table>
+      <tbody>
+      {% for code, name, url in modules %}
+      <tr><td><strong>{{ code }}</strong></td><td>{{ name }}</td><td><a href="{% url url %}">Angalia →</a></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p style="font-size:12px;color:#6b7280;margin-top:10px;">
+      Workbook ya msimbo mwingine (mf. MHD-002, MHD-005) inapokelewa na kuhifadhiwa hapa. Moduli yake ikijengwa,
+      itasomwa kutoka maktaba bila kupakia upya.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">Ramani za majina yaliyobadilishwa ({{ aliases|length }})</div></div>
+    {% if aliases %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Workbook</th><th>Kwenye dataset</th><th>Injini inatarajia</th><th>Jinsi</th><th></th></tr></thead>
+      <tbody>
+      {% for a in aliases %}
+      <tr>
+        <td>{{ a.code|default:"–" }}</td>
+        <td><code>{{ a.actual }}</code>{% if a.kind == 'column' %}<br><span style="font-size:11px;color:#6b7280;">column ya {{ a.sheet }}</span>{% else %}<br><span style="font-size:11px;color:#6b7280;">sheet</span>{% endif %}</td>
+        <td><code>{{ a.expected }}</code></td>
+        <td>{% if a.method == 'ai' %}AI{% elif a.method == 'jina' %}Jina{% else %}Mkono{% endif %}</td>
+        <td><form method="post">{% csrf_token %}<input type="hidden" name="delete_alias" value="{{ a.pk }}">
+            <button class="btn btn-secondary btn-sm" type="submit" onclick="return confirm('Futa ramani hii?')">Futa</button></form></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <p style="font-size:13px;color:#9ca3af;">Hakuna bado. Zinaundwa ukithibitisha mapendekezo kwenye hakiki.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if history %}
+<details class="card" style="margin-top:20px;">
+  <summary style="cursor:pointer;font-weight:600;">Historia ya upakiaji ({{ history|length }} ya mwisho)</summary>
+  <div class="table-wrap" style="margin-top:10px;"><table>
+    <thead><tr><th>Tarehe</th><th>Msimbo</th><th>Faili</th><th>Rows</th><th>Na</th><th></th></tr></thead>
+    <tbody>{% for u in history %}
+      <tr><td style="font-size:12px;white-space:nowrap;">{{ u.uploaded_at|date:"d M Y H:i" }}</td><td>{{ u.code|default:"–" }}</td>
+          <td style="font-size:12px;word-break:break-all;">{{ u.file_name }}</td><td>{{ u.data_rows }}</td><td>{{ u.uploaded_by|default:"–" }}</td>
+          <td><a href="{% url 'rx_library_detail' u.pk %}">Fungua</a></td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+{% endblock %}

@@ -164,7 +164,10 @@ class _Run:
         self.reports, self.crops, self.analysis, self.schema = reports, crops, analysis, list(schema)
 
 
-def _run_imports(files, dry_run, crop_choices=None, schema_choices=None):
+LIBRARY_TITLE = 'Maktaba ya Dataset (bado hazina moduli ya kanuni)'
+
+
+def _run_imports(files, dry_run, crop_choices=None, schema_choices=None, user=''):
     """
     Gawa faili kwa aina: MHD-007 → uchunguzi; MHD-001…006 → ushauri.
 
@@ -180,7 +183,7 @@ def _run_imports(files, dry_run, crop_choices=None, schema_choices=None):
     from diagnosis.importer import ImportReport, _Rollback
 
     rx_files = [f for f in files if 'MHD-007' in os.path.basename(f).upper()]
-    adv_files = [f for f in files if adv_importer.workbook_code(f)]
+    adv_files = [f for f in files if adv_importer.workbook_code(f) in adv_importer.SUPPORTED_CODES]
     unknown = [os.path.basename(f) for f in files if f not in rx_files and f not in adv_files]
     from datasets import schema as ds_schema
     intake = crop_intake.CropIntake(create=True, approved=None if dry_run else (crop_choices or {}))
@@ -195,17 +198,30 @@ def _run_imports(files, dry_run, crop_choices=None, schema_choices=None):
         if adv_files:
             reports.append(('Ushauri wa kilimo (MHD-001…006)', adv_importer.import_files(adv_files, dry_run=False)))
         if unknown:
+            from datasets import library
             rep = ImportReport(dry_run)
-            rep.warnings.append(f"Bado hazina moduli ya kanuni (zitachambuliwa tu): {', '.join(unknown)}")
-            reports.append(('Faili zisizo na moduli bado', rep))
+            rep.warnings.append("Workbooks hizi zitahifadhiwa kikamilifu kwenye Maktaba ya Dataset (sheets na rows "
+                                "zote) na kuchambuliwa, lakini bot haitazitumia kujibu wakulima hadi moduli yake "
+                                "ya kanuni ijengwe: " + ', '.join(unknown))
+            stored.update({os.path.basename(f): library.store(f, rep, user) for f in files
+                           if os.path.basename(f) in unknown})
+            reports.append((LIBRARY_TITLE, rep))
         return reports
+
+    stored = {}
 
     with crop_intake.use(intake), ds_schema.use(smap):
         if not dry_run:
+            from datasets import library
             reports = run_all()
-            if proposals and not any(r.rolled_back for _, r in reports):
+            ok = not any(r.rolled_back for _, r in reports)
+            if proposals and ok:
                 ds_schema.save(proposals)
-            return _Run(reports, intake, schema=proposals)
+            analysis = ds_analysis.analyse(files, [r for _, r in reports],
+                                           supported_codes=adv_importer.SUPPORTED_CODES)
+            if ok:
+                library.record(analysis, stored, user)
+            return _Run(reports, intake, analysis, proposals)
         result = {}
         try:
             with transaction.atomic():
@@ -262,7 +278,7 @@ def rx_confirm(request):
         return redirect('rx_home')
     try:
         run = _run_imports(files, dry_run=False, crop_choices=_crop_choices(request.POST),
-                           schema_choices=_schema_choices(request.POST))
+                           schema_choices=_schema_choices(request.POST), user=request.user.get_username())
     finally:
         _cleanup_upload(request)
     reports = run.reports
@@ -281,6 +297,10 @@ def rx_confirm(request):
         if report.rolled_back:
             messages.error(request, f"{title}: hakuna kilichohifadhiwa — makosa yalikuwa mengi kuliko "
                                     "kiwango kinachoruhusiwa.")
+        elif title == LIBRARY_TITLE and report.workbooks:
+            rows = report.counts.get('Rows (maktaba)', {}).get('created', 0)
+            messages.success(request, f"Zimehifadhiwa kwenye Maktaba ya Dataset ({', '.join(report.workbooks)}): "
+                                      f"rows {rows}. Bot haitazitumia hadi moduli yake ya kanuni ijengwe.")
         elif report.workbooks:
             created = sum(c['created'] for c in report.counts.values())
             updated = sum(c['updated'] for c in report.counts.values())
@@ -573,4 +593,54 @@ def rx_rotation(request):
         'page': 'rx_rotation', 'q': q, 'place': place, 'preview': preview, 'trace': trace,
         'families': CropFamily.objects.all(), 'comps': RotationCompatibility.objects.order_by('previous_name', '-score'),
         'seqs': RotationSequence.objects.select_related('aez'), 'rules': RotationRule.objects.all(),
+    })
+
+
+# ─────────────────────────── Maktaba ya dataset ───────────────────────────
+
+MODULES = [
+    ('MHD-001', 'Maeneo na kanda (AEZ)', 'rx_locations'),
+    ('MHD-003A', 'Mbegu', 'rx_seeds'),
+    ('MHD-004', 'Udongo', 'rx_soil'),
+    ('MHD-006', 'Wakati wa kupanda + mzunguko wa mazao', 'rx_planting'),
+    ('MHD-007A–F', 'Uchunguzi wa matatizo (wadudu, magonjwa, dalili, tiba)', 'rx_cases'),
+]
+
+
+@login_required
+def rx_library(request):
+    """Maktaba ya dataset: kila workbook iliyopakiwa, hali yake, na ramani za majina."""
+    from datasets import library
+    from datasets.models import DatasetUpload, SchemaAlias
+    if request.method == 'POST' and request.POST.get('delete_alias'):
+        SchemaAlias.objects.filter(pk=request.POST['delete_alias']).delete()
+        messages.success(request, 'Ramani ya jina imefutwa — upakiaji ujao utapendekeza upya.')
+        return redirect('rx_library')
+    latest = library.latest_by_code()
+    return render(request, 'admin_panel/rx_library.html', {
+        'page': 'rx_library', 'latest': latest, 'modules': MODULES,
+        'stored': [u for u in latest if u.status == 'stored'],
+        'history': DatasetUpload.objects.all()[:30], 'aliases': SchemaAlias.objects.all(),
+    })
+
+
+@login_required
+def rx_library_detail(request, pk):
+    from django.core.paginator import Paginator
+    from datasets.models import DatasetRow, DatasetUpload
+    up = get_object_or_404(DatasetUpload, pk=pk)
+    sheets = list(up.stored_sheets.all())
+    current = next((s for s in sheets if str(s.pk) == request.GET.get('sheet')), None) or \
+        next((s for s in sheets if s.kind == 'data' and s.row_count), sheets[0] if sheets else None)
+    q = request.GET.get('q', '').strip()
+    page = None
+    if current:
+        rows = DatasetRow.objects.filter(sheet=current)
+        if q:
+            rows = rows.filter(Q(row_id__icontains=q) | Q(data__icontains=q))
+        page = Paginator(rows, 50).get_page(request.GET.get('p'))
+    return render(request, 'admin_panel/rx_library_detail.html', {
+        'page': 'rx_library', 'up': up, 'sheets': sheets, 'current': current, 'q': q, 'rows': page,
+        'columns': current.columns[:14] if current else [],
+        'table': [[str(r.data.get(c, ''))[:160] for c in current.columns[:14]] for r in page] if page else [],
     })
