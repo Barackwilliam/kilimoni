@@ -45,6 +45,7 @@ class ImportReport:
         self.rows_total = 0
         self.workbooks = []
         self.rolled_back = False
+        self.sheets_used = set()      # (code, jina la sheet) zilizosomwa na injini — kwa ripoti ya uchambuzi
 
     def count(self, label, created):
         c = self.counts.setdefault(label, {'created': 0, 'updated': 0})
@@ -155,20 +156,20 @@ class _Importer:
     def __init__(self, report):
         self.r = report
         self._crop_cache = {}
+        self._source = ''
 
     # ---- msaada ----
     def crop(self, name):
+        """Zao kwa jina; zao lisilopo linashughulikiwa na datasets.crops (hakiki → uthibitisho)."""
         if not name:
             return None
+        from datasets import crops as crop_intake
+        crop = crop_intake.resolve(name, self._source)
         key = name.strip().lower()
-        if key not in self._crop_cache:
-            from django.db.models import Q
-            from crops.models import Crop
-            crop = Crop.objects.filter(Q(crop_name_sw__iexact=key) | Q(crop_name_en__iexact=key)).first()
-            if crop is None:
-                self.r.warnings.append(f"Zao '{name}' halipo kwenye Mazao — crop imeachwa tupu")
-            self._crop_cache[key] = crop
-        return self._crop_cache[key]
+        if crop is None and key not in self._crop_cache:
+            self.r.warnings.append(f"Zao '{name}' halipo kwenye Mazao — crop imeachwa tupu")
+        self._crop_cache[key] = crop
+        return crop
 
     def active(self, row, col):
         status = row.get(col)
@@ -180,6 +181,8 @@ class _Importer:
             self.r.warnings.append(f"{code}: sheet '{sheet_name}' haipo — imerukwa")
             return
         source = f"{code}/{ws.title}"
+        self._source = source
+        self.r.sheets_used.add((code, ws.title))
         seen = {}
         for row in _read_sheet(ws):
             sid = row.get(id_col)
@@ -201,6 +204,8 @@ class _Importer:
                 self.r.errors.append(f"{source} {sid}: {e}")
 
     def upsert(self, model, sid, source, row, **fields):
+        from datasets.crops import check_crop_conflict
+        check_crop_conflict(model, sid, fields.get('crop'))
         raw = {k: v for k, v in row.items() if v is not None}
         obj, created = model.objects.update_or_create(
             source_id=sid, defaults={'source_file': source, 'raw': raw, **fields})

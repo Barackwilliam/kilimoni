@@ -52,11 +52,12 @@ def _variety_key(name):
 
 
 def _crop(name):
-    from crops.models import Crop
-    if not name:
-        return None
-    return (Crop.objects.filter(crop_name_sw__iexact=name).first()
-            or Crop.objects.filter(crop_name_en__iexact=name).first())
+    """Zao kwa jina (sw/en). Zao lisilopo linashughulikiwa na datasets.crops (hakiki → uthibitisho)."""
+    from datasets import crops as crop_intake
+    return crop_intake.resolve(name, _CURRENT_SOURCE[0])
+
+
+_CURRENT_SOURCE = ['']
 
 
 def workbook_code(name):
@@ -82,6 +83,8 @@ class _Importer:
             self.r.warnings.append(f"{code}: sheet '{sheet_name}' haipo — imerukwa")
             return
         source = f"{code}/{ws.title}"
+        _CURRENT_SOURCE[0] = source
+        self.r.sheets_used.add((code, ws.title))
         for row in _read_sheet(ws):
             sid = row.get(id_col)
             if not sid:
@@ -97,6 +100,8 @@ class _Importer:
 
     @staticmethod
     def upsert(model, sid, source, row, **fields):
+        from datasets.crops import check_crop_conflict
+        check_crop_conflict(model, sid, fields.get('crop'))
         raw = {k: v for k, v in row.items() if v is not None}
         obj, created = model.objects.update_or_create(
             source_id=sid, defaults={'source_file': source, 'raw': raw,

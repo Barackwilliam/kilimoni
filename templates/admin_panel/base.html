@@ -327,7 +327,7 @@ textarea.form-control { resize:vertical; min-height:100px; }
   <div class="content">
     {% if messages %}
       {% for message in messages %}
-        <div class="alert alert-{% if message.tags == 'error' %}error{% else %}success{% endif %}">
+        <div class="alert alert-{% if message.tags == 'error' %}error{% elif message.tags == 'warning' %}warning{% else %}success{% endif %}">
           {{ message }}
         </div>
       {% endfor %}

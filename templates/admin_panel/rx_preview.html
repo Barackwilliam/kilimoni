@@ -4,7 +4,9 @@
 {% block content %}
 <div class="card">
   <div class="card-header">
-    <div class="card-title">Faili: {{ files|join:", "|default:"—" }}</div>
+    <div class="card-title">Faili {{ files|length }} zimepakiwa
+      <details style="font-weight:400;font-size:12px;color:#6b7280;margin-top:4px;"><summary style="cursor:pointer;">Onyesha majina</summary>
+        {% for f in files %}<div>{{ f }}</div>{% endfor %}</details></div>
     {% if reports %}<span class="badge badge-blue">Hakiki tu — hakuna kilichohifadhiwa</span>{% endif %}
   </div>
 
@@ -25,6 +27,8 @@
     {% endif %}
 
     {% if report.counts %}
+    <details {% if report.counts|length <= 8 %}open{% endif %}>
+    <summary style="cursor:pointer;font-size:13px;color:#4b5563;margin-bottom:6px;">Aina {{ report.counts|length }} za rekodi</summary>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Aina ya rekodi</th><th>Mpya</th><th>Zitasasishwa</th></tr></thead>
@@ -35,6 +39,7 @@
         </tbody>
       </table>
     </div>
+    </details>
     {% endif %}
 
     {% if report.errors %}
@@ -48,9 +53,41 @@
   {% endfor %}
   {% if reports %}<p style="font-size:12px;color:#6b7280;">Tahadhari haizuii kuhifadhi; ni mambo ya kurekebisha kwenye dataset.</p>{% endif %}
 
-  <div style="display:flex;gap:10px;margin-top:20px;">
+  {% if analysis %}{% include 'admin_panel/_dataset_analysis.html' %}{% endif %}
+
+  <div style="display:flex;gap:10px;margin-top:20px;align-items:flex-start;flex-wrap:wrap;">
     {% if can_save %}
-    <form method="post" action="{% url 'rx_confirm' %}">{% csrf_token %}
+    <form method="post" action="{% url 'rx_confirm' %}" style="flex:1 1 100%;">{% csrf_token %}
+      {% if new_crops %}
+      <div class="card" style="margin:0 0 16px;border:1px solid #fde68a;background:#fffbeb;">
+        <div class="card-header"><div class="card-title">🌾 Mazao mapya ({{ new_crops|length }})</div></div>
+        <p style="font-size:13px;color:#4b5563;margin:-4px 0 12px;">
+          Dataset hizi zinataja mazao ambayo bado hayapo kwenye Mazao. Yakiongezwa, bot itayatambua mkulima
+          akiyataja na itatumia data yake. Usipoliweka tiki, data yake itaingia bila zao na bot haitaitumia.
+          Hakikisha jina la Kiswahili ndilo wakulima wanalotumia.
+        </p>
+        <input type="hidden" name="crop_total" value="{{ new_crops|length }}">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Ongeza</th><th>Kwenye dataset</th><th>Jina (Kiswahili)</th><th>Jina (English)</th><th>Kundi</th><th>Rows</th><th>Workbooks</th></tr></thead>
+          <tbody>
+          {% for c in new_crops %}
+          <tr>
+            <td><input type="checkbox" name="crop_add_{{ forloop.counter0 }}" value="1" checked>
+                <input type="hidden" name="crop_key_{{ forloop.counter0 }}" value="{{ c.key }}"></td>
+            <td><code>{{ c.raw }}</code></td>
+            <td><input class="form-control" name="crop_sw_{{ forloop.counter0 }}" value="{{ c.name_sw }}" maxlength="100" required></td>
+            <td><input class="form-control" name="crop_en_{{ forloop.counter0 }}" value="{{ c.name_en }}" maxlength="100"></td>
+            <td><select class="form-control" name="crop_group_{{ forloop.counter0 }}">
+              {% for g, label in crop_groups %}<option value="{{ g }}" {% if g == c.group %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>{% if not c.group %}<br><span style="font-size:11px;color:#d97706;">Chagua kundi</span>{% endif %}</td>
+            <td>{{ c.count }}</td>
+            <td style="font-size:12px;">{{ c.sources|join:", " }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+      {% endif %}
       <button class="btn btn-primary" type="submit">💾 Hifadhi data hii</button>
     </form>
     {% endif %}

@@ -22,6 +22,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from bot.models import Conversation
+from crops.models import Crop
 from diagnosis import models as dm
 from diagnosis.importer import import_mhd007
 from advisory import importer as adv_importer
@@ -141,38 +142,93 @@ def rx_preview(request):
         saved.append(dest)
     request.session[SESSION_KEY] = folder
 
-    reports, error = [], None
+    run, error = None, None
     if saved:
         try:
-            reports = _run_imports(saved, dry_run=True)
+            run = _run_imports(saved, dry_run=True)
         except Exception as exc:          # faili lililoharibika, n.k.
             error = f"Faili halikusomeka: {exc}"
+    reports = run.reports if run else []
     can_save = bool(reports) and not error and all(not r.rolled_back for _, r in reports) \
         and any(r.workbooks for _, r in reports)
     return render(request, 'admin_panel/rx_preview.html', {
         'page': 'rx_home', 'reports': reports, 'error': error, 'skipped': skipped,
         'files': [os.path.basename(p) for p in saved], 'can_save': can_save,
+        'new_crops': run.crops.missing if run else [], 'analysis': run.analysis if run else None,
+        'crop_groups': Crop.CROP_GROUPS,
     })
 
 
-def _run_imports(files, dry_run):
-    """Gawa faili kwa aina: MHD-007 → uchunguzi; MHD-001…006 → ushauri."""
+class _Run:
+    def __init__(self, reports, crops, analysis=None):
+        self.reports, self.crops, self.analysis = reports, crops, analysis
+
+
+def _run_imports(files, dry_run, crop_choices=None):
+    """
+    Gawa faili kwa aina: MHD-007 → uchunguzi; MHD-001…006 → ushauri.
+
+    Hakiki (dry_run): importers zote zinaendeshwa ndani ya transaction MOJA
+    inayorudishwa nyuma mwishoni — hivyo mazao mapya, viungo kati ya
+    workbooks, na uchambuzi vinaona data ya upakiaji mzima kama ingehifadhiwa.
+    Kuhifadhi: mazao mapya yanaundwa tu kama yamo kwenye crop_choices
+    (yaliyothibitishwa na mteja kwenye hakiki).
+    """
+    from django.db import transaction
+    from datasets import analysis as ds_analysis
+    from datasets import crops as crop_intake
+    from diagnosis.importer import ImportReport, _Rollback
+
     rx_files = [f for f in files if 'MHD-007' in os.path.basename(f).upper()]
     adv_files = [f for f in files if adv_importer.workbook_code(f)]
     unknown = [os.path.basename(f) for f in files if f not in rx_files and f not in adv_files]
-    reports = []
-    if rx_files:
-        reports.append(('Uchunguzi wa matatizo (MHD-007)', import_mhd007(rx_files, dry_run=dry_run)))
-    if adv_files:
-        reports.append(('Ushauri wa kilimo (MHD-001…006)', adv_importer.import_files(adv_files, dry_run=dry_run)))
-    if unknown and reports:
-        reports[0][1].warnings.append(f"Hazijatambuliwa (jina halina msimbo wa MHD): {', '.join(unknown)}")
-    elif unknown:
-        from diagnosis.importer import ImportReport
-        rep = ImportReport(dry_run)
-        rep.warnings.append(f"Hazijatambuliwa (jina halina msimbo wa MHD): {', '.join(unknown)}")
-        reports.append(('Faili zisizotambuliwa', rep))
-    return reports
+    intake = crop_intake.CropIntake(create=True, approved=None if dry_run else (crop_choices or {}))
+
+    def run_all():
+        reports = []
+        if rx_files:
+            reports.append(('Uchunguzi wa matatizo (MHD-007)', import_mhd007(rx_files, dry_run=False)))
+        if adv_files:
+            reports.append(('Ushauri wa kilimo (MHD-001…006)', adv_importer.import_files(adv_files, dry_run=False)))
+        if unknown:
+            rep = ImportReport(dry_run)
+            rep.warnings.append(f"Bado hazina moduli ya kanuni (zitachambuliwa tu): {', '.join(unknown)}")
+            reports.append(('Faili zisizo na moduli bado', rep))
+        return reports
+
+    with crop_intake.use(intake):
+        if not dry_run:
+            return _Run(run_all(), intake)
+        result = {}
+        try:
+            with transaction.atomic():
+                reports = run_all()
+                for _, r in reports:
+                    r.dry_run = True
+                result['run'] = _Run(reports, intake, ds_analysis.analyse(
+                    files, [r for _, r in reports], supported_codes=adv_importer.SUPPORTED_CODES))
+                raise _Rollback()
+        except _Rollback:
+            pass
+        from advisory.location import clear_cache
+        clear_cache()
+        return result['run']
+
+
+def _crop_choices(post):
+    """Mazao mapya yaliyothibitishwa kwenye hakiki: key → {'name_sw','name_en','group'}."""
+    groups = {g for g, _ in Crop.CROP_GROUPS}
+    out = {}
+    for i in range(int(post.get('crop_total') or 0)):
+        if not post.get(f'crop_add_{i}'):
+            continue
+        key = (post.get(f'crop_key_{i}') or '').strip()
+        sw = (post.get(f'crop_sw_{i}') or '').strip()
+        en = (post.get(f'crop_en_{i}') or '').strip()
+        group = post.get(f'crop_group_{i}')
+        if key and sw:
+            out[key] = {'name_sw': sw, 'name_en': en or sw, 'group': group if group in groups else 'cash_crops'}
+    return out
 
 
 @login_required
@@ -183,9 +239,18 @@ def rx_confirm(request):
         messages.error(request, 'Hakuna faili lililosubiri kuhifadhiwa. Pakia upya.')
         return redirect('rx_home')
     try:
-        reports = _run_imports(files, dry_run=False)
+        run = _run_imports(files, dry_run=False, crop_choices=_crop_choices(request.POST))
     finally:
         _cleanup_upload(request)
+    reports = run.reports
+    made = [i for i in run.crops.missing if i['created']]
+    if made:
+        messages.success(request, "Mazao mapya yameongezwa: " + ', '.join(
+            (run.crops.approved or {}).get(i['key'], i)['name_sw'] for i in made))
+    skipped_crops = [i['raw'] for i in run.crops.missing if not i['created']]
+    if skipped_crops:
+        messages.warning(request, "Mazao hayakuongezwa (data yake imeingia bila zao, bot haitaitumia): "
+                         + ', '.join(skipped_crops))
     for title, report in reports:
         if report.rolled_back:
             messages.error(request, f"{title}: hakuna kilichohifadhiwa — makosa yalikuwa mengi kuliko "

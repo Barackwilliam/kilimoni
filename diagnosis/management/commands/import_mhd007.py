@@ -19,6 +19,8 @@ class Command(BaseCommand):
         parser.add_argument('paths', nargs='+', help='Faili za .xlsx au folder yenye faili hizo')
         parser.add_argument('--dry-run', action='store_true',
                             help='Endesha bila kuhifadhi (ripoti tu)')
+        parser.add_argument('--create-crops', action='store_true',
+                            help='Ongeza kwenye Mazao mazao ya dataset ambayo bado hayapo')
         parser.add_argument('--if-empty', action='store_true',
                             help='Ruka kama tayari kuna data (kwa deploy — isifute data ya mteja)')
 
@@ -38,7 +40,12 @@ class Command(BaseCommand):
         if not files:
             raise CommandError('Hakuna faili la MHD-007 lililopatikana')
 
-        report = import_mhd007(files, dry_run=dry_run)
+        from datasets import crops as crop_intake
+        with crop_intake.use(crop_intake.CropIntake(create=opts.get('create_crops', False))) as intake:
+            report = import_mhd007(files, dry_run=dry_run)
+        for c in intake.missing:
+            self.stdout.write(f"Zao jipya '{c['raw']}' ({c['count']} rows): "
+                              + ('limeongezwa' if c['created'] else 'halijaongezwa — tumia --create-crops'))
         self.stdout.write(report.as_text())
         if report.rolled_back:
             raise CommandError('Import imerudishwa nyuma kwa sababu ya makosa')
