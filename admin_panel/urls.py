@@ -17,6 +17,7 @@ urlpatterns = [
     path('uchunguzi/mbegu/', rx_views.rx_seeds, name='rx_seeds'),
     path('uchunguzi/kupanda/', rx_views.rx_planting, name='rx_planting'),
     path('uchunguzi/udongo/', rx_views.rx_soil, name='rx_soil'),
+    path('uchunguzi/mzunguko/', rx_views.rx_rotation, name='rx_rotation'),
     path('users/', views.users_list, name='users_list'),
     path('crops/', views.crops_list, name='crops_list'),
     path('privacy/', views.privacy_policy, name='privacy_policy'),

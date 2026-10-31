@@ -230,6 +230,15 @@ SCENARIOS = [
         ],
     },
     {
+        'name': 'R1 — Mzunguko: zao lilelile mfululizo linaepukwa (ROTRULE-001)',
+        'turns': ['nipande mahindi baada ya mahindi?'],
+        'checks': [
+            ('Inaonya kwa score ya ulinganifu', lambda r, t: '10/100' in r[0] and 'Usipande zao lilelile' in r[0]),
+            ('Inapendekeza mbadala kutoka mfuatano wa dataset', lambda r, t: 'Maharage' in r[0]),
+            ('Kanuni ziko kwenye trace', lambda r, t: 'ROT-COMP-00001' in t[-1].get('rules_used', [])),
+        ],
+    },
+    {
         'name': 'T7 — Bei ya soko inaonya kwamba si bei ya leo',
         'turns': ['bei ya mahindi Dodoma ikoje'],
         'checks': [

@@ -20,6 +20,7 @@ from diagnosis.importer import (
 )
 
 from .models import (
+    CropFamily, RotationCompatibility, RotationRule, RotationSequence,
     SoilConstraint, SoilProperty, SoilRanking, SoilSuitability, SoilSynonym, SoilType,
     AezAlias, ClimateRisk, CropCalendar, PlantingRule, SeasonProfile,
     AdvisoryConfidenceBand, AdvisoryRule, Aez, ExplainTemplate, LocationRule, LocationSynonym,
@@ -406,7 +407,59 @@ class _Importer:
             self.explain_templates_sheet(wb, code, 'Decision_Explainability', 'planting')
 
         if 'Crop_Rotation_Family_Master' in names:
-            self.r.warnings.append(f"{code}: Crop Rotation (Release 4) itaingizwa kwenye hatua ya 5 — imerukwa kwa sasa")
+            def family(sid, row, source):
+                name = row.get('jina_la_zao') or ''
+                _, created = self.upsert(
+                    CropFamily, sid, source, row, crop=_crop(name), crop_name=name,
+                    category=(row.get('crop_category') or '')[:60], rotation_group=(row.get('rotation_group') or '')[:60],
+                    botanical_family=(row.get('botanical_family') or '')[:60],
+                    nutrient_role=(row.get('nutrient_role') or '')[:60], note=row.get('rotation_note') or '')
+                return created
+
+            def compat(sid, row, source):
+                prev, nxt = row.get('previous_crop') or '', row.get('next_crop') or ''
+                _, created = self.upsert(
+                    RotationCompatibility, sid, source, row, previous_name=prev, next_name=nxt,
+                    previous_crop=_crop(prev), next_crop=_crop(nxt),
+                    score=int(_float(row.get('compatibility_score')) or 0) if row.get('compatibility_score') is not None else None,
+                    rating=(row.get('compatibility_rating') or '')[:30], ai_action=row.get('AI_action') or '',
+                    benefit_logic=row.get('rotation_benefit_logic') or '', risk_logic=row.get('rotation_risk_logic') or '')
+                return created
+
+            def sequence(sid, row, source):
+                ext, aez = self._aez(row)
+                seasons = [row.get(c) for c in ('year_1_or_season_1', 'year_2_or_season_2', 'year_3_or_season_3')
+                           if row.get(c)]
+                _, created = self.upsert(
+                    RotationSequence, sid, source, row, ext_aez_id=ext or '', aez=aez,
+                    system=(row.get('rotation_system') or sid)[:200], seasons=seasons,
+                    recommended_for=(row.get('recommended_for') or '')[:200],
+                    main_benefit=row.get('main_benefit') or '', advisory_sw=row.get('AI_advisory_sw') or '')
+                return created
+
+            def soil_rule(sid, row, source):
+                _, created = self.upsert(
+                    RotationRule, sid, source, row, kind='soil',
+                    condition=(row.get('soil_condition_from_MHD004') or '')[:200],
+                    recommended=row.get('recommended_rotation_action') or '', avoid=row.get('avoid_rotation_action') or '',
+                    farmer_message_sw=row.get('farmer_message_sw') or '')
+                return created
+
+            def break_rule(sid, row, source):
+                _, created = self.upsert(
+                    RotationRule, sid, source, row, kind='break', condition=(row.get('risk_group') or '')[:200],
+                    recommended=row.get('recommended_break_crop_group') or '', avoid=row.get('avoid_following') or '',
+                    min_break=(row.get('minimum_break_period') or '')[:100],
+                    farmer_message_sw=row.get('farmer_message_sw') or '')
+                return created
+
+            self.rows(wb, code, 'Crop_Rotation_Family_Master', 'Familia za mazao', 'crop_id', family)
+            self.rows(wb, code, 'Rotation_Compatibility_Master', 'Ulinganifu wa mzunguko', 'compatibility_id', compat)
+            self.rows(wb, code, 'Rotation_Sequence_Master', 'Mifuatano ya mzunguko', 'sequence_id', sequence)
+            self.rows(wb, code, 'Soil_Fertility_Rotation_Rules', 'Kanuni za mzunguko', 'soil_rotation_id', soil_rule)
+            self.rows(wb, code, 'Pest_Disease_Break_Rules', 'Kanuni za mzunguko', 'break_rule_id', break_rule)
+            self.generic_rules(wb, code, 'Rotation_AI_Rules', 'rotation')
+            self.explain_templates(wb, code, 'rotation')
 
 
     def qa_006(self):

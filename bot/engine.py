@@ -21,6 +21,7 @@ from advisory import location as adv_location
 from advisory import seed as adv_seed
 from advisory import planting as adv_planting
 from advisory import soil as adv_soil
+from advisory import rotation as adv_rotation
 from analytics.models import AnalyticsLog
 
 logger = logging.getLogger(__name__)
@@ -887,6 +888,12 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     if updates:
         user.save(update_fields=list(updates.keys()) + ['last_seen_at'])
 
+    # ── Mzunguko wa mazao kwa kanuni (MHD-006 R4) ──
+    if adv_rotation.wants_rotation(normalized):
+        handled = _rotation_turn(user, raw_message, normalized, start_time, message_id)
+        if handled is not None:
+            return handled
+
     # ── Wakati wa kupanda kwa kanuni (MHD-006 + eneo + mbegu) ──
     if adv_planting.wants_planting(normalized, intent) and not adv_seed.mentioned_variety(normalized):
         handled = _planting_turn(user, raw_message, normalized, crop, start_time, message_id)
@@ -1259,6 +1266,24 @@ def _handle_planting_pending(user, raw_message, normalized, start_time, message_
     return None
 
 
+def _rotation_turn(user, raw_message, normalized, start_time, message_id, text=None):
+    """Mzunguko wa mazao. None = hakuna data ya MHD-006 R4."""
+    from advisory.models import CropFamily, RotationCompatibility
+    if not (CropFamily.objects.exists() or RotationCompatibility.objects.exists()):
+        return None
+    loc = _seed_location(user, normalized)
+    state = {}
+    response, trace = adv_rotation.advise(text or normalized, loc, state)
+    if trace.get('decision') == 'need_crop':
+        _set_adv(user, {'module': 'rotation', 'stage': 'crop', 'text': text or normalized})
+    else:
+        _set_adv(user, None)
+    _log_all(user, raw_message, normalized, None, None, adv_location.display_name(loc) if loc else '', None,
+             response, trace.get('decision') not in ('need_crop', 'no_assessment'), start_time,
+             answer_ref=','.join(trace.get('rules_used', [])), message_id=message_id, trace=trace)
+    return response
+
+
 def _soil_turn(user, raw_message, normalized, crop, start_time, message_id, text=None):
     """Ushauri wa udongo. None = hakuna data ya MHD-004."""
     from advisory.models import SoilType
@@ -1284,6 +1309,13 @@ def _handle_advisory_pending(user, raw_message, normalized, start_time, message_
         return None
     if pend.get('module') == 'planting':
         return _handle_planting_pending(user, raw_message, normalized, start_time, message_id, pend)
+    if pend.get('module') == 'rotation':
+        crops = adv_rotation.mentioned(normalized)
+        if not crops:
+            _set_adv(user, None)
+            return None
+        return _rotation_turn(user, raw_message, normalized, start_time, message_id,
+                              text=f"nipande {crops[1] if len(crops) > 1 else 'nini'} baada ya {crops[0]}")
     if pend.get('module') == 'soil':
         crop = Crop.objects.filter(id=pend.get('crop_id')).first() if pend.get('crop_id') else detect_crop(normalized)
         if adv_soil.identify(normalized, {}) is None:

@@ -1,0 +1,43 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}Mzunguko wa Mazao{% endblock %}
+{% block page_title %}🔄 Mzunguko wa Mazao (MHD-006 R4){% endblock %}
+{% block content %}
+<style>.rx-msg{white-space:pre-wrap;font-size:13.5px;line-height:1.55;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px}</style>
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><div class="card-title">Jaribu: bot ingemjibu nini mkulima?</div></div>
+  <form method="get" class="search-bar">
+    <input name="q" class="form-control" value="{{ q }}" placeholder="mf. 'baada ya mahindi nipande nini?' au 'nipande mpunga baada ya mahindi?'">
+    <input name="place" class="form-control" value="{{ place }}" placeholder="Eneo (hiari), mf. Kondoa" style="max-width:200px;">
+    <button class="btn btn-primary" type="submit">🔎 Jaribu</button>
+  </form>
+  {% if preview %}
+  <div class="grid-2">
+    <div><div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Jibu kwa mkulima (WhatsApp)</div><div class="rx-msg">{{ preview }}</div></div>
+    <div>{% with t=trace %}{% include 'admin_panel/_rotation_trace.html' %}{% endwith %}</div>
+  </div>
+  {% endif %}
+</div>
+<div class="grid-2" style="margin-bottom:20px;">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Ulinganifu (zao la awali → linalofuata)</div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Awali</th><th>Linalofuata</th><th>Score</th></tr></thead>
+      <tbody>{% for c in comps %}<tr><td>{{ c.previous_name }}</td><td>{{ c.next_name }}</td><td>{{ c.score }}/100 · {{ c.rating }}</td></tr>{% empty %}<tr><td colspan="3">–</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">Familia za mazao</div></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Zao</th><th>Kundi</th><th>Familia</th></tr></thead>
+      <tbody>{% for f in families %}<tr><td>{{ f.crop_name }}</td><td>{{ f.rotation_group }}</td><td>{{ f.botanical_family }}</td></tr>{% empty %}<tr><td colspan="3">–</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><div class="card-title">Mifuatano ya kanda na kanuni</div></div>
+  <ul style="font-size:13px;line-height:1.8;">
+    {% for s in seqs %}<li><strong>{{ s.system }}</strong> — <code>{{ s.ext_aez_id }}</code> → {% if s.aez %}{{ s.aez.name_sw }}{% else %}<span class="badge badge-red">kanda haijaunganishwa</span>{% endif %}</li>{% endfor %}
+    {% for r in rules %}<li><code>{{ r.source_id }}</code> ({{ r.kind }}) — {{ r.condition }}: {{ r.farmer_message_sw }}</li>{% endfor %}
+  </ul>
+</div>
+{% endblock %}
