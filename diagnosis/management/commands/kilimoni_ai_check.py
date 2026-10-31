@@ -72,7 +72,17 @@ class Command(BaseCommand):
             pct = got[0] if got else None
             mark(pct is not None and abs(pct - expect) <= 15, f'"{reply}" → {pct}% (tarajio: ~{expect}%)')
 
-        self.stdout.write(self.style.MIGRATE_HEADING('\n4. Muhtasari (na ukaguzi wake)'))
+        self.stdout.write(self.style.MIGRATE_HEADING('\n4. Kuchagua moduli (AI router)'))
+        from advisory.profile import route
+        for text, expect in [('mwaka jana nililima mahindi, msimu ujao niweke nini shambani', 'rotation'),
+                             ('ardhi yangu ni nyekundu na ngumu, mahindi yatastawi?', 'soil'),
+                             ('wiki hii mvua imenyesha mara tatu, niingie shambani nipande?', 'planting'),
+                             ('nimeambiwa nitafute aina inayowahi kukomaa, ipi bora kwa kwetu', 'seed'),
+                             ('bei ya mbolea ya DAP ni ngapi siku hizi', None)]:
+            got = route(text)
+            mark(got == expect, f'"{text}" → {got} (tarajio: {expect})')
+
+        self.stdout.write(self.style.MIGRATE_HEADING('\n5. Muhtasari (na ukaguzi wake)'))
         facts = {'zao': 'Mahindi', 'tatizo': 'Funza jeshi vamizi', 'tatizo_en': 'Fall Armyworm',
                  'aina': 'mdudu', 'kiwango_cha_uhakika': 'juu sana',
                  'dalili_alizotaja_mkulima': 'majani yametobolewa',

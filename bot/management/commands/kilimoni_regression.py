@@ -239,6 +239,17 @@ SCENARIOS = [
         ],
     },
     {
+        'name': 'K1 — Kuunganisha: bot inakumbuka udongo na eneo, na ushauri unaviunganisha',
+        'turns': ['udongo wangu ni mwekundu', 'niko changaa', 'mbegu gani ya mahindi nipande?',
+                  'udongo wangu unafaa mahindi?'],
+        'checks': [
+            ('Inakumbuka eneo bila kuuliza swali jingine', lambda r, t: 'Nimekumbuka eneo' in r[1]),
+            ('Mbegu inazingatia kanda NA udongo wa mkulima', lambda r, t: '1. *SC 403*' in r[2] and 'Udongo wako' in r[2]),
+            ('Udongo uliokumbukwa unatumika (haulizwi tena)', lambda r, t: 'uliouniambia awali' in r[3]
+             and '62/100' in r[3]),
+        ],
+    },
+    {
         'name': 'T7 — Bei ya soko inaonya kwamba si bei ya leo',
         'turns': ['bei ya mahindi Dodoma ikoje'],
         'checks': [

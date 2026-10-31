@@ -22,6 +22,9 @@ class User(models.Model):
     # ili ushauri wa mbegu/msimu/udongo usimuulize mkulima eneo kila mara.
     ward = models.CharField(max_length=100, blank=True)
     aez_code = models.CharField(max_length=20, blank=True)
+    # Udongo wa shamba (MHD-004 soil_id) — ukishatajwa, ushauri wa mbegu,
+    # udongo na mzunguko unautumia bila kumuuliza mkulima tena.
+    soil_code = models.CharField(max_length=40, blank=True)
     active_status = models.CharField(max_length=20, choices=STATUS, default='active')
     message_count = models.PositiveIntegerField(default=0)
     session_state = models.JSONField(default=dict, blank=True)

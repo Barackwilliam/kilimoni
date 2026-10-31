@@ -12,7 +12,7 @@
   </form>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>#</th><th>Nambari ya Simu</th><th>Mkoa</th><th>Wilaya</th><th>Maswali</th><th>Mara ya Mwisho</th><th>Hali</th></tr></thead>
+      <thead><tr><th>#</th><th>Nambari ya Simu</th><th>Mkoa</th><th>Wilaya</th><th>Kata · Kanda</th><th>Udongo</th><th>Maswali</th><th>Mara ya Mwisho</th><th>Hali</th></tr></thead>
       <tbody>
         {% for u in users %}
         <tr>
@@ -20,6 +20,8 @@
           <td><span class="phone-num">{{ u.phone_number }}</span></td>
           <td>{{ u.region|default:"–" }}</td>
           <td>{{ u.district|default:"–" }}</td>
+          <td>{{ u.ward|default:"–" }}{% if u.aez_code %} <code style="font-size:11px;">{{ u.aez_code }}</code>{% endif %}</td>
+          <td>{% if u.soil_code %}<code style="font-size:11px;">{{ u.soil_code }}</code>{% else %}–{% endif %}</td>
           <td><span class="badge badge-blue">{{ u.message_count }}</span></td>
           <td style="font-size:12px;color:#6b7280;">{{ u.last_seen_at|date:"d M Y H:i" }}</td>
           <td>
@@ -31,7 +33,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" style="text-align:center;padding:40px;color:#9ca3af;">Hakuna wakulima.</td></tr>
+        <tr><td colspan="9" style="text-align:center;padding:40px;color:#9ca3af;">Hakuna wakulima.</td></tr>
         {% endfor %}
       </tbody>
     </table>

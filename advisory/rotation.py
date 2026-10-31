@@ -133,10 +133,10 @@ def _break_rules(prev, nxt):
     return out
 
 
-def _soil_rules(text, state):
+def _soil_rules(text, state, profile_soil=None):
     from . import soil as soil_mod
     words = set(_norm(text).split())
-    s = soil_mod.identify(text, state) if 'udongo' in words else None
+    s = (soil_mod.identify(text, state) if 'udongo' in words else None) or profile_soil
     # "kichanga" = sandy (Soil_Local_Texture_Registry: Sandy soil → Udongo wa kichanga)
     sandy = 'kichanga' in words or (s is not None and 'kichanga' in s.name_sw.lower())
     out = []
@@ -152,7 +152,7 @@ def _soil_rules(text, state):
     return out
 
 
-def advise(text, loc=None, state=None):
+def advise(text, loc=None, state=None, soil=None):
     prev, nxt = parse(text)
     trace = {'mode': 'rotation_advisor', 'previous': prev, 'next': nxt}
     used, lines = [], []
@@ -248,13 +248,13 @@ def advise(text, loc=None, state=None):
             lines += ['', '*Epuka kufuatisha:*'] + [f"• {c.next_name} ({c.score}/100)" for c in avoid]
             used += [c.source_id for c in avoid]
         if pf and pf.note:
-            lines += ['', f"ℹ️ {pf.crop_name} ni zao la kundi la *{pf.rotation_group}* "
-                          f"({_clean(pf.nutrient_role).lower()}). {_clean(pf.note)}"]
+            lines += ['', f"ℹ️ {pf.crop_name} ni zao la kundi la *{_clean(pf.rotation_group).rstrip('.')}* "
+                          f"({_clean(pf.nutrient_role).rstrip('.').lower()}). {_clean(pf.note)}"]
         if not loc or not loc.get('aez_id'):
             lines += ['', "📍 Ukitaja wilaya au kata yako, nitakuonyesha mfuatano unaopendekezwa kwa kanda yako."]
         decision = decision or ('avoid_only' if avoid else 'no_assessment')
 
-    for r in _soil_rules(text, state):
+    for r in _soil_rules(text, state, soil):
         lines += ['', f"🟤 {_clean(r.farmer_message_sw)}"]
         used.append(r.source_id)
 
