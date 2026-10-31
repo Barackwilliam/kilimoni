@@ -155,16 +155,16 @@ def rx_preview(request):
         'page': 'rx_home', 'reports': reports, 'error': error, 'skipped': skipped,
         'files': [os.path.basename(p) for p in saved], 'can_save': can_save,
         'new_crops': run.crops.missing if run else [], 'analysis': run.analysis if run else None,
-        'crop_groups': Crop.CROP_GROUPS,
+        'crop_groups': Crop.CROP_GROUPS, 'schema_proposals': run.schema if run else [],
     })
 
 
 class _Run:
-    def __init__(self, reports, crops, analysis=None):
-        self.reports, self.crops, self.analysis = reports, crops, analysis
+    def __init__(self, reports, crops, analysis=None, schema=()):
+        self.reports, self.crops, self.analysis, self.schema = reports, crops, analysis, list(schema)
 
 
-def _run_imports(files, dry_run, crop_choices=None):
+def _run_imports(files, dry_run, crop_choices=None, schema_choices=None):
     """
     Gawa faili kwa aina: MHD-007 → uchunguzi; MHD-001…006 → ushauri.
 
@@ -182,7 +182,11 @@ def _run_imports(files, dry_run, crop_choices=None):
     rx_files = [f for f in files if 'MHD-007' in os.path.basename(f).upper()]
     adv_files = [f for f in files if adv_importer.workbook_code(f)]
     unknown = [os.path.basename(f) for f in files if f not in rx_files and f not in adv_files]
+    from datasets import schema as ds_schema
     intake = crop_intake.CropIntake(create=True, approved=None if dry_run else (crop_choices or {}))
+    # Majina yaliyobadilishwa: hakiki inapendekeza (na kutumia yenye uhakika); kuhifadhi kunatumia yaliyothibitishwa
+    proposals = ds_schema.propose(files) if dry_run else list(schema_choices or [])
+    smap = ds_schema.build_map(proposals, only_default=dry_run)
 
     def run_all():
         reports = []
@@ -196,9 +200,12 @@ def _run_imports(files, dry_run, crop_choices=None):
             reports.append(('Faili zisizo na moduli bado', rep))
         return reports
 
-    with crop_intake.use(intake):
+    with crop_intake.use(intake), ds_schema.use(smap):
         if not dry_run:
-            return _Run(run_all(), intake)
+            reports = run_all()
+            if proposals and not any(r.rolled_back for _, r in reports):
+                ds_schema.save(proposals)
+            return _Run(reports, intake, schema=proposals)
         result = {}
         try:
             with transaction.atomic():
@@ -206,13 +213,28 @@ def _run_imports(files, dry_run, crop_choices=None):
                 for _, r in reports:
                     r.dry_run = True
                 result['run'] = _Run(reports, intake, ds_analysis.analyse(
-                    files, [r for _, r in reports], supported_codes=adv_importer.SUPPORTED_CODES))
+                    files, [r for _, r in reports], supported_codes=adv_importer.SUPPORTED_CODES), proposals)
                 raise _Rollback()
         except _Rollback:
             pass
         from advisory.location import clear_cache
         clear_cache()
         return result['run']
+
+
+def _schema_choices(post):
+    """Ramani za majina zilizothibitishwa kwenye hakiki."""
+    out = []
+    for i in range(int(post.get('schema_total') or 0)):
+        if not post.get(f'schema_add_{i}'):
+            continue
+        kind = post.get(f'schema_kind_{i}')
+        expected, actual = (post.get(f'schema_expected_{i}') or '').strip(), (post.get(f'schema_actual_{i}') or '').strip()
+        if kind in ('sheet', 'column') and expected and actual:
+            out.append({'kind': kind, 'sheet': (post.get(f'schema_sheet_{i}') or '').strip(), 'expected': expected,
+                        'actual': actual, 'method': post.get(f'schema_method_{i}') or 'mkono',
+                        'code': post.get(f'schema_code_{i}') or ''})
+    return out
 
 
 def _crop_choices(post):
@@ -239,10 +261,14 @@ def rx_confirm(request):
         messages.error(request, 'Hakuna faili lililosubiri kuhifadhiwa. Pakia upya.')
         return redirect('rx_home')
     try:
-        run = _run_imports(files, dry_run=False, crop_choices=_crop_choices(request.POST))
+        run = _run_imports(files, dry_run=False, crop_choices=_crop_choices(request.POST),
+                           schema_choices=_schema_choices(request.POST))
     finally:
         _cleanup_upload(request)
     reports = run.reports
+    if run.schema and not any(r.rolled_back for _, r in reports):
+        messages.success(request, f"Ramani za majina {len(run.schema)} zimehifadhiwa — upakiaji ujao wenye majina "
+                                  "hayo utasomwa moja kwa moja.")
     made = [i for i in run.crops.missing if i['created']]
     if made:
         messages.success(request, "Mazao mapya yameongezwa: " + ', '.join(

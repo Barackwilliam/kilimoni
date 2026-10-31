@@ -88,6 +88,11 @@ def _read_sheet(ws):
     if not rows:
         return []
     header = [str(h).strip() if h is not None else '' for h in rows[0]]
+    # columns zilizobadilishwa jina na mteja → majina ya injini (datasets.schema)
+    from datasets import schema
+    renames = schema.current().columns_for(ws)
+    if renames:
+        header = [renames.get(h, h) for h in header]
     out = []
     for r in rows[1:]:
         rec = {h: _clean(v) for h, v in zip(header, r) if h}
@@ -100,6 +105,13 @@ def _find_sheet(wb, name):
     """Tafuta sheet kwa jina bila namba ya mbele: 'Pest_Master' → '01_Pest_Master'."""
     for ws in wb.worksheets:
         if re.sub(r'^\d+_', '', ws.title).lower() == name.lower():
+            return ws
+    # sheet iliyobadilishwa jina na mteja (ramani iliyothibitishwa / pendekezo la hakiki)
+    from datasets import schema
+    actual = schema.current().sheet_for(name)
+    for ws in wb.worksheets if actual else ():
+        if ws.title == actual:
+            ws._kilimoni_expected = name
             return ws
     return None
 

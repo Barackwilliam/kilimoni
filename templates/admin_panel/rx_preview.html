@@ -58,6 +58,38 @@
   <div style="display:flex;gap:10px;margin-top:20px;align-items:flex-start;flex-wrap:wrap;">
     {% if can_save %}
     <form method="post" action="{% url 'rx_confirm' %}" style="flex:1 1 100%;">{% csrf_token %}
+      {% if schema_proposals %}
+      <div class="card" style="margin:0 0 16px;border:1px solid #bfdbfe;background:#eff6ff;">
+        <div class="card-header"><div class="card-title">🔀 Majina yaliyobadilishwa ({{ schema_proposals|length }})</div></div>
+        <p style="font-size:13px;color:#4b5563;margin:-4px 0 12px;">
+          Sheets au columns hizi hazina majina ambayo injini inayatarajia, lakini zinafanana na zinazokosekana.
+          Zilizowekwa tiki zimetumika kwenye hakiki hii. Ukihifadhi, ramani zilizowekwa tiki zitakumbukwa kwa upakiaji ujao.
+          Kagua hasa zile za AI na zenye ukaribu mdogo.
+        </p>
+        <input type="hidden" name="schema_total" value="{{ schema_proposals|length }}">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tumia</th><th>Workbook</th><th>Aina</th><th>Kwenye dataset</th><th>Injini inatarajia</th><th>Jinsi ilivyopatikana</th></tr></thead>
+          <tbody>
+          {% for p in schema_proposals %}
+          <tr>
+            <td><input type="checkbox" name="schema_add_{{ forloop.counter0 }}" value="1" {% if p.default %}checked{% endif %}>
+              <input type="hidden" name="schema_kind_{{ forloop.counter0 }}" value="{{ p.kind }}">
+              <input type="hidden" name="schema_sheet_{{ forloop.counter0 }}" value="{{ p.sheet }}">
+              <input type="hidden" name="schema_expected_{{ forloop.counter0 }}" value="{{ p.expected }}">
+              <input type="hidden" name="schema_actual_{{ forloop.counter0 }}" value="{{ p.actual }}">
+              <input type="hidden" name="schema_method_{{ forloop.counter0 }}" value="{{ p.method }}">
+              <input type="hidden" name="schema_code_{{ forloop.counter0 }}" value="{{ p.code }}"></td>
+            <td><strong>{{ p.code }}</strong></td>
+            <td>{% if p.kind == 'sheet' %}Sheet{% else %}Column <span style="font-size:11px;color:#6b7280;">({{ p.sheet }})</span>{% endif %}</td>
+            <td><code>{{ p.actual }}</code></td>
+            <td><code>{{ p.expected }}</code></td>
+            <td>{% if p.method == 'ai' %}<span class="badge badge-blue">AI (maana)</span>{% else %}<span class="badge {% if p.pct >= 70 %}badge-green{% else %}badge-yellow{% endif %}">Jina linafanana {{ p.pct }}%</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+      {% endif %}
       {% if new_crops %}
       <div class="card" style="margin:0 0 16px;border:1px solid #fde68a;background:#fffbeb;">
         <div class="card-header"><div class="card-title">🌾 Mazao mapya ({{ new_crops|length }})</div></div>

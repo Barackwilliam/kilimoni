@@ -191,3 +191,76 @@ class AnalysisTests(TestCase):
         used = {s['name'] for s in book['sheets'] if s['used']}
         self.assertIn('Soil_Master_Registry', used)
         self.assertFalse(any('hakuna injini' in i['text'] for i in book['issues']))
+
+
+class RenamedSchemaTests(TestCase):
+    """Dataset kamili yenye sheet/column zilizobadilishwa jina inaeleweka, na ramani inakumbukwa."""
+
+    def setUp(self):
+        Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize', crop_group='cereals')
+        AuthUser.objects.create_user('kilimoni', password='x', is_staff=True)
+        self.client.login(username='kilimoni', password='x')
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        master = next(p for p in SOIL if 'Soil_Intelligence_Master' in p)
+        wb = openpyxl.load_workbook(master)
+        wb['Soil_Master_Registry'].title = 'Soil_Master_Registry_v2'
+        for c in wb['Soil_Master_Registry_v2'][1]:
+            if c.value == 'jina_la_kiswahili':
+                c.value = 'jina_kiswahili'
+        self.renamed = os.path.join(self.tmp, os.path.basename(master))
+        wb.save(self.renamed)
+
+    def _preview(self):
+        return self.client.post(reverse('rx_preview'), {'files': [_upload(self.renamed)]})
+
+    def test_proposals_found_and_applied_in_preview(self):
+        from .schema import propose
+        props = {(p['kind'], p['actual']): p for p in propose([self.renamed])}
+        self.assertEqual(props[('sheet', 'Soil_Master_Registry_v2')]['expected'], 'Soil_Master_Registry')
+        self.assertEqual(props[('column', 'jina_kiswahili')]['expected'], 'jina_la_kiswahili')
+        r = self._preview()
+        self.assertContains(r, 'Majina yaliyobadilishwa (2)')
+        counts = dict(r.context['reports'][0][1].counts)
+        self.assertEqual(counts['Aina za udongo']['created'], 4, counts)   # sheet ilisomwa kupitia ramani
+
+    def test_confirm_saves_aliases_and_next_upload_needs_no_mapping(self):
+        from advisory.models import SoilType
+        from .models import SchemaAlias
+        r = self._preview()
+        props = r.context['schema_proposals']
+        data = {'schema_total': str(len(props))}
+        for i, p in enumerate(props):
+            data.update({f'schema_add_{i}': '1', f'schema_kind_{i}': p['kind'], f'schema_sheet_{i}': p['sheet'],
+                         f'schema_expected_{i}': p['expected'], f'schema_actual_{i}': p['actual']})
+        r = self.client.post(reverse('rx_confirm'), data, follow=True)
+        self.assertContains(r, 'Ramani za majina 2 zimehifadhiwa')
+        self.assertEqual(SchemaAlias.objects.count(), 2)
+        wrb = SoilType.objects.filter(kind='wrb').first()
+        self.assertIsNotNone(wrb)
+        self.assertNotEqual(wrb.name_sw, wrb.source_id)              # column iliyobadilishwa ilisomwa
+        r = self._preview()
+        self.assertEqual(r.context['schema_proposals'], [])           # inakumbukwa
+        self.assertContains(r, 'Hifadhi data hii')
+
+    def test_ai_matches_column_name_with_different_wording(self):
+        from unittest import mock
+        from diagnosis import ai_layer
+        from .schema import propose
+        wb = openpyxl.load_workbook(self.renamed)
+        for c in wb['Soil_Master_Registry_v2'][1]:
+            if c.value == 'jina_kiswahili':
+                c.value = 'local_label'
+        wb.save(self.renamed)
+        calls = []
+
+        def fake_match(expected_name, examples, options, state=None):
+            calls.append((expected_name, set(options)))
+            return 'local_label' if expected_name == 'jina_la_kiswahili' and 'local_label' in options else None
+        with mock.patch.object(ai_layer, 'available', return_value=True), \
+                mock.patch.object(ai_layer, 'match_column', side_effect=fake_match):
+            props = propose([self.renamed])
+        hit = [p for p in props if p['actual'] == 'local_label']
+        self.assertEqual(hit[0]['method'], 'ai')
+        self.assertEqual(hit[0]['expected'], 'jina_la_kiswahili')
+        self.assertTrue(calls and all('local_label' in opts for _, opts in calls[:1]))

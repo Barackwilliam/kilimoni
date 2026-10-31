@@ -274,6 +274,33 @@ def match_option(text, options, state=None, step='option'):
     return code if ok else None
 
 
+SCHEMA_RULES = (
+    "Wewe ni msaidizi wa data. Unalinganisha jina la column inayotarajiwa kwenye dataset ya kilimo "
+    "na columns zilizopo kwenye faili jipya. Chagua tu kutoka orodha uliyopewa; usibuni. "
+    "Kama hakuna yenye maana ileile, jibu null. Jibu JSON pekee."
+)
+
+
+def match_column(expected, expected_examples, options, state=None):
+    """
+    Column iliyobadilishwa jina: chagua MOJA kati ya columns mpya {jina: mifano ya thamani},
+    yenye maana sawa na `expected`, au None. Jibu lisilo kwenye orodha linakataliwa.
+    """
+    if not available() or not options:
+        return None
+    listing = '\n'.join(f"- {name}: {sample}" for name, sample in options.items())
+    user = (
+        f"Column inayotarajiwa: \"{expected}\" (mifano ya zamani: {expected_examples or 'haipo'})\n\n"
+        f"COLUMNS ZILIZOPO:\n{listing}\n\n"
+        'Ni ipi ina maana ileile? JSON: {"column": null}'
+    )
+    out = _chat(SCHEMA_RULES, user, max_tokens=400)
+    col = (out or {}).get('column')
+    ok = col in options
+    _log(state, 'schema', expected, col, ok or col is None)
+    return col if ok else None
+
+
 # ─────────────────────────── 5. Muhtasari wa kibinadamu ───────────────────────────
 
 SUMMARY_MAX_WORDS = 60

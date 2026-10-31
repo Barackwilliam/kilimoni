@@ -64,9 +64,11 @@ def _rows(ws):
 
 
 def _header(ws):
+    from . import schema
+    renames = schema.current().columns_for(ws)
     for r in ws.iter_rows(values_only=True):
         if any(c not in (None, '') for c in r):
-            return [str(h).strip() for h in r if h not in (None, '')]
+            return [renames.get(str(h).strip(), str(h).strip()) for h in r if h not in (None, '')]
     return []
 
 
@@ -186,15 +188,20 @@ def analyse_workbook(path, used_sheets=frozenset(), supported=True):
                                            "iliyobadilishwa jina, irudishe jina lake la awali.", ws.title))
 
         # 2. ramani ya fields ya workbook
-        expected = fmap.get(_norm_sheet(ws.title), [])
-        have = {h.lower() for h in header}
+        from . import schema
+        expected = fmap.get(_norm_sheet(ws.title)) or fmap.get(schema.current().expected_sheet(ws.title), [])
+        renamed = schema.current().columns_for(ws)          # jina jipya → jina la injini
+        have = {h.lower() for h in header} | {a.lower() for a in renamed}
         missing = [f for f, req in expected if req and f.lower() not in have]
         if missing:
             issues.append(_issue('high', f"Columns zinazohitajika (kwa ramani ya workbook) hazipo: {', '.join(missing[:6])}"
                                          f"{'…' if len(missing) > 6 else ''}", ws.title))
         for f, req in expected:
             if req and f.lower() in have:
-                col = next(h for h in header if h.lower() == f.lower())
+                f = renamed.get(f, f)
+                col = next((h for h in header if h.lower() == f.lower()), None)
+                if col is None:
+                    continue
                 empty = [r.get(id_col) or '?' for r in rows if r.get(col) in (None, '')]
                 if empty:
                     issues.append(_issue('medium', f"'{col}' (inahitajika) iko tupu kwenye rows {len(empty)}", ws.title, empty))
