@@ -34,7 +34,7 @@
         <div style="font-size:34px;">📂</div>
         <div style="font-weight:600;margin-top:6px;">Bofya au buruta faili hapa</div>
         <div style="font-size:12px;color:#6b7280;margin-top:4px;">
-          MHD-001 (maeneo) na MHD-007A–F (uchunguzi) · .xlsx · unaweza kuchagua kadhaa kwa pamoja · hadi MB {{ max_mb }} kila moja
+          Workbook yoyote ya MHD (.xlsx) — sample au kamili, za zamani au aina mpya · unaweza kuchagua nyingi kwa pamoja · hadi MB {{ max_mb }} kila moja
         </div>
         <div class="rx-files" id="rxFiles"></div>
       </label>
@@ -51,7 +51,10 @@
   <div class="card">
     <div class="card-header"><div class="card-title">Jinsi inavyofanya kazi</div></div>
     <ol class="rx-steps">
-      <li>Jina la faili lazima liwe na msimbo wa workbook, mf. <code>MHD-007A_…xlsx</code>.</li>
+      <li>Jina la faili liwe na msimbo wa workbook, mf. <code>MHD-007A_…xlsx</code>. Workbook za MHD-001, 003A, 004, 006 na 007A–F zinaingia kwenye injini; za aina nyingine zinahifadhiwa kwenye <a href="{% url 'rx_library' %}">Maktaba ya Dataset</a>.</li>
+      <li>Hakiki inachambua kila workbook: columns zinazohitajika, viungo vilivyokatika, Kiingereza, nakala, na mazao gani yana data ya moduli zipi.</li>
+      <li>Zao jipya (mf. maharage) linaonyeshwa kwenye hakiki; ukilithibitisha linaongezwa kwenye Mazao na bot inaanza kulitambua.</li>
+      <li>Sheet au column ikibadilishwa jina, mfumo unapendekeza inalingana na ipi; ukithibitisha, inakumbukwa kwa upakiaji ujao.</li>
       <li>Rekodi zinatambuliwa kwa ID zake (PST001, DR-MZ-0001…). ID iliyopo inasasishwa, mpya inaongezwa — hakuna kinachojirudia.</li>
       <li>Workbook usiyoipakia haiguswi; data yake iliyopo inabaki.</li>
       <li>Makosa yakizidi 2% ya rows, <strong>hakuna kinachohifadhiwa</strong> (rollback ya batch nzima).</li>

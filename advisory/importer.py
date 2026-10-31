@@ -52,11 +52,20 @@ def _variety_key(name):
 
 
 def _crop(name):
-    from crops.models import Crop
-    if not name:
-        return None
-    return (Crop.objects.filter(crop_name_sw__iexact=name).first()
-            or Crop.objects.filter(crop_name_en__iexact=name).first())
+    """Zao kwa jina (sw/en). Zao lisilopo linashughulikiwa na datasets.crops (hakiki → uthibitisho)."""
+    from datasets import crops as crop_intake
+    return crop_intake.resolve(name, _CURRENT_SOURCE[0])
+
+
+_CURRENT_SOURCE = ['']
+
+
+def _sheet_names(wb):
+    """Majina ya sheets + majina ya injini kwa sheets zilizobadilishwa jina (datasets.schema)."""
+    from datasets import schema
+    smap = schema.current()
+    names = {ws.title for ws in wb.worksheets}
+    return names | {smap.sheet_titles[k] for k, actual in smap.sheets.items() if actual in names}
 
 
 def workbook_code(name):
@@ -82,6 +91,8 @@ class _Importer:
             self.r.warnings.append(f"{code}: sheet '{sheet_name}' haipo — imerukwa")
             return
         source = f"{code}/{ws.title}"
+        _CURRENT_SOURCE[0] = source
+        self.r.sheets_used.add((code, ws.title))
         for row in _read_sheet(ws):
             sid = row.get(id_col)
             if not sid:
@@ -97,6 +108,8 @@ class _Importer:
 
     @staticmethod
     def upsert(model, sid, source, row, **fields):
+        from datasets.crops import check_crop_conflict
+        check_crop_conflict(model, sid, fields.get('crop'))
         raw = {k: v for k, v in row.items() if v is not None}
         obj, created = model.objects.update_or_create(
             source_id=sid, defaults={'source_file': source, 'raw': raw,
@@ -181,7 +194,7 @@ class _Importer:
 
     def import_004(self, wb):
         code = 'MHD-004'
-        names = {ws.title for ws in wb.worksheets}
+        names = _sheet_names(wb)
 
         def soil_ref(sid, where):
             soil = SoilType.objects.filter(source_id=sid).first() if sid else None
@@ -291,7 +304,7 @@ class _Importer:
 
     def import_006(self, wb):
         code = 'MHD-006'
-        names = {ws.title for ws in wb.worksheets}
+        names = _sheet_names(wb)
 
         if 'National_Crop_Calendar_Master' in names:
             def zone(sid, row, source):
@@ -508,7 +521,7 @@ class _Importer:
 
     def import_003a(self, wb):
         code = 'MHD-003A'
-        names = {ws.title for ws in wb.worksheets}
+        names = _sheet_names(wb)
 
         if 'Sajili_Aina_Mbegu_Mahindi' in names:
             def variety(sid, row, source):
@@ -602,13 +615,13 @@ class _Importer:
             self.rows(wb, code, 'Confidence_Engine', 'Viwango vya uhakika', 'confidence_id', band)
             # QA: variety zilizotajwa kwenye kanuni lakini hazina sifa za kilimo (Release 2)
             known = {_variety_key(a.name) for a in VarietyAgronomy.objects.all()}
-            for r in _read_sheet(wb['AI_Decision_Engine']) if 'AI_Decision_Engine' in names else []:
+            for r in _read_sheet(_find_sheet(wb, 'AI_Decision_Engine')) if 'AI_Decision_Engine' in names else []:
                 for i in (1, 2, 3):
                     v = r.get(f'variety_kipaumbele_{i}')
                     if v and _looks_like_variety(v) and _variety_key(v) not in known:
                         self.r.warnings.append(f"{code} {r.get('rule_id')}: '{v}' haina sifa za kilimo "
                                                "(Release 2) — haitapendekezwa")
-            for r in _read_sheet(wb['Farmer_Intent_Mapping']) if 'Farmer_Intent_Mapping' in names else []:
+            for r in _read_sheet(_find_sheet(wb, 'Farmer_Intent_Mapping')) if 'Farmer_Intent_Mapping' in names else []:
                 for v in _list(r.get('variety_au_hatua_inayopendekezwa')):
                     if _looks_like_variety(v) and _variety_key(v) not in known:
                         self.r.warnings.append(f"{code} {r.get('intent_id')}: '{v}' haina sifa za kilimo "
@@ -620,12 +633,14 @@ def _release_order(wb):
     Workbooks zenye msimbo mmoja zina releases: MHD-003A sajili → agronomy →
     uamuzi; MHD-006 kalenda → msimu → planting engine → mzunguko.
     """
-    names = {ws.title for ws in wb.worksheets}
+    from datasets import schema
+    smap = schema.current()
+    names = {ws.title.lower() for ws in wb.worksheets} | {smap.expected_sheet(ws.title) for ws in wb.worksheets}
     for i, sheet in enumerate(('Sajili_Aina_Mbegu_Mahindi', 'Agronomy_Profile_Mahindi', 'AI_Decision_Engine',
                                'Soil_Master_Registry', 'Soil_Property_Profile', 'Soil_Crop_Suitability_Master',
                                'National_Crop_Calendar_Master', 'AEZ_Seasonal_Master',
                                'Planting_Decision_Engine', 'Crop_Rotation_Family_Master'), 1):
-        if sheet in names:
+        if sheet.lower() in names:
             return i
     return 99
 

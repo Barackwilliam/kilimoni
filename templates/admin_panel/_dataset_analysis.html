@@ -1,0 +1,97 @@
+{# Ripoti ya uchambuzi wa dataset — datasets/analysis.py #}
+<h3 style="margin:26px 0 6px;">🧪 Uchambuzi wa dataset</h3>
+<p style="font-size:13px;color:#4b5563;margin:0 0 12px;">
+  Kila workbook imekaguliwa dhidi ya ramani yake ya fields (CMS_Field_Map), orodha zake za thamani
+  (Validation_Lists), viungo kati ya dataset, na lugha ya maandishi yanayomfikia mkulima.
+  <strong>Muhimu</strong> = data haitatumika ipasavyo hadi irekebishwe; <strong>Rekebisha</strong> = itatumika, lakini kuna kasoro;
+  <strong>Taarifa</strong> = kwa kujua tu.
+</p>
+{% with s=analysis.summary %}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">
+  <div class="card" style="margin:0;padding:12px;"><div style="font-size:12px;color:#6b7280;">Workbooks</div><div style="font-size:22px;font-weight:700;">{{ s.books }}</div></div>
+  <div class="card" style="margin:0;padding:12px;"><div style="font-size:12px;color:#6b7280;">Rows za data</div><div style="font-size:22px;font-weight:700;">{{ s.rows }}</div></div>
+  <div class="card" style="margin:0;padding:12px;"><div style="font-size:12px;color:#6b7280;">Ziko tayari</div><div style="font-size:22px;font-weight:700;color:#16a34a;">{{ s.ready }}</div></div>
+  <div class="card" style="margin:0;padding:12px;"><div style="font-size:12px;color:#6b7280;">Zina mapungufu muhimu</div><div style="font-size:22px;font-weight:700;color:{% if s.problems %}#dc2626{% else %}#9ca3af{% endif %};">{{ s.problems }}</div></div>
+  <div class="card" style="margin:0;padding:12px;"><div style="font-size:12px;color:#6b7280;">Bila moduli bado</div><div style="font-size:22px;font-weight:700;color:#6b7280;">{{ s.unsupported }}</div></div>
+</div>
+{% endwith %}
+
+{% if analysis.clean %}
+<details class="card" style="margin-bottom:14px;">
+  <summary style="cursor:pointer;font-weight:600;">✅ Workbooks {{ analysis.clean|length }} hazina tatizo lolote</summary>
+  <div class="table-wrap" style="margin-top:10px;"><table>
+    <thead><tr><th>Msimbo</th><th>Faili</th><th>Rows</th><th>Mazao</th></tr></thead>
+    <tbody>{% for b in analysis.clean %}
+      <tr><td><strong>{{ b.code }}</strong></td><td style="font-size:12px;word-break:break-all;">{{ b.file }}</td><td>{{ b.data_rows }}</td>
+          <td>{% for name, n in b.crops.items %}<span class="badge badge-blue">{{ name }} ({{ n }})</span> {% empty %}–{% endfor %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+
+{% for b in analysis.with_issues %}
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-header" style="flex-wrap:wrap;gap:8px;">
+    <div class="card-title">{{ b.code|default:"Bila msimbo" }} <span style="font-weight:400;font-size:12px;color:#6b7280;">{{ b.file }}</span></div>
+    <div>
+      {% if not b.supported %}<span class="badge badge-gray">{{ b.status }}</span>
+      {% elif b.counts.high %}<span class="badge badge-red">{{ b.status }}</span>
+      {% elif b.counts.medium %}<span class="badge badge-yellow">{{ b.status }}</span>
+      {% else %}<span class="badge badge-green">{{ b.status }}</span>{% endif %}
+      {% if b.counts.high %}<span class="badge badge-red">Muhimu {{ b.counts.high }}</span>{% endif %}
+      {% if b.counts.medium %}<span class="badge badge-yellow">Rekebisha {{ b.counts.medium }}</span>{% endif %}
+      {% if b.counts.info %}<span class="badge badge-gray">Taarifa {{ b.counts.info }}</span>{% endif %}
+    </div>
+  </div>
+  <div style="font-size:13px;color:#374151;margin-bottom:8px;">
+    Rows za data: <strong>{{ b.data_rows }}</strong>
+    {% if b.crops %} · Mazao: {% for name, n in b.crops.items %}<span class="badge badge-blue">{{ name }} ({{ n }})</span> {% endfor %}{% endif %}
+    {% if not b.field_map %} · <span style="color:#d97706;">Haina ramani ya fields — columns hazikukaguliwa kwa ramani</span>{% endif %}
+  </div>
+  {% if b.issues %}
+  <div class="table-wrap"><table>
+    <thead><tr><th style="width:90px;">Kiwango</th><th style="width:200px;">Sheet</th><th>Kilichoonekana</th></tr></thead>
+    <tbody>
+    {% for i in b.issues %}
+    <tr>
+      <td>{% if i.level == 'high' %}<span class="badge badge-red">{{ i.level_sw }}</span>{% elif i.level == 'medium' %}<span class="badge badge-yellow">{{ i.level_sw }}</span>{% else %}<span class="badge badge-gray">{{ i.level_sw }}</span>{% endif %}</td>
+      <td style="font-size:12px;">{{ i.sheet|default:"–" }}</td>
+      <td style="font-size:13px;">{{ i.text }}
+        {% if i.examples %}<br><span style="font-size:11.5px;color:#6b7280;">Mfano: {{ i.examples|join:" · " }}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p style="font-size:13px;color:#16a34a;">Hakuna tatizo lililoonekana.</p>
+  {% endif %}
+  <details style="margin-top:8px;font-size:13px;">
+    <summary style="cursor:pointer;color:#4b5563;">Sheets zote ({{ b.sheets|length }})</summary>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Sheet</th><th>Aina</th><th>Rows</th><th>Columns</th><th>ID</th><th>Imesomwa na injini</th></tr></thead>
+      <tbody>
+      {% for s in b.sheets %}
+      <tr><td>{{ s.name }}</td><td>{% if s.kind == 'data' %}Data{% else %}Maelezo{% endif %}</td><td>{{ s.rows }}</td><td>{{ s.columns }}</td>
+          <td><code>{{ s.id_col|default:"–" }}</code></td>
+          <td>{% if s.used %}✅{% elif s.kind == 'meta' %}–{% else %}<span style="color:#dc2626;">Hapana</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </details>
+</div>
+{% endfor %}
+
+{% if analysis.coverage.rows %}
+<div class="card" style="margin-bottom:14px;">
+  <div class="card-header"><div class="card-title">🌾 Mazao na moduli — baada ya upakiaji huu</div></div>
+  <p style="font-size:13px;color:#4b5563;margin:-4px 0 12px;">Idadi ya records kwa kila zao. "–" = bot haitaweza kushauri zao hilo kwenye moduli hiyo.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Zao</th>{% for m in analysis.coverage.modules %}<th>{{ m }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for r in analysis.coverage.rows %}
+    <tr><td><strong>{{ r.crop }}</strong></td>{% for n in r.counts %}<td>{% if n %}<span style="color:#16a34a;font-weight:600;">{{ n }}</span>{% else %}<span style="color:#9ca3af;">–</span>{% endif %}</td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}

@@ -264,6 +264,9 @@ textarea.form-control { resize:vertical; min-height:100px; }
     <a href="{% url 'rx_home' %}" class="nav-link {% if page == 'rx_home' %}active{% endif %}">
       <span class="icon">📥</span> Data ya Kanuni (MHD)
     </a>
+    <a href="{% url 'rx_library' %}" class="nav-link {% if page == 'rx_library' %}active{% endif %}">
+      <span class="icon">📚</span> Maktaba ya Dataset
+    </a>
     <a href="{% url 'rx_locations' %}" class="nav-link {% if page == 'rx_locations' %}active{% endif %}">
       <span class="icon">📍</span> Maeneo na Kanda
     </a>
@@ -327,7 +330,7 @@ textarea.form-control { resize:vertical; min-height:100px; }
   <div class="content">
     {% if messages %}
       {% for message in messages %}
-        <div class="alert alert-{% if message.tags == 'error' %}error{% else %}success{% endif %}">
+        <div class="alert alert-{% if message.tags == 'error' %}error{% elif message.tags == 'warning' %}warning{% else %}success{% endif %}">
           {{ message }}
         </div>
       {% endfor %}

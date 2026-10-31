@@ -22,6 +22,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from bot.models import Conversation
+from crops.models import Crop
 from diagnosis import models as dm
 from diagnosis.importer import import_mhd007
 from advisory import importer as adv_importer
@@ -141,38 +142,131 @@ def rx_preview(request):
         saved.append(dest)
     request.session[SESSION_KEY] = folder
 
-    reports, error = [], None
+    run, error = None, None
     if saved:
         try:
-            reports = _run_imports(saved, dry_run=True)
+            run = _run_imports(saved, dry_run=True)
         except Exception as exc:          # faili lililoharibika, n.k.
             error = f"Faili halikusomeka: {exc}"
+    reports = run.reports if run else []
     can_save = bool(reports) and not error and all(not r.rolled_back for _, r in reports) \
         and any(r.workbooks for _, r in reports)
     return render(request, 'admin_panel/rx_preview.html', {
         'page': 'rx_home', 'reports': reports, 'error': error, 'skipped': skipped,
         'files': [os.path.basename(p) for p in saved], 'can_save': can_save,
+        'new_crops': run.crops.missing if run else [], 'analysis': run.analysis if run else None,
+        'crop_groups': Crop.CROP_GROUPS, 'schema_proposals': run.schema if run else [],
     })
 
 
-def _run_imports(files, dry_run):
-    """Gawa faili kwa aina: MHD-007 → uchunguzi; MHD-001…006 → ushauri."""
+class _Run:
+    def __init__(self, reports, crops, analysis=None, schema=()):
+        self.reports, self.crops, self.analysis, self.schema = reports, crops, analysis, list(schema)
+
+
+LIBRARY_TITLE = 'Maktaba ya Dataset (bado hazina moduli ya kanuni)'
+
+
+def _run_imports(files, dry_run, crop_choices=None, schema_choices=None, user=''):
+    """
+    Gawa faili kwa aina: MHD-007 → uchunguzi; MHD-001…006 → ushauri.
+
+    Hakiki (dry_run): importers zote zinaendeshwa ndani ya transaction MOJA
+    inayorudishwa nyuma mwishoni — hivyo mazao mapya, viungo kati ya
+    workbooks, na uchambuzi vinaona data ya upakiaji mzima kama ingehifadhiwa.
+    Kuhifadhi: mazao mapya yanaundwa tu kama yamo kwenye crop_choices
+    (yaliyothibitishwa na mteja kwenye hakiki).
+    """
+    from django.db import transaction
+    from datasets import analysis as ds_analysis
+    from datasets import crops as crop_intake
+    from diagnosis.importer import ImportReport, _Rollback
+
     rx_files = [f for f in files if 'MHD-007' in os.path.basename(f).upper()]
-    adv_files = [f for f in files if adv_importer.workbook_code(f)]
+    adv_files = [f for f in files if adv_importer.workbook_code(f) in adv_importer.SUPPORTED_CODES]
     unknown = [os.path.basename(f) for f in files if f not in rx_files and f not in adv_files]
-    reports = []
-    if rx_files:
-        reports.append(('Uchunguzi wa matatizo (MHD-007)', import_mhd007(rx_files, dry_run=dry_run)))
-    if adv_files:
-        reports.append(('Ushauri wa kilimo (MHD-001…006)', adv_importer.import_files(adv_files, dry_run=dry_run)))
-    if unknown and reports:
-        reports[0][1].warnings.append(f"Hazijatambuliwa (jina halina msimbo wa MHD): {', '.join(unknown)}")
-    elif unknown:
-        from diagnosis.importer import ImportReport
-        rep = ImportReport(dry_run)
-        rep.warnings.append(f"Hazijatambuliwa (jina halina msimbo wa MHD): {', '.join(unknown)}")
-        reports.append(('Faili zisizotambuliwa', rep))
-    return reports
+    from datasets import schema as ds_schema
+    intake = crop_intake.CropIntake(create=True, approved=None if dry_run else (crop_choices or {}))
+    # Majina yaliyobadilishwa: hakiki inapendekeza (na kutumia yenye uhakika); kuhifadhi kunatumia yaliyothibitishwa
+    proposals = ds_schema.propose(files) if dry_run else list(schema_choices or [])
+    smap = ds_schema.build_map(proposals, only_default=dry_run)
+
+    def run_all():
+        reports = []
+        if rx_files:
+            reports.append(('Uchunguzi wa matatizo (MHD-007)', import_mhd007(rx_files, dry_run=False)))
+        if adv_files:
+            reports.append(('Ushauri wa kilimo (MHD-001…006)', adv_importer.import_files(adv_files, dry_run=False)))
+        if unknown:
+            from datasets import library
+            rep = ImportReport(dry_run)
+            rep.warnings.append("Workbooks hizi zitahifadhiwa kikamilifu kwenye Maktaba ya Dataset (sheets na rows "
+                                "zote) na kuchambuliwa, lakini bot haitazitumia kujibu wakulima hadi moduli yake "
+                                "ya kanuni ijengwe: " + ', '.join(unknown))
+            stored.update({os.path.basename(f): library.store(f, rep, user) for f in files
+                           if os.path.basename(f) in unknown})
+            reports.append((LIBRARY_TITLE, rep))
+        return reports
+
+    stored = {}
+
+    with crop_intake.use(intake), ds_schema.use(smap):
+        if not dry_run:
+            from datasets import library
+            reports = run_all()
+            ok = not any(r.rolled_back for _, r in reports)
+            if proposals and ok:
+                ds_schema.save(proposals)
+            analysis = ds_analysis.analyse(files, [r for _, r in reports],
+                                           supported_codes=adv_importer.SUPPORTED_CODES)
+            if ok:
+                library.record(analysis, stored, user)
+            return _Run(reports, intake, analysis, proposals)
+        result = {}
+        try:
+            with transaction.atomic():
+                reports = run_all()
+                for _, r in reports:
+                    r.dry_run = True
+                result['run'] = _Run(reports, intake, ds_analysis.analyse(
+                    files, [r for _, r in reports], supported_codes=adv_importer.SUPPORTED_CODES), proposals)
+                raise _Rollback()
+        except _Rollback:
+            pass
+        from advisory.location import clear_cache
+        clear_cache()
+        return result['run']
+
+
+def _schema_choices(post):
+    """Ramani za majina zilizothibitishwa kwenye hakiki."""
+    out = []
+    for i in range(int(post.get('schema_total') or 0)):
+        if not post.get(f'schema_add_{i}'):
+            continue
+        kind = post.get(f'schema_kind_{i}')
+        expected, actual = (post.get(f'schema_expected_{i}') or '').strip(), (post.get(f'schema_actual_{i}') or '').strip()
+        if kind in ('sheet', 'column') and expected and actual:
+            out.append({'kind': kind, 'sheet': (post.get(f'schema_sheet_{i}') or '').strip(), 'expected': expected,
+                        'actual': actual, 'method': post.get(f'schema_method_{i}') or 'mkono',
+                        'code': post.get(f'schema_code_{i}') or ''})
+    return out
+
+
+def _crop_choices(post):
+    """Mazao mapya yaliyothibitishwa kwenye hakiki: key → {'name_sw','name_en','group'}."""
+    groups = {g for g, _ in Crop.CROP_GROUPS}
+    out = {}
+    for i in range(int(post.get('crop_total') or 0)):
+        if not post.get(f'crop_add_{i}'):
+            continue
+        key = (post.get(f'crop_key_{i}') or '').strip()
+        sw = (post.get(f'crop_sw_{i}') or '').strip()
+        en = (post.get(f'crop_en_{i}') or '').strip()
+        group = post.get(f'crop_group_{i}')
+        if key and sw:
+            out[key] = {'name_sw': sw, 'name_en': en or sw, 'group': group if group in groups else 'cash_crops'}
+    return out
 
 
 @login_required
@@ -183,13 +277,30 @@ def rx_confirm(request):
         messages.error(request, 'Hakuna faili lililosubiri kuhifadhiwa. Pakia upya.')
         return redirect('rx_home')
     try:
-        reports = _run_imports(files, dry_run=False)
+        run = _run_imports(files, dry_run=False, crop_choices=_crop_choices(request.POST),
+                           schema_choices=_schema_choices(request.POST), user=request.user.get_username())
     finally:
         _cleanup_upload(request)
+    reports = run.reports
+    if run.schema and not any(r.rolled_back for _, r in reports):
+        messages.success(request, f"Ramani za majina {len(run.schema)} zimehifadhiwa — upakiaji ujao wenye majina "
+                                  "hayo utasomwa moja kwa moja.")
+    made = [i for i in run.crops.missing if i['created']]
+    if made:
+        messages.success(request, "Mazao mapya yameongezwa: " + ', '.join(
+            (run.crops.approved or {}).get(i['key'], i)['name_sw'] for i in made))
+    skipped_crops = [i['raw'] for i in run.crops.missing if not i['created']]
+    if skipped_crops:
+        messages.warning(request, "Mazao hayakuongezwa (data yake imeingia bila zao, bot haitaitumia): "
+                         + ', '.join(skipped_crops))
     for title, report in reports:
         if report.rolled_back:
             messages.error(request, f"{title}: hakuna kilichohifadhiwa — makosa yalikuwa mengi kuliko "
                                     "kiwango kinachoruhusiwa.")
+        elif title == LIBRARY_TITLE and report.workbooks:
+            rows = report.counts.get('Rows (maktaba)', {}).get('created', 0)
+            messages.success(request, f"Zimehifadhiwa kwenye Maktaba ya Dataset ({', '.join(report.workbooks)}): "
+                                      f"rows {rows}. Bot haitazitumia hadi moduli yake ya kanuni ijengwe.")
         elif report.workbooks:
             created = sum(c['created'] for c in report.counts.values())
             updated = sum(c['updated'] for c in report.counts.values())
@@ -482,4 +593,54 @@ def rx_rotation(request):
         'page': 'rx_rotation', 'q': q, 'place': place, 'preview': preview, 'trace': trace,
         'families': CropFamily.objects.all(), 'comps': RotationCompatibility.objects.order_by('previous_name', '-score'),
         'seqs': RotationSequence.objects.select_related('aez'), 'rules': RotationRule.objects.all(),
+    })
+
+
+# ─────────────────────────── Maktaba ya dataset ───────────────────────────
+
+MODULES = [
+    ('MHD-001', 'Maeneo na kanda (AEZ)', 'rx_locations'),
+    ('MHD-003A', 'Mbegu', 'rx_seeds'),
+    ('MHD-004', 'Udongo', 'rx_soil'),
+    ('MHD-006', 'Wakati wa kupanda + mzunguko wa mazao', 'rx_planting'),
+    ('MHD-007A–F', 'Uchunguzi wa matatizo (wadudu, magonjwa, dalili, tiba)', 'rx_cases'),
+]
+
+
+@login_required
+def rx_library(request):
+    """Maktaba ya dataset: kila workbook iliyopakiwa, hali yake, na ramani za majina."""
+    from datasets import library
+    from datasets.models import DatasetUpload, SchemaAlias
+    if request.method == 'POST' and request.POST.get('delete_alias'):
+        SchemaAlias.objects.filter(pk=request.POST['delete_alias']).delete()
+        messages.success(request, 'Ramani ya jina imefutwa — upakiaji ujao utapendekeza upya.')
+        return redirect('rx_library')
+    latest = library.latest_by_code()
+    return render(request, 'admin_panel/rx_library.html', {
+        'page': 'rx_library', 'latest': latest, 'modules': MODULES,
+        'stored': [u for u in latest if u.status == 'stored'],
+        'history': DatasetUpload.objects.all()[:30], 'aliases': SchemaAlias.objects.all(),
+    })
+
+
+@login_required
+def rx_library_detail(request, pk):
+    from django.core.paginator import Paginator
+    from datasets.models import DatasetRow, DatasetUpload
+    up = get_object_or_404(DatasetUpload, pk=pk)
+    sheets = list(up.stored_sheets.all())
+    current = next((s for s in sheets if str(s.pk) == request.GET.get('sheet')), None) or \
+        next((s for s in sheets if s.kind == 'data' and s.row_count), sheets[0] if sheets else None)
+    q = request.GET.get('q', '').strip()
+    page = None
+    if current:
+        rows = DatasetRow.objects.filter(sheet=current)
+        if q:
+            rows = rows.filter(Q(row_id__icontains=q) | Q(data__icontains=q))
+        page = Paginator(rows, 50).get_page(request.GET.get('p'))
+    return render(request, 'admin_panel/rx_library_detail.html', {
+        'page': 'rx_library', 'up': up, 'sheets': sheets, 'current': current, 'q': q, 'rows': page,
+        'columns': current.columns[:14] if current else [],
+        'table': [[str(r.data.get(c, ''))[:160] for c in current.columns[:14]] for r in page] if page else [],
     })
