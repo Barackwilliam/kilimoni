@@ -11,7 +11,7 @@ import os
 from django.core.management.base import BaseCommand, CommandError
 
 from advisory.importer import import_files, workbook_code
-from advisory.models import CropCalendar, SeasonProfile, SoilType, VarietyRegistry, WardLocation
+from advisory.models import CropCalendar, CropFamily, SeasonProfile, SoilType, VarietyRegistry, WardLocation
 
 # --if-empty inaangaliwa kwa KILA workbook: data ya MHD-001 ikiwepo, sample
 # ya MHD-003A bado inaingizwa kama mbegu hazipo (na kinyume chake).
@@ -20,6 +20,10 @@ HAS_DATA = {
     'MHD-003A': lambda: VarietyRegistry.objects.exists(),
     'MHD-004': lambda: SoilType.objects.exists(),
     'MHD-006': lambda: SeasonProfile.objects.exists() or CropCalendar.objects.exists(),
+}
+# MHD-006 ina releases kadhaa: mzunguko (R4) unaangaliwa peke yake
+HAS_DATA_SHEET = {
+    'Crop_Rotation': lambda: CropFamily.objects.exists(),
 }
 
 
@@ -42,7 +46,12 @@ class Command(BaseCommand):
             else:
                 raise CommandError(f"Haipo: {p}")
         if if_empty:
-            skipped = [f for f in files if HAS_DATA.get(workbook_code(f), lambda: False)()]
+            def has_data(f):
+                for key, check in HAS_DATA_SHEET.items():
+                    if key.lower() in os.path.basename(f).lower():
+                        return check()
+                return HAS_DATA.get(workbook_code(f), lambda: False)()
+            skipped = [f for f in files if has_data(f)]
             for f in skipped:
                 self.stdout.write(f"{workbook_code(f)}: data ipo tayari — sample imerukwa ({os.path.basename(f)})")
             files = [f for f in files if f not in skipped]

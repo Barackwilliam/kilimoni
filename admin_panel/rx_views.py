@@ -26,7 +26,8 @@ from diagnosis import models as dm
 from diagnosis.importer import import_mhd007
 from advisory import importer as adv_importer
 from advisory import location as adv_location
-from advisory.models import (Aez, AezAlias, ClimateRisk, CropCalendar, LocationSynonym, PlantingRule,
+from advisory.models import (CropFamily, RotationCompatibility, RotationRule, RotationSequence,
+                             Aez, AezAlias, ClimateRisk, CropCalendar, LocationSynonym, PlantingRule,
                              SeasonProfile, SeedDecisionRule, SoilConstraint, SoilRanking, SoilSuitability,
                              SoilType, VarietyAgronomy, VarietyRegistry, WardLocation)
 from diagnosis.models import DEFAULT_SETTINGS, EngineSetting, FarmerTerm
@@ -57,6 +58,8 @@ DATA_COUNTS = [
     ('Kanuni za kupanda (MHD-006)', PlantingRule),
     ('Aina za udongo (MHD-004)', SoilType),
     ('Ufaafu wa udongo kwa mazao (MHD-004)', SoilSuitability),
+    ('Ulinganifu wa mzunguko (MHD-006 R4)', RotationCompatibility),
+    ('Mifuatano ya mzunguko (MHD-006 R4)', RotationSequence),
 ]
 
 # Maelezo ya settings kwa lugha ya mteja + aina ya thamani inayokubalika
@@ -314,7 +317,8 @@ def rx_cases(request):
     decision = request.GET.get('decision', '')
     module = request.GET.get('module', '')
     finals = {'rules_engine': ['diagnosed', 'uncertain', 'no_rule_matched', 'crop_without_rules'],
-              'seed_advisor': SEED_FINAL, 'planting_advisor': PLANT_FINAL, 'soil_advisor': SOIL_FINAL}
+              'seed_advisor': SEED_FINAL, 'planting_advisor': PLANT_FINAL, 'soil_advisor': SOIL_FINAL,
+              'rotation_advisor': ROT_FINAL}
     q = Q()
     for mode, decisions in finals.items():
         if not module or module == mode:
@@ -332,6 +336,10 @@ def rx_cases(request):
         c.decision_sw = DECISION_SW.get(c.trace.get('decision'), c.trace.get('decision'))
         if c.trace.get('mode') == 'seed_advisor':
             c.cause_name = ', '.join(c.trace.get('recommended') or []) or c.trace.get('variety', '')
+        elif c.trace.get('mode') == 'rotation_advisor':
+            c.cause_name = ' → '.join(x for x in (c.trace.get('previous'), c.trace.get('next')) if x)
+            c.decision_sw = {'recommended': 'Imependekezwa', 'avoid': 'Epuka', 'avoid_only': 'Epuka (orodha)',
+                             'no_assessment': 'Hakuna tathmini'}.get(c.trace.get('decision'), c.decision_sw)
         elif c.trace.get('mode') == 'soil_advisor':
             c.cause_name = c.trace.get('soil_name', '') + (f" · {c.trace['crop']}" if c.trace.get('crop') else '')
             c.conf_pct = c.trace.get('score')
@@ -343,6 +351,7 @@ def rx_cases(request):
     })
 
 
+ROT_FINAL = ['recommended', 'avoid', 'avoid_only', 'no_assessment']
 SOIL_FINAL = ['suitable', 'suitable_with_conditions', 'not_suitable_without_improvement', 'no_assessment', 'soil_info']
 PLANT_FINAL = ['PANDA_SASA', 'PANDA_KWA_TAHADHARI', 'SUBIRI', 'WAIT', 'WAIT_OR_EARLY_VARIETY',
                'ALLOW_IRRIGATION_PLANTING', 'DO_NOT_PLANT', 'INFO_ONLY']
@@ -457,4 +466,20 @@ def rx_soil(request):
         'soils': SoilType.objects.prefetch_related('synonyms'),
         'suits': SoilSuitability.objects.select_related('soil', 'crop'),
         'ranks': SoilRanking.objects.select_related('crop'), 'constraints': SoilConstraint.objects.all(),
+    })
+
+
+@login_required
+def rx_rotation(request):
+    """Mzunguko wa mazao (MHD-006 R4) + kujaribu."""
+    from advisory import rotation as adv_rotation
+    q = request.GET.get('q', '').strip()
+    place = request.GET.get('place', '').strip()
+    preview, trace = None, None
+    if q:
+        preview, trace = adv_rotation.advise(q, adv_location.resolve(place) if place else None, {})
+    return render(request, 'admin_panel/rx_rotation.html', {
+        'page': 'rx_rotation', 'q': q, 'place': place, 'preview': preview, 'trace': trace,
+        'families': CropFamily.objects.all(), 'comps': RotationCompatibility.objects.order_by('previous_name', '-score'),
+        'seqs': RotationSequence.objects.select_related('aez'), 'rules': RotationRule.objects.all(),
     })

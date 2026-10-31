@@ -430,3 +430,65 @@ class SoilRanking(SourceRecord):
         ordering = ['crop', 'rank']
         verbose_name = 'Udongo bora kwa zao'
         verbose_name_plural = 'Udongo bora kwa mazao'
+
+
+# ─────────────────────────── MHD-006 R4: Mzunguko wa mazao ───────────────────────────
+
+class CropFamily(SourceRecord):
+    """Crop_Rotation_Family_Master — kundi, familia na nafasi ya zao kwenye mzunguko."""
+    crop_name = models.CharField(max_length=100)
+    category = models.CharField(max_length=60, blank=True)
+    rotation_group = models.CharField(max_length=60, blank=True)
+    botanical_family = models.CharField(max_length=60, blank=True)
+    nutrient_role = models.CharField(max_length=60, blank=True)
+    note = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Familia ya zao'
+        verbose_name_plural = 'Familia za mazao (mzunguko)'
+
+
+class RotationCompatibility(SourceRecord):
+    """Rotation_Compatibility_Master — zao la awali → zao linalofuata, score/100."""
+    previous_name = models.CharField(max_length=100)
+    next_name = models.CharField(max_length=100)
+    previous_crop = models.ForeignKey('crops.Crop', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    next_crop = models.ForeignKey('crops.Crop', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    score = models.IntegerField(null=True, blank=True)
+    rating = models.CharField(max_length=30, blank=True)
+    ai_action = models.TextField(blank=True)
+    benefit_logic = models.TextField(blank=True)
+    risk_logic = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Ulinganifu wa mzunguko'
+        verbose_name_plural = 'Ulinganifu wa mzunguko wa mazao'
+
+
+class RotationSequence(SourceRecord):
+    """Rotation_Sequence_Master — mfuatano unaopendekezwa kwa kanda."""
+    ext_aez_id = models.CharField(max_length=20, blank=True)
+    aez = models.ForeignKey(Aez, on_delete=models.SET_NULL, null=True, blank=True, related_name='rotations')
+    system = models.CharField(max_length=200)
+    seasons = models.JSONField(default=list, blank=True)
+    recommended_for = models.CharField(max_length=200, blank=True)
+    main_benefit = models.TextField(blank=True)
+    advisory_sw = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Mfuatano wa mzunguko'
+        verbose_name_plural = 'Mifuatano ya mzunguko'
+
+
+class RotationRule(SourceRecord):
+    """Soil_Fertility_Rotation_Rules (kind='soil') na Pest_Disease_Break_Rules (kind='break')."""
+    kind = models.CharField(max_length=10)
+    condition = models.CharField(max_length=200)
+    recommended = models.TextField(blank=True)
+    avoid = models.TextField(blank=True)
+    min_break = models.CharField(max_length=100, blank=True)
+    farmer_message_sw = models.TextField(blank=True)
+
+    class Meta(SourceRecord.Meta):
+        verbose_name = 'Kanuni ya mzunguko'
+        verbose_name_plural = 'Kanuni za mzunguko'
