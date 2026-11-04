@@ -61,11 +61,13 @@
       <div id="waQrMsg" style="font-size:13px;color:#4b5563;text-align:center;">Inapakia QR…</div>
       {% endif %}
     </div>
+    {% if st.status != 'connected' %}
     <ol style="font-size:13px;color:#4b5563;line-height:1.7;padding-left:18px;margin:6px 0 0;">
       <li>Fungua WhatsApp kwenye simu ya namba ya bot.</li>
       <li>Nenda <em>Settings → Linked devices → Link a device</em>.</li>
       <li>Scan QR hii. Inabadilika yenyewe kila baada ya muda mfupi.</li>
     </ol>
+    {% endif %}
   </div>
 </div>
 
