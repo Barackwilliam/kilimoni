@@ -208,6 +208,16 @@ BAILEYS_BRIDGE_KEY = config(
     'BAILEYS_BRIDGE_KEY',
     default=''
 )
+# Bridge mpya (nakala ya ya JamiiTek): Django inapokea na kujibu 200 mara moja,
+# kisha inatuma majibu kupitia POST {BRIDGE_URL}/send. Majina ya zamani
+# (BAILEYS_BRIDGE_*) yanaendelea kufanya kazi.
+BRIDGE_URL = config('BRIDGE_URL', default=BAILEYS_BRIDGE_URL)
+BRIDGE_API_KEY = config('BRIDGE_API_KEY', default=BAILEYS_BRIDGE_KEY)
+BAILEYS_SESSION = config('BAILEYS_SESSION', default='kilimoni')
+# Tests: shughulikia ujumbe papo hapo badala ya thread ya nyuma
+BRIDGE_INLINE = config('BRIDGE_INLINE', default=False, cast=bool)
+# Wafanyakazi wa nyuma kwa kila worker wa gunicorn (kila mmoja = connection 1 ya DB)
+BRIDGE_WORKERS = config('BRIDGE_WORKERS', default=4, cast=int)
 
 
 

@@ -1,571 +1,459 @@
+/**
+ * Kilimoni AI WhatsApp Bridge (nakala ya bridge ya JamiiTek)
+ * ------------------------------------------------------------
+ * Bridge ni INJINI tu. Haina akili ya biashara, haina database ya
+ * mazungumzo, haiamui chochote. Kazi yake ni mbili:
+ *
+ *   1. Kupokea ujumbe wa WhatsApp -> kuutuma Django
+ *   2. Kupokea amri kutoka Django -> kutuma ujumbe WhatsApp
+ *
+ * Udhibiti wote (jibu gani, lini) uko Django ya Kilimoni.
+ *
+ * HAIJIBU KWA SYNCHRONOUS. Toleo la kwanza lilisubiri jibu la Django
+ * hadi sekunde 120 kisha likatuma `response.data.reply`. Haiwezekani
+ * hapa: `_process_message` ya Django inatuma jumbe MBILI mteja
+ * anapoanza (salamu, kisha "niambie jina lako"). Mkataba wa jibu moja
+ * ungelazimisha kuandika upya state machine nzima.
+ *
+ * Sasa: bridge inatuma, Django inajibu 200 mara moja, kisha Django
+ * inatuma majibu yote kupitia POST /send. Jumbe ngapi inataka.
+ */
+
 require('dotenv').config();
 
 const express = require('express');
 const axios = require('axios');
-const qrcode = require('qrcode-terminal');
-const QRCode = require('qrcode');
 
 const {
-    default: makeWASocket,
-    DisconnectReason,
-    useMultiFileAuthState,
-} = require('@whiskeysockets/baileys');
+    startSession,
+    restartSession,
+    stopSession,
+    getSession,
+    listSessions,
+    sessions,
+} = require('./sessionManager');
 
-const { Boom } = require('@hapi/boom');
-const { useSupabaseAuthState } = require('./supabaseAuth');
+const { getPool, closePool, pruneOldKeys } = require('./supabaseAuth');
 
 const app = express();
+app.use(express.json({ limit: '1mb' }));
 
-app.use(express.json());
-
-const PORT = process.env.PORT || 3001;
-const DJANGO_URL = process.env.DJANGO_URL || 'http://127.0.0.1:8000';
+const PORT           = process.env.PORT || 3001;
+const DJANGO_URL     = (process.env.DJANGO_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 const BRIDGE_API_KEY = process.env.BRIDGE_API_KEY || '';
+const BRIDGE_NAME    = process.env.BRIDGE_NAME || 'Kilimoni AI';
 
-let whatsappSocket = null;
-let connectionStatus = 'starting';
+// Kilimoni: njia za Django (JamiiTek inatumia /chatbot/webhook/baileys/ na
+// /chatbot/bridge/sessions/). Zinabadilishwa kwa env bila kugusa code.
+const DJANGO_WEBHOOK_PATH  = process.env.DJANGO_WEBHOOK_PATH  || '/webhook/bridge/incoming/';
+const DJANGO_SESSIONS_PATH = process.env.DJANGO_SESSIONS_PATH || '/webhook/bridge/sessions/';
 
-// QR ya sasa kama picha (data URL) — inatumiwa na admin panel
-let currentQrDataUrl = '';
-let currentQrAt = 0;
-let connectedNumber = '';
-let clearAuthStore = null;
-
-
-// ============================================================
-// HEALTH CHECK
-// ============================================================
-
-app.get('/health', (req, res) => {
-    res.json({
-        success: true,
-        service: 'Kilimoni WhatsApp Bridge',
-        status: connectionStatus,
-    });
-});
+if (!BRIDGE_API_KEY) {
+    console.error('BRIDGE_API_KEY haijawekwa. Bridge haitaanza bila hiyo.');
+    process.exit(1);
+}
 
 
 // ============================================================
-// STATUS
+// ULINZI — kila njia isipokuwa /health
 // ============================================================
+// Toleo la kwanza lililinda /logout pekee. /qr ilikuwa wazi: mtu
+// yeyote aliyejua URL angeweza kuiscan, na namba yake ingekuwa ndiyo
+// bot — akisoma mazungumzo yote ya wateja na kuandika kwa niaba yako.
 
-app.get('/status', (req, res) => {
-    res.json({
-        success: true,
-        status: connectionStatus,
-        connected: connectionStatus === 'connected',
-    });
-});
-
-
-// ============================================================
-// QR CODE (kwa admin panel)
-// ============================================================
-
-app.get('/qr', (req, res) => {
-
-    // QR ya Baileys huisha baada ya ~60s. Tukiwa na ya zamani
-    // tunaionyesha kama imepitwa ili admin ajue kusubiri mpya.
-    const ageSeconds = currentQrAt
-        ? Math.round((Date.now() - currentQrAt) / 1000)
-        : null;
-
-    res.json({
-        success: true,
-        status: connectionStatus,
-        connected: connectionStatus === 'connected',
-        number: connectedNumber,
-        qr: currentQrDataUrl,
-        qr_age_seconds: ageSeconds,
-        expired: ageSeconds !== null && ageSeconds > 60,
-    });
-});
-
-
-// ============================================================
-// LOGOUT (kuunganisha namba nyingine)
-// ============================================================
-
-app.post('/logout', async (req, res) => {
-
-    if (req.headers['x-bridge-key'] !== BRIDGE_API_KEY) {
+function auth(req, res, next) {
+    const given = req.headers['x-bridge-key'] || '';
+    if (given !== BRIDGE_API_KEY) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
-
-    try {
-        if (whatsappSocket) {
-            await whatsappSocket.logout();
-        }
-        if (clearAuthStore) {
-            await clearAuthStore();
-        }
-        connectionStatus = 'disconnected';
-        connectedNumber = '';
-        currentQrDataUrl = '';
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ success: false, error: String(e) });
-    }
-});
+    next();
+}
 
 
 // ============================================================
-// CONNECT TO WHATSAPP
+// KUPELEKA UJUMBE DJANGO
 // ============================================================
 
-async function connectToWhatsApp() {
-
-    // Supabase (Postgres) ikiwepo — session inabaki hata baada ya deploy.
-    // Bila hiyo tunatumia folda (nzuri kwa local development).
-    let state, saveCreds;
-
-    if (process.env.DATABASE_URL) {
-
-        const auth = await useSupabaseAuthState(
-            process.env.DATABASE_URL,
-            process.env.SESSION_NAME || 'kilimoni'
-        );
-
-        state = auth.state;
-        saveCreds = auth.saveCreds;
-        clearAuthStore = auth.clearAuth;
-
-        console.log('Auth: Supabase (session inabaki baada ya deploy)');
-
-    } else {
-
-        const auth = await useMultiFileAuthState('./auth_info_baileys');
-
-        state = auth.state;
-        saveCreds = auth.saveCreds;
-        clearAuthStore = null;
-
-        console.log('Auth: folda ya ndani (local)');
-    }
-
-    console.log('');
-    console.log('========================================');
-    console.log('       KILIMONI WHATSAPP BOT');
-    console.log('========================================');
-    console.log('');
-
-    const sock = makeWASocket({
-        auth: state,
-
-        markOnlineOnConnect: false,
-
-        syncFullHistory: false,
-
-        browser: ['Kilimoni', 'Chrome', '1.0.0'],
-    });
-
-    whatsappSocket = sock;
-
-
-    // ========================================================
-    // CONNECTION UPDATE
-    // ========================================================
-
-    sock.ev.on('connection.update', (update) => {
-
-        const {
-            connection,
-            lastDisconnect,
-            qr,
-        } = update;
-
-
-        // ----------------------------------------------------
-        // QR CODE
-        // ----------------------------------------------------
-
-        if (qr) {
-
-            console.log('');
-            console.log('========================================');
-            console.log('       SCAN THIS QR CODE');
-            console.log('========================================');
-            console.log('');
-
-            qrcode.generate(qr, {
-                small: true,
-            });
-
-            // Tengeneza picha ya QR kwa ajili ya admin panel
-            QRCode.toDataURL(qr, { width: 320, margin: 2 })
-                .then((url) => {
-                    currentQrDataUrl = url;
-                    currentQrAt = Date.now();
-                    connectionStatus = 'waiting_qr';
-                })
-                .catch((err) => {
-                    console.log('QR image error:', err.message);
-                });
-
-            console.log('');
-            console.log('WhatsApp > Settings > Linked Devices');
-            console.log('> Link a Device > Scan QR');
-            console.log('');
-        }
-
-
-        // ----------------------------------------------------
-        // CONNECTED
-        // ----------------------------------------------------
-
-        if (connection === 'open') {
-
-            connectionStatus = 'connected';
-            currentQrDataUrl = '';
-            currentQrAt = 0;
-            connectedNumber = (sock.user?.id || '').split(':')[0];
-
-            console.log('');
-            console.log('========================================');
-            console.log('   WHATSAPP CONNECTED SUCCESSFULLY');
-            console.log('========================================');
-            console.log('');
-        }
-
-
-        // ----------------------------------------------------
-        // CONNECTION CLOSED
-        // ----------------------------------------------------
-
-        if (connection === 'close') {
-
-            connectionStatus = 'disconnected';
-
-            const statusCode =
-                new Boom(lastDisconnect?.error)?.output?.statusCode;
-
-            const shouldReconnect =
-                statusCode !== DisconnectReason.loggedOut;
-
-            console.log('');
-            console.log('WhatsApp connection closed.');
-            console.log('Status code:', statusCode);
-            console.log('Reconnect:', shouldReconnect);
-            console.log('');
-
-            if (shouldReconnect) {
-
-                console.log('Reconnecting to WhatsApp...');
-
-                setTimeout(() => {
-                    connectToWhatsApp();
-                }, 3000);
-            } else {
-
-                console.log('');
-                console.log('WhatsApp session has been logged out.');
-                console.log('');
-                if (clearAuthStore) {
-                    clearAuthStore().then(() => {
-                        console.log('Session imefutwa — scan QR upya.');
-                        setTimeout(() => connectToWhatsApp(), 2000);
-                    });
-                } else {
-                    console.log(
-                        'Delete the auth_info_baileys folder and scan QR again.'
-                    );
-                }
-            }
-        }
-    });
-
-
-    // ========================================================
-    // SAVE WHATSAPP SESSION
-    // ========================================================
-
-    sock.ev.on('creds.update', saveCreds);
-
-
-    // ========================================================
-    // RECEIVE MESSAGES
-    // ========================================================
-
-    sock.ev.on('messages.upsert', async (event) => {
-
-        if (event.type !== 'notify') {
-            return;
-        }
-
-
-        for (const message of event.messages) {
-
-            try {
-
-                // Ignore messages sent by the bot itself
-                if (message.key.fromMe) {
-                    continue;
-                }
-
-
-                // Ignore status updates
-                if (message.key.remoteJid === 'status@broadcast') {
-                    continue;
-                }
-
-
-                // Ignore group messages for now
-                const remoteJid = message.key.remoteJid || '';
-
-                if (remoteJid.endsWith('@g.us')) {
-                    console.log('Group message ignored.');
-                    continue;
-                }
-
-
-                // ------------------------------------------------
-                // GET PHONE NUMBER
-                // ------------------------------------------------
-
-                // WhatsApp sasa hutumia @lid (kitambulisho) badala ya
-                // namba. Tunajaribu kupata namba halisi kwa njia mbili;
-                // ikishindikana TUNAENDELEA kwa LID — bot haipaswi
-                // kunyamaza kwa sababu ya kitambulisho.
-                let sourceJid = remoteJid;
-                let isLid = false;
-
-                if (remoteJid.endsWith('@lid')) {
-
-                    isLid = true;
-
-                    let pn = message.key.senderPn || '';
-
-                    // Njia ya pili: ramani ya LID -> namba ya Baileys
-                    if (!pn) {
-                        try {
-                            pn = await sock.signalRepository
-                                ?.lidMapping
-                                ?.getPNForLID?.(remoteJid) || '';
-                        } catch (e) {
-                            pn = '';
-                        }
-                    }
-
-                    if (pn) {
-                        sourceJid = pn;
-                        isLid = false;
-                    }
-                }
-
-                // JID huwa na kiambishi cha kifaa: "255712345678:0@s.whatsapp.net"
-                // Bila kuondoa ":0", tarakimu hiyo huungana na namba na
-                // mkulima huhifadhiwa kama 2557123456780 — na akitumia
-                // simu pamoja na WhatsApp Web (:0 na :1) huonekana
-                // kama watu wawili tofauti.
-                const phone = sourceJid
-                    .split('@')[0]
-                    .split(':')[0]
-                    .replace(/\D/g, '');
-
-                if (!phone) {
-                    console.log('Hakuna kitambulisho — umerukwa:', remoteJid);
-                    continue;
-                }
-
-                if (isLid) {
-                    console.log(
-                        'ONYO: namba halisi haipatikani, tunatumia LID:',
-                        phone
-                    );
-                }
-
-
-                // ------------------------------------------------
-                // GET MESSAGE ID
-                // ------------------------------------------------
-
-                const messageId =
-                    message.key.id || '';
-
-
-                // ------------------------------------------------
-                // GET TEXT
-                // ------------------------------------------------
-
-                let text = '';
-
-
-                if (message.message?.conversation) {
-
-                    text = message.message.conversation;
-
-                } else if (
-                    message.message?.extendedTextMessage?.text
-                ) {
-
-                    text =
-                        message.message.extendedTextMessage.text;
-
-                } else if (
-                    message.message?.imageMessage?.caption
-                ) {
-
-                    text =
-                        message.message.imageMessage.caption;
-
-                } else if (
-                    message.message?.videoMessage?.caption
-                ) {
-
-                    text =
-                        message.message.videoMessage.caption;
-                }
-
-
-                text = text.trim();
-
-
-                // ------------------------------------------------
-                // IGNORE EMPTY MESSAGE
-                // ------------------------------------------------
-
-                if (!text) {
-
-                    console.log(
-                        'Received a non-text message from:',
-                        phone
-                    );
-
-                    continue;
-                }
-
-
-                console.log('');
-                console.log('----------------------------------------');
-                console.log('Incoming WhatsApp message');
-                console.log('Phone:', phone);
-                console.log('Message:', text);
-                console.log('Message ID:', messageId);
-                console.log('----------------------------------------');
-                console.log('');
-
-
-                // ------------------------------------------------
-                // SEND TO DJANGO
-                // ------------------------------------------------
-
-                const response = await axios.post(
-                    
-                `${DJANGO_URL}/webhook/baileys/incoming/`,
-                {
-                    phone: phone,
-                    message: text,
-                    message_id: messageId,
-                },
+// Kilimoni: ujumbe haupaswi kupotea kwa sababu Django ilikuwa ikideploy,
+// ikiamka, au worker wake alikufa katikati ya request. Tunajaribu tena kwa
+// makosa ya mtandao na 5xx (si 4xx — ufunguo/ombi baya halitabadilika).
+// Ni salama: Django inakataa marudio kwa message_id.
+const DJANGO_RETRIES = Number(process.env.DJANGO_RETRIES || 3);
+const RETRY_WAIT_MS  = [2000, 5000, 15000];
+
+async function forwardToDjango(payload) {
+    for (let attempt = 0; attempt <= DJANGO_RETRIES; attempt++) {
+        try {
+            const res = await axios.post(
+                `${DJANGO_URL}${DJANGO_WEBHOOK_PATH}`,
+                payload,
                 {
                     headers: {
                         'Content-Type': 'application/json',
                         'X-Bridge-Key': BRIDGE_API_KEY,
                     },
-
-                    timeout: 120000,
+                    // Django inaji-ack mara moja na kuendelea nyuma, kwa hiyo
+                    // 15s ingetosha — LAKINI kwenye Render free tier Django
+                    // inalala baada ya dakika 15 na inachukua sekunde 30-60
+                    // kuamka. Kwa timeout ya 15s, ujumbe wa KWANZA baada ya
+                    // kulala unapotea kila mara.
+                    timeout: Number(process.env.DJANGO_TIMEOUT_MS || 60000),
                 }
             );
-
-
-                // ------------------------------------------------
-                // GET DJANGO RESPONSE
-                // ------------------------------------------------
-
-                const reply =
-                    response.data?.reply;
-
-
-                if (!reply) {
-
-                    console.log(
-                        'Django did not return a reply.'
-                    );
-
-                    continue;
-                }
-
-
-                // ------------------------------------------------
-                // SEND RESPONSE TO WHATSAPP
-                // ------------------------------------------------
-
-                await sock.sendMessage(
-                    remoteJid,
-                    {
-                        text: String(reply),
-                    }
-                );
-
-
-                console.log('');
-                console.log('Reply sent successfully.');
-                console.log('To:', phone);
-                console.log('');
+            console.log(`[${payload.session}]   -> Django: ${res.status}`
+                        + ` ${JSON.stringify(res.data).slice(0, 120)}`);
+            return true;
+        } catch (e) {
+            const status = e.response?.status;
+            const detail = e.response
+                ? `${status} ${JSON.stringify(e.response.data).slice(0, 200)}`
+                : `${e.code || ''} ${e.message}`;
+            const retryable = !status || status >= 500;
+            if (!retryable || attempt >= DJANGO_RETRIES) {
+                console.error(`[${payload.session}]   -> Django IMESHINDWA (jaribio ${attempt + 1}):`, detail);
+                return false;
             }
-
-            catch (error) {
-
-                console.error('');
-                console.error(
-                    'Error processing WhatsApp message:'
-                );
-
-                if (error.response) {
-
-                    console.error(
-                        'Django status:',
-                        error.response.status
-                    );
-
-                    console.error(
-                        'Django response:',
-                        error.response.data
-                    );
-
-                } else {
-
-                    console.error(
-                        error.message
-                    );
-                }
-
-                console.error('');
-            }
+            const wait = RETRY_WAIT_MS[Math.min(attempt, RETRY_WAIT_MS.length - 1)];
+            console.warn(`[${payload.session}]   -> Django imeshindwa (${detail.trim()}); najaribu tena baada ya ${wait / 1000}s`);
+            await new Promise((r) => setTimeout(r, wait));
         }
-    });
+    }
+    return false;
 }
 
+const sessionOpts = { onMessage: forwardToDjango };
+
 
 // ============================================================
-// START EXPRESS SERVER
+// HEALTH — njia pekee isiyo na ulinzi
 // ============================================================
 
-app.listen(PORT, () => {
-
-    console.log('');
-    console.log('========================================');
-    console.log('   KILIMONI WHATSAPP BRIDGE');
-    console.log('========================================');
-    console.log('');
-    console.log(`Bridge running on port: ${PORT}`);
-    console.log(`Django URL: ${DJANGO_URL}`);
-    console.log('');
+app.get('/health', (req, res) => {
+    res.json({
+        success: true,
+        service: `${BRIDGE_NAME} WhatsApp Bridge`,
+        sessions: sessions.size,
+        connected: listSessions().filter((s) => s.connected).length,
+        uptime_seconds: Math.round(process.uptime()),
+    });
 });
 
 
 // ============================================================
-// START WHATSAPP
+// SESSIONS
 // ============================================================
 
-connectToWhatsApp().catch((error) => {
+app.get('/sessions', auth, (req, res) => {
+    res.json({ success: true, sessions: listSessions() });
+});
 
-    console.error('');
-    console.error(
-        'Failed to start WhatsApp connection:'
-    );
+app.get('/sessions/:name', auth, (req, res) => {
+    const s = getSession(req.params.name);
+    if (!s) return res.status(404).json({ success: false, error: 'Session haipo' });
+    res.json({ success: true, ...s.toJSON() });
+});
 
-    console.error(error);
+app.post('/sessions/:name/start', auth, async (req, res) => {
+    try {
+        const s = await startSession(req.params.name, sessionOpts);
+        res.json({ success: true, ...s.toJSON() });
+    } catch (e) {
+        res.status(500).json({ success: false, error: String(e.message || e) });
+    }
+});
 
-    process.exit(1);
+app.post('/sessions/:name/restart', auth, async (req, res) => {
+    try {
+        const s = await restartSession(req.params.name, sessionOpts);
+        res.json({ success: true, ...s.toJSON() });
+    } catch (e) {
+        res.status(500).json({ success: false, error: String(e.message || e) });
+    }
+});
+
+app.post('/sessions/:name/stop', auth, async (req, res) => {
+    const ok = await stopSession(req.params.name);
+    res.json({ success: ok });
+});
+
+// QR — sasa ina ulinzi. Picha yenyewe iko hapa tu, si kwenye /sessions,
+// ili orodha isiwe nzito bila sababu.
+app.get('/sessions/:name/qr', auth, (req, res) => {
+    const s = getSession(req.params.name);
+    if (!s) return res.status(404).json({ success: false, error: 'Session haipo' });
+    res.json({ success: true, ...s.toJSON(), qr: s.qrDataUrl });
+});
+
+// Logout — inafuta auth. Django ndiyo inayodai uthibitisho kwa mtumiaji;
+// hapa tunatekeleza tu.
+app.post('/sessions/:name/logout', auth, async (req, res) => {
+    const s = getSession(req.params.name);
+    if (!s) return res.status(404).json({ success: false, error: 'Session haipo' });
+    try {
+        await s.logout();
+        // Anzisha upya ili QR mpya itokee mara moja
+        await s.connect();
+        res.json({ success: true, ...s.toJSON() });
+    } catch (e) {
+        res.status(500).json({ success: false, error: String(e.message || e) });
+    }
+});
+
+
+// ============================================================
+// KUTUMA UJUMBE
+// ============================================================
+
+// ── KUTAFSIRI NAMBA -> LID ───────────────────────────────────
+// WhatsApp inatumia LID (tarakimu 15) badala ya namba kwa wateja
+// wengi. Baileys 6.7.18 haina njia ya LID -> namba, LAKINI
+// `onWhatsApp()` inatoa namba -> LID.
+//
+// Hiyo inatosha kwa tatizo halisi: kutambua MMILIKI. Tunatafsiri
+// namba yake mara moja, tunahifadhi LID, kisha tunalinganisha LID
+// na LID. Amri zake zinafanya kazi tena.
+
+app.post('/resolve', auth, async (req, res) => {
+    const { session, phones } = req.body || {};
+    const s = getSession(session);
+    if (!s) return res.status(404).json({ success: false, error: 'Session haipo' });
+    if (!s.sock || s.status !== 'connected') {
+        return res.status(503).json({ success: false, error: `Session ${s.status}` });
+    }
+
+    const list = (Array.isArray(phones) ? phones : [phones])
+        .filter(Boolean)
+        .map((p) => `${String(p).replace(/\D/g, '')}@s.whatsapp.net`);
+
+    if (!list.length) {
+        return res.status(400).json({ success: false, error: '`phones` inahitajika' });
+    }
+
+    try {
+        const out = await s.sock.onWhatsApp(...list);
+        const map = {};
+        for (const r of out || []) {
+            const phone = String(r.jid || '').split('@')[0].split(':')[0];
+            map[phone] = {
+                exists: Boolean(r.exists),
+                jid: r.jid || '',
+                lid: r.lid ? String(r.lid).split('@')[0] : '',
+            };
+        }
+        res.json({ success: true, resolved: map });
+    } catch (e) {
+        res.status(500).json({ success: false, error: String(e.message || e) });
+    }
+});
+
+// ── UCHUNGUZI ────────────────────────────────────────────────
+// Inatenganisha tatizo katika sehemu mbili:
+//   /sessions/:name/debug — je, WhatsApp inaongea nasi kabisa?
+//   /sessions/:name/ping  — je, tunaweza kutuma?
+// Njia ya kuingia ikiwa imekufa na ya kutoka ikiwa hai, tatizo liko
+// upande mmoja tu. Zote mbili zikiwa zimekufa, session ni maiti.
+
+app.get('/sessions/:name/debug', auth, (req, res) => {
+    const s = getSession(req.params.name);
+    if (!s) return res.status(404).json({ success: false, error: 'Session haipo' });
+
+    const d = s.toJSON();
+    let verdict;
+    if (d.status !== 'connected') {
+        verdict = `Haijaunganishwa (${d.status})`;
+    } else if (d.event_total === 0) {
+        verdict = 'MAITI — imeunganishwa lakini WhatsApp haijatuma tukio hata moja. '
+                + 'Kifaa kimeondolewa upande wa WhatsApp. Scan QR upya.';
+    } else if (d.silent_seconds > 900) {
+        verdict = `Kimya kwa ${Math.round(d.silent_seconds / 60)} dakika — inaweza kuwa imekufa`;
+    } else {
+        verdict = 'HAI — WhatsApp inaongea nasi';
+    }
+    res.json({ success: true, verdict, ...d, qr: undefined });
+});
+
+// Tuma ujumbe wa majaribio ili kupima njia ya kutoka peke yake
+app.post('/sessions/:name/ping', auth, async (req, res) => {
+    const s = getSession(req.params.name);
+    if (!s) return res.status(404).json({ success: false, error: 'Session haipo' });
+
+    const to = req.body?.to;
+    if (!to) return res.status(400).json({ success: false, error: '`to` inahitajika' });
+
+    try {
+        const id = await s.sendText(to, req.body?.text || 'Jaribio la bridge ya Kilimoni AI.');
+        res.json({ success: true, message_id: id,
+                   note: 'Imetumwa. Ikiwa haijafika WhatsApp, session ni maiti.' });
+    } catch (e) {
+        res.status(503).json({ success: false, error: String(e.message || e) });
+    }
+});
+
+app.post('/send', auth, async (req, res) => {
+    const { session, to, text, jid, image_url } = req.body || {};
+
+    // `jid` inatangulia `to`. Django inahifadhi JID halisi iliyopokea,
+    // na hiyo ndiyo sahihi daima — hasa kwa LID, ambayo haiwezi
+    // kujengwa upya kutoka tarakimu.
+    const target = jid || to;
+
+    if (!session || !target || !text) {
+        return res.status(400).json({ success: false, error: 'session, to/jid, text zinahitajika' });
+    }
+
+    const s = getSession(session);
+    if (!s) return res.status(404).json({ success: false, error: 'Session haipo' });
+
+    try {
+        // Picha ya bidhaa (duka la JamiiBot): `text` ni maelezo yake. Ikishindwa
+        // kupakuliwa, maelezo yanatumwa kama maandishi ili mteja apate bei hata hivyo.
+        let id;
+        if (image_url && /^https:\/\//.test(image_url)) {
+            try {
+                id = await s.sendImage(target, image_url, text);
+            } catch (e) {
+                console.error(`[${session}] picha imeshindwa, natuma maandishi:`, e.message);
+                id = await s.sendText(target, text);
+            }
+        } else {
+            id = await s.sendText(target, text);
+        }
+        res.json({ success: true, message_id: id });
+    } catch (e) {
+        console.error(`[${session}] /send imeshindwa:`, e.message);
+        res.status(503).json({ success: false, error: String(e.message || e) });
+    }
+});
+
+app.post('/read', auth, async (req, res) => {
+    const { session, jid, message_id } = req.body || {};
+    const s = getSession(session);
+    if (!s) return res.status(404).json({ success: false, error: 'Session haipo' });
+    await s.markRead(jid, message_id);
+    res.json({ success: true });
+});
+
+
+// ============================================================
+// USAFI
+// ============================================================
+
+app.post('/prune', auth, async (req, res) => {
+    try {
+        const days = Number(req.body?.days || 30);
+        const removed = await pruneOldKeys(getPool(process.env.DATABASE_URL), days);
+        res.json({ success: true, removed });
+    } catch (e) {
+        res.status(500).json({ success: false, error: String(e.message || e) });
+    }
+});
+
+
+// ============================================================
+// KUANZA
+// ============================================================
+// Bridge ikirestart (deploy, crash), inauliza Django ni sessions zipi
+// zinapaswa kuwa hewani. Sessions zenyewe ziko Supabase, kwa hiyo
+// hakuna kuscan QR upya — zinarudi zilipoishia.
+
+// Django haiwi tayari mara zote bridge inapoanza. Kwenye Render, service
+// mbili zinarestart kila moja peke yake, na Django ya free tier inachukua
+// sekunde 30-60 kuamka. Bila kurudia, bridge ilikata tamaa mara moja
+// (ECONNREFUSED) na bot ZOTE zilibaki chini hadi mtu abonyeze kwa mkono.
+const RESTORE_RETRIES = 10;
+const RESTORE_WAIT_MS = 15000;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function askDjangoForSessions() {
+    for (let attempt = 1; attempt <= RESTORE_RETRIES; attempt++) {
+        try {
+            const r = await axios.get(`${DJANGO_URL}${DJANGO_SESSIONS_PATH}`, {
+                headers: { 'X-Bridge-Key': BRIDGE_API_KEY },
+                timeout: 20000,
+            });
+            return r.data?.sessions || [];
+        } catch (e) {
+            const code = e.response?.status;
+
+            // 401/403 si tatizo la muda — ni ufunguo usiolingana.
+            // Kusubiri dakika mbili hakutaurekebisha; tunasimama na
+            // kusema hasa tatizo ni nini.
+            if (code === 401 || code === 403) {
+                console.error('');
+                console.error('Django imekataa ufunguo (HTTP ' + code + ').');
+                console.error('BRIDGE_API_KEY ya bridge na ya Django hazilingani.');
+                console.error('');
+                return null;
+            }
+
+            const last = attempt === RESTORE_RETRIES;
+            const why = code ? `HTTP ${code}` : (e.code || e.message);
+            console.log(
+                `Django haijajibu (${why}) — jaribio ${attempt}/${RESTORE_RETRIES}`
+                + (last ? '' : `, inasubiri ${RESTORE_WAIT_MS / 1000}s`)
+            );
+            if (last) return null;
+            await sleep(RESTORE_WAIT_MS);
+        }
+    }
+    return null;
+}
+
+async function restoreSessions() {
+    const names = await askDjangoForSessions();
+
+    if (names === null) {
+        console.error('');
+        console.error('Django haikupatikana baada ya majaribio yote.');
+        console.error('Anzisha session kwa mkono: Dashboard → WhatsApp (Anzisha upya)');
+        console.error('');
+        return;
+    }
+
+    if (!names.length) {
+        console.log('Django haina session inayotakiwa kuanzishwa.');
+        return;
+    }
+
+    console.log(`Inarudisha sessions ${names.length} kutoka Django...`);
+    for (const name of names) {
+        try {
+            await startSession(name, sessionOpts);
+            console.log(`  ${name}: imeanzishwa`);
+        } catch (e) {
+            console.error(`  ${name}: imeshindwa —`, e.message);
+        }
+    }
+}
+
+const server = app.listen(PORT, () => {
+    console.log('');
+    console.log('========================================');
+    console.log(`   ${BRIDGE_NAME.toUpperCase()} WHATSAPP BRIDGE`);
+    console.log('========================================');
+    console.log(`Port:   ${PORT}`);
+    console.log(`Django: ${DJANGO_URL}`);
+    console.log('');
+    restoreSessions();
+});
+
+
+// ── Kuzima kwa heshima ────────────────────────────────────────
+
+async function shutdown(signal) {
+    console.log(`\n${signal} — inazima...`);
+    server.close();
+    for (const name of Array.from(sessions.keys())) {
+        await stopSession(name).catch(() => {});
+    }
+    await closePool().catch(() => {});
+    process.exit(0);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+process.on('unhandledRejection', (e) => {
+    console.error('unhandledRejection:', e?.message || e);
 });

@@ -110,6 +110,8 @@ class JamiiTekStatusMiddleware:
     
     CACHE_KEY = 'jamiitek_site_status'
     CACHE_TIMEOUT = 300  # Sekunde 300 = dakika 5
+    FAIL_KEY = 'jamiitek_site_status_fail'
+    FAIL_TIMEOUT = 60    # paneli ikishindwa: jaribu tena baada ya dakika 1
     # /webhook/ — bot inashughulikiwa yenyewe (JSON, si HTML)
     # /dashboard/malipo/ — mteja lazima aweze kuona deni na jinsi ya kulipa
     BYPASS_PATHS = ['/admin/', '/api/', '/static/', '/media/',
@@ -155,6 +157,9 @@ class JamiiTekStatusMiddleware:
                 # Bot: mkulima apate ujumbe wa Kiswahili, si ukurasa wa HTML.
                 # Bila hii, bridge ingepokea HTML na mkulima asingepata kitu.
                 if any(request.path.startswith(p) for p in self.BOT_PATHS):
+                    # Bridge mpya haisomi `reply` — tuma ujumbe kupitia /send
+                    if request.path.startswith('/webhook/bridge/'):
+                        self._notify_via_bridge(request)
                     return JsonResponse({
                         'status': 'service_suspended',
                         'reply': self.BOT_SUSPENDED_MESSAGE,
@@ -167,6 +172,24 @@ class JamiiTekStatusMiddleware:
                 return HttpResponse(html, status=503, content_type='text/html')
 
         return self.get_response(request)
+
+    def _notify_via_bridge(self, request):
+        """Mkulima apate ujumbe wa kusitishwa hata kupitia bridge isiyosubiri jibu."""
+        if not request.path.startswith('/webhook/bridge/incoming/'):
+            return
+        try:
+            import json
+            import threading
+            from whatsapp import bridge
+            if not bridge.authorized(request):
+                return
+            data = json.loads(request.body or b'{}')
+            phone, jid = str(data.get('phone', '')), str(data.get('jid', ''))
+            if phone:
+                threading.Thread(target=bridge.send_text, args=(phone, self.BOT_SUSPENDED_MESSAGE),
+                                 kwargs={'jid': jid}, daemon=True).start()
+        except Exception as e:
+            logger.warning(f"JamiiTek: ujumbe wa kusitishwa haukutumwa: {e}")
 
     def _get_status(self):
         """Angalia hali ya website (na cache kwa dakika 5)"""
@@ -188,6 +211,11 @@ class JamiiTekStatusMiddleware:
         cached = cache.get(self.CACHE_KEY)
         if cached is not None:
             return cached
+        # Paneli ikishindwa kufikiwa, usijaribu tena kwa kila ombi: bila hii
+        # KILA ujumbe wa mkulima ulisubiri sekunde 3 (timeout) jamiitek.com
+        # ikiwa chini — bot nzima ikawa nzito.
+        if cache.get(self.FAIL_KEY):
+            return None
 
         try:
             url = f"{self.api_url.rstrip('/')}/{self.api_key}/"
@@ -196,9 +224,10 @@ class JamiiTekStatusMiddleware:
                 data = resp.json()
                 cache.set(self.CACHE_KEY, data, self.CACHE_TIMEOUT)
                 return data
+            logger.warning(f"JamiiTek: hali haikupatikana (HTTP {resp.status_code})")
         except Exception as e:
             logger.warning(f"JamiiTek: Imeshindwa kuangalia hali: {e}")
-        
+        cache.set(self.FAIL_KEY, True, self.FAIL_TIMEOUT)
         return None
 
 

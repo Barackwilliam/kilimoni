@@ -70,9 +70,33 @@ CROP_ALIASES = {
 # UTAMBUZI WA LENGO
 # ═══════════════════════════════════════════════════════
 
+# Viambishi vya Kiswahili vinavyoweza kutangulia shina: "yana|nyauka", "yame|kauka",
+# "ime|dumaa", "wana|kula". Shina linakubaliwa tu mwanzoni mwa neno au baada ya
+# viambishi hivi — si popote ndani ya neno. Zamani "doa" ilipatikana ndani ya
+# "Kondoa", "kufa" ndani ya "itakufaa", "kutu" ndani ya "kutumia", na "umwa"
+# ndani ya "umwagiliaji": mkulima wa kawaida alipelekwa kwenye uchunguzi wa magonjwa.
+_PREFIX = r'(?:ya|ma|ki|vi|ku|wa|zi|li|mi|me|na|ta|ka|ji|ni|si|ha|hu|i|a|u|m|n)*'
+# Mashina mafupi yenye maana nyingine yakiendelea: kufaa/kufanya, kutumia/kutunza, umwagilia
+_STEM_GUARD = {
+    'kufa': r'(?!a|ny|ny)',
+    'kutu': r'(?![a-z])',
+    'umwa': r'(?!g)',
+    'doa': r'(?![a-z])',
+    'oza': r'(?!na)',
+}
+_STEM_RE = {}
+
+
+def _stem_re(stem):
+    rx = _STEM_RE.get(stem)
+    if rx is None:
+        rx = _STEM_RE[stem] = re.compile('^' + _PREFIX + re.escape(stem) + _STEM_GUARD.get(stem, ''))
+    return rx
+
+
 def _has_stem(text: str, stems) -> bool:
     words = re.findall(r"[a-z%']+", (text or '').lower())
-    return any(w.startswith(s) or s in w for w in words for s in stems)
+    return any(_stem_re(s).match(w) for w in words for s in stems)
 
 
 def is_problem_message(text: str, intent=None) -> bool:

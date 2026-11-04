@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, rx_views
+from . import views, rx_views, wa_views
 
 urlpatterns = [
     path('', views.home, name='dashboard_home'),
@@ -7,6 +7,9 @@ urlpatterns = [
     path('logout/', views.logout_view, name='dashboard_logout'),
     path('conversations/', views.conversations, name='conversations'),
     path('conversations/<int:pk>/', rx_views.conversation_detail, name='conversation_detail'),
+    path('whatsapp/', wa_views.wa_home, name='wa_home'),
+    path('whatsapp/qr/', wa_views.wa_qr, name='wa_qr'),
+    path('whatsapp/kitendo/', wa_views.wa_action, name='wa_action'),
     path('uchunguzi/', rx_views.rx_home, name='rx_home'),
     path('uchunguzi/hakiki/', rx_views.rx_preview, name='rx_preview'),
     path('uchunguzi/hifadhi/', rx_views.rx_confirm, name='rx_confirm'),
