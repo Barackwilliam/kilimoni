@@ -1217,9 +1217,44 @@ def _set_adv(user, value):
     user.save(update_fields=['session_state'])
 
 
+def _place_without_data(user, normalized):
+    """
+    Eneo ambalo mkulima ametaja (au alitaja awali) na tunalitambua kwa jina,
+    lakini halimo kwenye data ya maeneo (MHD-001) — hakuna AEZ.
+
+    Bila hii, mkulima aliyesema "niko Kongwa" aliulizwa "taja wilaya yako"
+    tena na tena: hakujua kwamba tatizo ni data, si jibu lake.
+    """
+    if resolve_farm_location(normalized):
+        return ''
+    try:
+        named = detect_location(normalized)
+    except Exception:
+        named = ''
+    sess = dict(user.session_state or {})
+    if named:
+        sess['place_no_data'] = named
+        user.session_state = sess
+        user.save(update_fields=['session_state'])
+        return named
+    return sess.get('place_no_data', '')
+
+
+def _no_data_place_message(place, purpose):
+    return (f"📍 Nimeona uko *{place}*, lakini bado sina taarifa za kanda ya kilimo (AEZ) ya eneo hilo "
+            f"kwenye data yangu, kwa hiyo siwezi {purpose} kwa uhakika — na sitabuni.\n\n"
+            "Kama shamba lako liko kwenye kata au wilaya nyingine jirani, nitajie. Vinginevyo, "
+            "📞 afisa ugani wa eneo lako atakusaidia.")
+
+
 def _seed_location(user, normalized):
     """Eneo la ujumbe huu (likihifadhiwa kwenye profile), au la profile ya mkulima."""
     loc = remember_farm_location(user, normalized)
+    if loc and (user.session_state or {}).get('place_no_data'):
+        sess = dict(user.session_state)
+        sess.pop('place_no_data', None)           # sasa tunajua eneo lenye data
+        user.session_state = sess
+        user.save(update_fields=['session_state'])
     if loc and loc.get('aez_id'):
         return loc
     prof = adv_seed.location_from_user(user)
@@ -1245,14 +1280,21 @@ def _seed_turn(user, raw_message, normalized, crop, start_time, message_id, text
     loc = _seed_location(user, normalized)
     state = state if state is not None else {}
     response, trace = adv_seed.advise(crop, loc, text or normalized, state, soil=_farm_soil(user, normalized))
-    if trace.get('decision') == 'need_location':
+    place = _place_without_data(user, normalized) if trace.get('decision') == 'need_location' and not loc else ''
+    if place:
+        response = _no_data_place_message(place, 'kukuchagulia mbegu')
+        trace.update({'decision': 'location_not_in_data', 'place': place})
+        # tunasubiri kata/wilaya jirani; ujumbe usio wa eneo unafuta hali hii (attempts=1)
+        _set_adv(user, {'module': 'seed', 'stage': 'location', 'crop_id': crop.id,
+                        'text': text or normalized, 'attempts': max(attempts, 1)})
+    elif trace.get('decision') == 'need_location':
         _set_adv(user, {'module': 'seed', 'stage': 'location', 'crop_id': crop.id,
                         'text': text or normalized, 'attempts': attempts})
     else:
         _set_adv(user, None)
     zone = adv_location.zone_for(loc) if loc and loc.get('level') != 'ambiguous' else None
     _log_all(user, raw_message, normalized, crop, None, adv_location.display_name(loc) if loc else '',
-             zone, response, trace.get('decision') not in ('need_location', 'no_suitable_variety'),
+             zone, response, trace.get('decision') not in ('need_location', 'no_suitable_variety', 'location_not_in_data'),
              start_time, answer_ref=','.join(r for r in trace.get('rules_used', []) if r),
              message_id=message_id, trace=trace)
     return response
@@ -1273,7 +1315,14 @@ def _planting_turn(user, raw_message, normalized, crop, start_time, message_id, 
     state = state if state is not None else {}
     response, trace = adv_planting.advise(crop, loc, text or normalized, state, rain=rain)
     dec = trace.get('decision')
-    if dec == 'need_location':
+    place = _place_without_data(user, normalized) if dec == 'need_location' and not loc else ''
+    if place:
+        response = _no_data_place_message(place, 'kukuambia wakati wa kupanda')
+        trace.update({'decision': 'location_not_in_data', 'place': place})
+        dec = 'location_not_in_data'
+        _set_adv(user, {'module': 'planting', 'stage': 'location', 'crop_id': crop.id if crop else None,
+                        'text': text or normalized, 'attempts': max(attempts, 1)})
+    elif dec == 'need_location':
         _set_adv(user, {'module': 'planting', 'stage': 'location', 'crop_id': crop.id if crop else None,
                         'text': text or normalized, 'attempts': attempts})
     elif dec == 'need_crop':
@@ -1285,7 +1334,7 @@ def _planting_turn(user, raw_message, normalized, crop, start_time, message_id, 
         _set_adv(user, None)
     zone = adv_location.zone_for(loc) if loc and loc.get('level') != 'ambiguous' else None
     _log_all(user, raw_message, normalized, crop, None, adv_location.display_name(loc) if loc else '',
-             zone, response, dec not in ('need_location', 'need_crop', 'INFO_ONLY'),
+             zone, response, dec not in ('need_location', 'need_crop', 'INFO_ONLY', 'location_not_in_data'),
              start_time, answer_ref=','.join(r for r in trace.get('rules_used', []) if r),
              message_id=message_id, trace=trace)
     return response

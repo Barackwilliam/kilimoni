@@ -2,14 +2,28 @@
  * Supabase (Postgres) Auth State kwa Baileys
  * ------------------------------------------------------------
  * Badala ya kuhifadhi session kwenye folda (auth_info_baileys),
- * tunaihifadhi kwenye database. Hii ni muhimu kwa Render na
- * hosting yoyote yenye filesystem ya muda — bila hii, session
- * inafutwa kila deploy na inabidi uscan QR upya.
+ * tunaihifadhi kwenye database. Ni muhimu kwa Render na hosting
+ * yoyote yenye filesystem ya muda — bila hii, session inafutwa
+ * kila deploy na inabidi uscan QR upya.
+ *
+ * TOFAUTI NA TOLEO LA KWANZA: module hii HAIUNDI pool yake.
+ * Inapokea pool kutoka nje.
+ *
+ * Sababu: `connectToWhatsApp()` inajiita yenyewe kila reconnect.
+ * Toleo la zamani liliunda `new Pool({max: 3})` kila mwito na
+ * halikufunga ya zamani. Mtandao ukikatika mara 20 usiku mmoja,
+ * ulikuwa na connections 60 zinazoelekea Supabase — na Django
+ * inashiriki database ile ile, kwa hiyo si bot pekee
+ * iliyokufa.
+ *
+ * Pool moja ya mchakato mzima inaondoa tatizo kwenye mzizi
+ * badala ya kuweka kiraka cha `close()` mahali pengi.
  *
  * Matumizi:
- *   const { useSupabaseAuthState } = require('./supabaseAuth');
+ *   const { getPool, useSupabaseAuthState } = require('./supabaseAuth');
+ *   const pool = getPool(process.env.DATABASE_URL);
  *   const { state, saveCreds, clearAuth } =
- *       await useSupabaseAuthState(process.env.DATABASE_URL, 'kilimoni');
+ *       await useSupabaseAuthState(pool, 'kilimoni');
  */
 
 const { Pool } = require('pg');
@@ -21,31 +35,85 @@ const {
 } = require('@whiskeysockets/baileys');
 
 
-async function useSupabaseAuthState(connectionString, sessionName = 'default') {
+// ── Pool moja kwa mchakato mzima ──────────────────────────────
+
+let _pool = null;
+
+function getPool(connectionString) {
+    if (_pool) return _pool;
 
     if (!connectionString) {
         throw new Error('DATABASE_URL haijawekwa kwa Supabase auth state');
     }
 
-    const pool = new Pool({
+    // Supabase inadai SSL; Postgres ya kwenye kompyuta yako haina.
+    // Kulazimisha SSL kila mara kunazuia development ya ndani kabisa.
+    const local = /(^|[@/])localhost|127\.0\.0\.1|host=\//.test(connectionString)
+        || process.env.PGSSL === 'disable';
+
+    _pool = new Pool({
         connectionString,
-        ssl: { rejectUnauthorized: false },
-        max: 3,
+        ssl: local ? false : { rejectUnauthorized: false },
+        // Sessions zote zinashiriki pool hii. 10 inatosha kwa sessions
+        // nyingi kwa sababu maswali ni mafupi; Supabase pooler ina kikomo
+        // na Django inahitaji nafasi yake pia.
+        max: Number(process.env.PG_POOL_MAX || 10),
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
     });
 
-    // Jedwali la session — linaundwa lenyewe mara ya kwanza
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS baileys_auth (
-            session_name TEXT NOT NULL,
-            key_id       TEXT NOT NULL,
-            value        JSONB,
-            updated_at   TIMESTAMPTZ DEFAULT NOW(),
-            PRIMARY KEY (session_name, key_id)
-        )
-    `);
+    _pool.on('error', (err) => {
+        console.error('[pg] pool error:', err.message);
+    });
+
+    return _pool;
+}
+
+async function closePool() {
+    if (_pool) {
+        await _pool.end();
+        _pool = null;
+    }
+}
 
 
-    // ── Msaidizi wa kusoma / kuandika ─────────────────
+// ── Jedwali — linaundwa mara moja tu ──────────────────────────
+
+let _schemaReady = null;
+
+async function ensureSchema(pool) {
+    if (_schemaReady) return _schemaReady;
+
+    _schemaReady = (async () => {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS baileys_auth (
+                session_name TEXT NOT NULL,
+                key_id       TEXT NOT NULL,
+                value        JSONB,
+                updated_at   TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (session_name, key_id)
+            )
+        `);
+        // Kwa prune_baileys_keys — inachuja kwa updated_at
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS baileys_auth_updated_idx
+            ON baileys_auth (updated_at)
+        `);
+    })();
+
+    return _schemaReady;
+}
+
+
+// ── Auth state kwa session moja ───────────────────────────────
+
+async function useSupabaseAuthState(pool, sessionName = 'default') {
+
+    if (!pool) {
+        throw new Error('pool inahitajika — tumia getPool() kwanza');
+    }
+
+    await ensureSchema(pool);
 
     async function readData(keyId) {
         try {
@@ -56,7 +124,7 @@ async function useSupabaseAuthState(connectionString, sessionName = 'default') {
             if (!res.rows.length) return null;
             return JSON.parse(JSON.stringify(res.rows[0].value), BufferJSON.reviver);
         } catch (e) {
-            console.log('[auth] read error:', keyId, e.message);
+            console.log(`[auth:${sessionName}] read error:`, keyId, e.message);
             return null;
         }
     }
@@ -75,7 +143,7 @@ async function useSupabaseAuthState(connectionString, sessionName = 'default') {
                 [sessionName, keyId, json]
             );
         } catch (e) {
-            console.log('[auth] write error:', keyId, e.message);
+            console.log(`[auth:${sessionName}] write error:`, keyId, e.message);
         }
     }
 
@@ -86,15 +154,11 @@ async function useSupabaseAuthState(connectionString, sessionName = 'default') {
                 [sessionName, keyId]
             );
         } catch (e) {
-            console.log('[auth] delete error:', keyId, e.message);
+            console.log(`[auth:${sessionName}] delete error:`, keyId, e.message);
         }
     }
 
-
-    // ── Pakua creds zilizopo, au tengeneza mpya ───────
-
     const creds = (await readData('creds')) || initAuthCreds();
-
 
     const state = {
         creds,
@@ -124,7 +188,6 @@ async function useSupabaseAuthState(connectionString, sessionName = 'default') {
         },
     };
 
-
     return {
         state,
 
@@ -138,14 +201,31 @@ async function useSupabaseAuthState(connectionString, sessionName = 'default') {
                 'DELETE FROM baileys_auth WHERE session_name = $1',
                 [sessionName]
             );
-            console.log('[auth] session imefutwa:', sessionName);
-        },
-
-        close: async () => {
-            await pool.end();
+            console.log(`[auth:${sessionName}] session imefutwa`);
         },
     };
 }
 
 
-module.exports = { useSupabaseAuthState };
+// ── Usafi: funguo za app-state-sync za zamani ─────────────────
+// Baileys inatengeneza app-state-sync-key nyingi zinazoacha kutumika.
+// Zikikaa, jedwali linakua bila sababu. Hii inaitwa na Django
+// (`prune_baileys_keys`) au kwa mkono.
+
+async function pruneOldKeys(pool, days = 30) {
+    const res = await pool.query(
+        `DELETE FROM baileys_auth
+         WHERE key_id LIKE 'app-state-sync-key-%'
+           AND updated_at < NOW() - ($1 || ' days')::interval`,
+        [String(days)]
+    );
+    return res.rowCount;
+}
+
+
+module.exports = {
+    getPool,
+    closePool,
+    useSupabaseAuthState,
+    pruneOldKeys,
+};

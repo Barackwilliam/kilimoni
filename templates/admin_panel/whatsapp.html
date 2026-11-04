@@ -1,0 +1,134 @@
+{% extends 'admin_panel/base.html' %}
+{% block title %}WhatsApp{% endblock %}
+{% block page_title %}📱 WhatsApp ya Bot{% endblock %}
+{% block content %}
+<style>
+.wa-kv{display:grid;grid-template-columns:170px 1fr;gap:8px 12px;font-size:13.5px}
+.wa-kv div:nth-child(odd){color:#6b7280}
+.wa-qr{display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px 0}
+.wa-qr img{width:260px;height:260px;border:1px solid #e5e7eb;border-radius:12px;padding:8px;background:#fff}
+.wa-actions form{display:inline-block;margin:0 6px 8px 0}
+</style>
+
+{% if not configured %}
+<div class="alert alert-error">
+  Bridge haijasanidiwa. Weka <code>BRIDGE_URL</code> na <code>BRIDGE_API_KEY</code> kwenye mazingira ya Django
+  (ufunguo uleule uliowekwa kwenye service ya bridge).
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Hali ya muunganisho</div>
+      <span class="badge {{ badge }}" id="waBadge">{{ label }}</span>
+    </div>
+    {% if st.success %}
+    <div class="wa-kv">
+      <div>Namba ya bot</div><div><strong id="waNumber">{{ st.number|default:"–" }}</strong>{% if st.wa_name %} · {{ st.wa_name }}{% endif %}</div>
+      <div>Session</div><div><code>{{ session }}</code></div>
+      {% if st.connected_at_dt %}<div>Imeunganishwa tangu</div><div>{{ st.connected_at_dt|date:"d M Y H:i" }}</div>{% endif %}
+      {% if st.last_message_at_dt %}<div>Ujumbe wa mwisho</div><div>{{ st.last_message_at_dt|date:"d M Y H:i" }}</div>{% endif %}
+      {% if dbg.verdict %}<div>Uchunguzi</div><div>{{ dbg.verdict }}</div>{% endif %}
+      {% if st.last_error %}<div>Kosa la mwisho</div><div style="color:#dc2626;">{{ st.last_error }}</div>{% endif %}
+    </div>
+    {% else %}
+    <p style="color:#dc2626;font-size:13.5px;">Bridge haifikiki: {{ st.error }}</p>
+    <p style="font-size:13px;color:#4b5563;">Kwenye Render, bridge ya bure inaweza kuwa imelala. Subiri dakika moja kisha
+      fungua ukurasa huu tena. Ikiendelea, angalia kama service ya bridge iko hewani.</p>
+    {% endif %}
+
+    <div class="wa-actions" style="margin-top:16px;">
+      {% if not st.success or st.status != 'connected' %}
+      <form method="post" action="{% url 'wa_action' %}">{% csrf_token %}<input type="hidden" name="action" value="start">
+        <button class="btn btn-primary btn-sm" type="submit">▶️ Anzisha</button></form>
+      {% endif %}
+      <form method="post" action="{% url 'wa_action' %}">{% csrf_token %}<input type="hidden" name="action" value="restart">
+        <button class="btn btn-secondary btn-sm" type="submit">🔄 Anzisha upya</button></form>
+      <form method="post" action="{% url 'wa_action' %}">{% csrf_token %}<input type="hidden" name="action" value="prune">
+        <button class="btn btn-secondary btn-sm" type="submit" title="Futa funguo za zamani za session (siku 30+)">🧹 Safisha funguo za zamani</button></form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">Kuunganisha namba (QR)</div></div>
+    <div class="wa-qr" id="waQrBox">
+      {% if st.status == 'connected' %}
+      <div style="font-size:42px;">✅</div>
+      <div style="font-size:13.5px;color:#374151;text-align:center;">Namba imeunganishwa. Hakuna haja ya kuscan.</div>
+      {% else %}
+      <img id="waQr" alt="QR" style="display:none;">
+      <div id="waQrMsg" style="font-size:13px;color:#4b5563;text-align:center;">Inapakia QR…</div>
+      {% endif %}
+    </div>
+    {% if st.status != 'connected' %}
+    <ol style="font-size:13px;color:#4b5563;line-height:1.7;padding-left:18px;margin:6px 0 0;">
+      <li>Fungua WhatsApp kwenye simu ya namba ya bot.</li>
+      <li>Nenda <em>Settings → Linked devices → Link a device</em>.</li>
+      <li>Scan QR hii. Inabadilika yenyewe kila baada ya muda mfupi.</li>
+    </ol>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><div class="card-title">Jumbe za wakulima (saa 24)</div></div>
+  <div class="wa-kv">
+    <div>Zimejibiwa</div><div><strong style="color:#16a34a;">{{ q.done }}</strong></div>
+    <div>Zinasubiri</div><div><strong>{{ q.pending }}</strong>{% if q.pending %} <span style="font-size:12px;color:#6b7280;">— zinashughulikiwa kwa mpangilio; zilizokwama zinaokotwa zenyewe</span>{% endif %}</div>
+    <div>Zimeshindwa</div><div><strong style="color:{% if q.failed %}#dc2626{% else %}#9ca3af{% endif %};">{{ q.failed }}</strong></div>
+  </div>
+  {% if q.recent_failed %}
+  <ul style="font-size:12.5px;margin-top:10px;color:#4b5563;">
+    {% for m in q.recent_failed %}<li>{{ m.received_at|date:"d M H:i" }} · {{ m.phone }} · {{ m.error|default:"–" }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>
+
+<div class="grid-2" style="margin-top:20px;">
+  <div class="card">
+    <div class="card-header"><div class="card-title">Jaribu kutuma</div></div>
+    <p style="font-size:13px;color:#4b5563;margin:-4px 0 10px;">Tuma ujumbe wa majaribio ili kuhakikisha bot inaweza kutuma. Usipoufikia, session imekufa.</p>
+    <form method="post" action="{% url 'wa_action' %}" class="search-bar">{% csrf_token %}
+      <input type="hidden" name="action" value="ping">
+      <input class="form-control" name="to" placeholder="Namba, mf. 0712 345 678" style="max-width:240px;">
+      <button class="btn btn-primary" type="submit">📤 Tuma</button>
+    </form>
+  </div>
+
+  <div class="card" style="border:1px solid #fecaca;">
+    <div class="card-header"><div class="card-title">Toa namba (logout)</div></div>
+    <p style="font-size:13px;color:#4b5563;margin:-4px 0 10px;">
+      Inafuta muunganisho wa namba hii. Bot itaacha kujibu hadi QR mpya iscaniwe. Tumia tu ukibadilisha namba
+      ya bot au session ikiharibika kabisa.
+    </p>
+    <form method="post" action="{% url 'wa_action' %}" class="search-bar">{% csrf_token %}
+      <input type="hidden" name="action" value="logout">
+      <input class="form-control" name="confirm" placeholder="Andika TOA kuthibitisha" style="max-width:220px;" autocomplete="off">
+      <button class="btn btn-secondary" type="submit" style="color:#dc2626;">Toa namba</button>
+    </form>
+  </div>
+</div>
+
+{% if configured and st.status != 'connected' %}
+<script>
+(function(){
+  const img = document.getElementById('waQr'), msg = document.getElementById('waQrMsg'),
+        badge = document.getElementById('waBadge');
+  async function tick(){
+    try {
+      const r = await fetch("{% url 'wa_qr' %}", {credentials: 'same-origin'});
+      const d = await r.json();
+      if (d.label) { badge.textContent = d.label; badge.className = 'badge ' + d.badge; }
+      if (d.status === 'connected') { location.reload(); return; }
+      if (d.qr) { img.src = d.qr; img.style.display = 'block'; msg.textContent = 'Scan sasa — QR inajisasisha yenyewe.'; }
+      else { img.style.display = 'none';
+             msg.textContent = d.error ? ('Bridge: ' + d.error) : 'QR bado haijatoka. Bonyeza "Anzisha" au subiri sekunde chache.'; }
+    } catch (e) { msg.textContent = 'Inashindwa kufikia bridge — inajaribu tena…'; }
+    setTimeout(tick, 5000);
+  }
+  tick();
+})();
+</script>
+{% endif %}
+{% endblock %}

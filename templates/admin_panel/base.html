@@ -257,6 +257,10 @@ textarea.form-control { resize:vertical; min-height:100px; }
       {% if unresolved_count %}<span class="nav-badge">{{ unresolved_count }}</span>{% endif %}
     </a>
 
+    <a href="{% url 'wa_home' %}" class="nav-link {% if page == 'whatsapp' %}active{% endif %}">
+      <span class="icon">📱</span> WhatsApp
+    </a>
+
     <div class="nav-section">Ushauri wa Kanuni</div>
     <a href="{% url 'rx_cases' %}" class="nav-link {% if page == 'rx_cases' %}active{% endif %}">
       <span class="icon">🔍</span> Kumbukumbu za Ushauri
