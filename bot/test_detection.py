@@ -92,7 +92,7 @@ class CoverageTests(TestCase):
         self.assertIn('Dodoma (Kondoa)', r)
         self.assertIn('*Mahindi* — mbegu, wakati wa kupanda, udongo', r)
         self.assertNotIn('wadudu na magonjwa', r)      # MHD-007 haikuingizwa → haidai
-        self.assertNotIn('nje ya uwezo wangu', r)
+        self.assertNotIn('natamani nielewe vizuri', r)
 
     def test_examples_use_a_place_with_data(self):
         from bot.messages import build_greeting, build_help_message
