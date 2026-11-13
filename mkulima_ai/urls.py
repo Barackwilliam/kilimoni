@@ -3,12 +3,15 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+from whatsapp.views import healthz
+
 # Branding ya Django admin (/admin/)
 admin.site.site_header = 'Kilimoni AI Tanzania'
 admin.site.site_title = 'Kilimoni AI'
 admin.site.index_title = 'Usimamizi wa Mfumo'
 
 urlpatterns = [
+    path('healthz/', healthz, name='healthz'),     # UptimeRobot / Render health check
     path('admin/', admin.site.urls),
     path('webhook/', include('whatsapp.urls')),
     path('api/', include('bot.urls')),

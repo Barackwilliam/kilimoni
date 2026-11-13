@@ -520,3 +520,21 @@ def bridge_sessions(request):
     if not wa_bridge.authorized(request):
         return JsonResponse({"success": False, "error": "Unauthorized"}, status=401)
     return JsonResponse({"success": True, "sessions": [wa_bridge.session_name()]})
+
+
+def healthz(request):
+    """
+    Kwa UptimeRobot/Render: inaiweka service hai (plan ya bure inalala bila
+    maombi ya HTTP, na jumbe za WhatsApp haziwezi kuiamsha), na inaokota
+    jumbe zilizokwama hata kama hakuna ujumbe mpya unaoingia.
+    Haihitaji kuingia; haitoi taarifa za siri.
+    """
+    try:
+        _sweep()
+    except Exception:
+        pass
+    bridge_ok = None
+    if wa_bridge.is_configured():
+        h = wa_bridge.health(timeout=2)
+        bridge_ok = bool(h.get('success'))
+    return JsonResponse({'ok': True, 'bridge': bridge_ok})

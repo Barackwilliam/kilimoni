@@ -427,7 +427,8 @@ async function restoreSessions() {
     }
 }
 
-const server = app.listen(PORT, () => {
+// Kilimoni: kwenye service moja na Django, BRIDGE_HOST=127.0.0.1 (si ya umma)
+const server = app.listen(PORT, process.env.BRIDGE_HOST || '0.0.0.0', () => {
     console.log('');
     console.log('========================================');
     console.log(`   ${BRIDGE_NAME.toUpperCase()} WHATSAPP BRIDGE`);
