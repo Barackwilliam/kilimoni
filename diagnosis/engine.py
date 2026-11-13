@@ -236,6 +236,36 @@ def is_cancel(text):
     return any(t == w or t.startswith(w + ' ') for w in CANCEL_WORDS)
 
 
+def _near(word, target):
+    """Kosa moja la uchapaji (herufi moja imebadilika/imeongezwa/imepungua): 'hqpana' ≈ 'hapana'."""
+    if word == target:
+        return True
+    if abs(len(word) - len(target)) > 1:
+        return False
+    i = j = edits = 0
+    while i < len(word) and j < len(target):
+        if word[i] == target[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if len(word) > len(target):
+            i += 1
+        elif len(word) < len(target):
+            j += 1
+        else:
+            i += 1
+            j += 1
+    return edits + (len(word) - i) + (len(target) - j) <= 1
+
+
+# Majibu yanayotambuliwa hata yakiwa na kosa moja la uchapaji ("Hqpana", "ndoyo", "sijuo")
+TYPO_TARGETS = (('hapana', 'no'), ('sijaona', 'no'), ('hakuna', 'no'), ('ndiyo', 'yes'),
+                ('nimeona', 'yes'), ('sijui', 'unknown'))
+
+
 def parse_answer(text):
     low = (text or '').lower()
     if any(p in low for p in UNKNOWN_PHRASES):
@@ -245,6 +275,12 @@ def parse_answer(text):
         return 'no'
     if words & YES_WORDS:
         return 'yes'
+    if len(words) <= 3:
+        for w in words:
+            if len(w) >= 5:
+                for target, answer in TYPO_TARGETS:
+                    if _near(w, target):
+                        return answer
     return 'unknown'
 
 
@@ -862,6 +898,11 @@ def step(state, text, crop=None):
     crop_name = crop.crop_name_sw if crop else 'zao lako'
 
     if state['phase'] == 'symptoms':
+        # Mkulima alieleza dalili KABLA ya kutaja zao ("majani yamekuwa ya kahawia" → "zao gani?"
+        # → "Mahindi"): tumia maelezo hayo badala ya kumuuliza dalili tena (kigezo 1).
+        early = state.pop('early_symptoms', '')
+        if not state['symptom_text'] and early and len(_tokens(early)) >= 2:
+            state['symptom_text'] = early
         if not state['symptom_text']:
             if len(_tokens(text)) >= 2:
                 state['symptom_text'] = text

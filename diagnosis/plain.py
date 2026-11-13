@@ -149,11 +149,20 @@ def _cap_first(s):
     return s[:1].upper() + s[1:] if s else s
 
 
+# Bot haiwezi kusoma picha bado: ombi la "tuma picha" lingemkanganya mkulima
+# (anatuma picha, kisha anaambiwa "siwezi kusoma picha").
+PHOTO_OR = re.compile(r'\b(tuma|nitumie|piga|tutumie)\s+picha(\s+\w+){0,3}?\s+au\s+', re.IGNORECASE)
+PHOTO_ASK = re.compile(r'\b(tuma|nitumie|piga|tutumie)\s+picha\b', re.IGNORECASE)
+
+
 def clean_sentence(sentence, terms=None):
     """Rudisha (sentensi safi au None, sababu ya kuondolewa au None)."""
     s = sentence.strip()
     if not s:
         return None, None
+    s = PHOTO_OR.sub('', s)                  # "tuma picha au jibu maswali" → "jibu maswali"
+    if PHOTO_ASK.search(s):
+        return None, 'unsupported'
     if AI_BECAUSE.search(s):
         s = _cap_first(AI_BECAUSE.sub('', s))
     elif AI_START.search(s):

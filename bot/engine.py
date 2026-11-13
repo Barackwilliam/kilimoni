@@ -319,6 +319,8 @@ INTENT_KEYWORD_MAP = {
     ],
     'spacing': [
         ['nafasi', 'kupanda'], ['umbali', 'kupanda'], ['spacing'],
+        # "jinsi ya kupanda mahindi" (live) — jibu la upandaji: nafasi, kina, mbegu kwa shimo
+        ['jinsi', 'kupanda'], ['namna', 'kupanda'], ['hatua', 'kupanda'], ['jinsi', 'kupanda'],
         ['cm', 'safu'], ['mstari', 'umbali'], ['shimo', 'shimo'],
         ['nafasi', 'mstari'],
     ],
@@ -636,8 +638,32 @@ def is_acknowledgement(text: str) -> bool:
 # ═══════════════════════════════════════════════════════
 # MAIN: process_message — Mtiririko Kamili
 # ═══════════════════════════════════════════════════════
+def _seed_example_text():
+    from bot.messages import _seed_example
+    return _seed_example()
+
+
 def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 'text',
                     message_id: str = '') -> str:
+    """
+    Kama _process_message; jibu la kwanza baada ya malalamiko ya mkulima
+    ("nimeuliza hatua za kupanda…") linaanza kwa kuomba radhi.
+    """
+    response = _process_message(phone_number, raw_message, whatsapp_type, message_id)
+    user = User.objects.filter(phone_number=phone_number).first()
+    prefix = _apology_prefix(user) if user and response else ''
+    if prefix:
+        response = prefix + response
+        last = (Conversation.objects.filter(user=user, message_direction='outbound')
+                .order_by('-id').first())
+        if last:
+            last.raw_message = response
+            last.save(update_fields=['raw_message'])
+    return response
+
+
+def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = 'text',
+                     message_id: str = '') -> str:
     """
     Shughulikia ujumbe wote unaoingia kwa kufuata architecture kamili:
     Receive → Detect → Normalize → Synonyms → Crop → Location →
@@ -724,6 +750,20 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
         handled = _handle_advisory_pending(user, raw_message, normalized, start_time, message_id)
         if handled is not None:
             return handled
+
+    # ── Malalamiko bila swali jipya ("Mbona sijauliza swali hilo?") ──
+    # Live ilijibiwa "Hilo silijui vizuri 😅" kana kwamba si swali la kilimo.
+    if _is_complaint(normalized) and not _is_new_question(normalized):
+        sess = dict(user.session_state or {})
+        sess.pop('apologize', None)
+        user.session_state = sess
+        user.save(update_fields=['session_state'])
+        response = ("Samahani, nadhani nilikuelewa vibaya. 🙏\n\n"
+                    "Niambie tena swali lako kwa maneno yako, nami nitakusaidia. "
+                    "Mfano: _" + _seed_example_text() + "_")
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
+                 start_time, message_id=message_id, trace={'mode': 'profile', 'decision': 'complaint'})
+        return response
 
     # ── Kukubali / shukrani ("sawa", "asante") ───────
     # Bila hii, "sawa" hupelekwa kwenye injini ya maswali na
@@ -1542,8 +1582,49 @@ def _rx_step(user, state, raw_message, normalized, start_time, message_id, fresh
 def _start_diagnostic(user, raw_message, normalized, fresh_crop, start_time, message_id):
     # Zao linachukuliwa tu kama limetajwa kwenye ujumbe huu —
     # si kutoka kumbukumbu ya zamani — ili tusichunguze zao lisilo sahihi.
-    return _rx_step(user, rx.new_state(), raw_message, normalized, start_time,
+    state = rx.new_state()
+    if not fresh_crop and len(normalized.split()) >= 3:
+        # "majani yamekuwa ya kahawia" bila zao: tunauliza zao, lakini maelezo haya
+        # yanatumika baadaye — mkulima asiulizwe dalili mara ya pili.
+        state['early_symptoms'] = normalized
+    return _rx_step(user, state, raw_message, normalized, start_time,
                     message_id, fresh_crop=fresh_crop)
+
+
+# ── Mkulima akibadilisha mada au akilalamika katikati ya uchunguzi ──
+# Live: "Jinsi ya kupanda mahindi chunya" katikati ya maswali ilijibiwa "Samahani kama swali
+# halikuwa wazi…", na "Nimeuliza hatua za kupanda mahindi" ikajibiwa "Hakuna shida" + Swali 2.
+COMPLAINT = re.compile(
+    r'\b(sijauliza|sikuuliza|nimeuliza|nimekuuliza|mbona|hujanielewa|hujaelewa|umenielewa vibaya'
+    r'|sio hivyo|si hivyo|sio swali langu|si swali langu|swali langu ni|sikuuliza hilo)\b')
+NEW_QUESTION = re.compile(
+    r'\b(jinsi ya|namna ya|hatua za|bei ya|bei za|soko la|masoko|mbolea gani|mbolea ya|mbegu gani'
+    r'|mbegu ya|nipande|nitapanda|kupanda|nivune|kuvuna|wakati wa kupanda|lini)\b')
+
+
+def _is_complaint(normalized):
+    return bool(COMPLAINT.search(normalized))
+
+
+def _is_new_question(normalized):
+    """Ujumbe ni swali jipya (si jibu la swali la uchunguzi)."""
+    if rx.parse_answer(normalized) != 'unknown':
+        return False                       # "ndiyo nimeona…" ni jibu
+    if adv_coverage.wants_coverage(normalized) or adv_rotation.wants_rotation(normalized):
+        return True
+    if len(normalized.split()) < 3:
+        return False
+    return bool(NEW_QUESTION.search(normalized))
+
+
+def _apology_prefix(user):
+    """Jibu la kwanza baada ya malalamiko linaanza kwa kuomba radhi."""
+    sess = dict(user.session_state or {})
+    if sess.pop('apologize', None):
+        user.session_state = sess
+        user.save(update_fields=['session_state'])
+        return "Samahani, nadhani nilikuelewa vibaya. 🙏\n\n"
+    return ''
 
 
 def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_id):
@@ -1577,6 +1658,18 @@ def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_i
                  start_time, message_id=message_id,
                  trace={'mode': 'rules_engine', 'decision': 'cancelled'})
         return response
+
+    # Mkulima amebadilisha mada ("jinsi ya kupanda mahindi…") au analalamika
+    # ("nimeuliza hatua za kupanda") → acha uchunguzi, shughulikia ujumbe wake.
+    complaint = _is_complaint(normalized)
+    if state['phase'] != 'crop' and (complaint or _is_new_question(normalized)):
+        _save_rx(user, None)
+        if complaint:
+            sess = dict(user.session_state or {})
+            sess['apologize'] = True
+            user.session_state = sess
+            user.save(update_fields=['session_state'])
+        return None
 
     return _rx_step(user, state, raw_message, normalized, start_time, message_id,
                     fresh_crop=detect_crop(normalized) if state['phase'] == 'crop' else None)
