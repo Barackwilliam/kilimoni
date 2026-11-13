@@ -29,6 +29,15 @@ RUN_BRIDGE="${RUN_BRIDGE:-1}"
 if [ "$RUN_BRIDGE" = "1" ]; then
     export BRIDGE_URL="http://127.0.0.1:${BRIDGE_PORT}"
 
+    # Bridge inaiita Django kwa http://127.0.0.1:$PORT — Host hiyo lazima
+    # iruhusiwe, la sivyo Django inajibu 400 (DisallowedHost) kwa kila ujumbe.
+    if [ -n "${ALLOWED_HOSTS:-}" ] && [ "${ALLOWED_HOSTS}" != "*" ]; then
+        case ",${ALLOWED_HOSTS}," in
+            *,127.0.0.1,*) ;;
+            *) export ALLOWED_HOSTS="${ALLOWED_HOSTS},127.0.0.1,localhost" ;;
+        esac
+    fi
+
     # Ufunguo wa ndani kati ya Django na bridge. Ukiwa haujawekwa,
     # tunatengeneza mmoja kwa kila kuanza — process zote mbili zinaurithi.
     if [ -z "${BRIDGE_API_KEY:-}" ]; then
