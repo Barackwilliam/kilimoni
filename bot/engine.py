@@ -17,6 +17,7 @@ from crops.models import (
 from bot.models import User, Conversation, UnresolvedQuery
 from bot import diagnostic as dg
 from diagnosis import engine as rx
+from advisory import coverage as adv_coverage
 from advisory import location as adv_location
 from advisory import seed as adv_seed
 from advisory import planting as adv_planting
@@ -700,6 +701,14 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     # ── MODULE 4: Apply synonyms ─────────────────────
     normalized = apply_synonyms(normalized)
 
+    # ── "Uko na taarifa za mikoa/mazao gani?" → kutoka data (MHD-001 + moduli) ──
+    # Kabla ya hali zinazosubiri: ni swali la pembeni, halibadilishi mazungumzo yake.
+    if adv_coverage.wants_coverage(normalized):
+        response = adv_coverage.coverage_message()
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
+                 start_time, message_id=message_id)
+        return response
+
     # ── Uchunguzi unaoendelea au swali la lengo ───────
     # Hushughulikiwa KWANZA, ili majibu ya mkulima (mfano "wiki 3",
     # "nusu ya shamba") yasichukuliwe kama maswali mapya.
@@ -1241,8 +1250,10 @@ def _place_without_data(user, normalized):
 
 
 def _no_data_place_message(place, purpose):
+    known = adv_coverage.places_line(limit=6)
+    have = f"\n\n📍 Kwa sasa nina taarifa za maeneo haya: {known}." if known else ''
     return (f"📍 Nimeona uko *{place}*, lakini bado sina taarifa za kanda ya kilimo (AEZ) ya eneo hilo "
-            f"kwenye data yangu, kwa hiyo siwezi {purpose} kwa uhakika — na sitabuni.\n\n"
+            f"kwenye data yangu, kwa hiyo siwezi {purpose} kwa uhakika — na sitabuni.{have}\n\n"
             "Kama shamba lako liko kwenye kata au wilaya nyingine jirani, nitajie. Vinginevyo, "
             "📞 afisa ugani wa eneo lako atakusaidia.")
 

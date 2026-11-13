@@ -63,3 +63,43 @@ class PlaceWithoutDataTests(TestCase):
     def test_location_only_message_is_not_a_problem(self):
         r = self.ask('255700000104', 'niko kondoa')
         self.assertNotIn('Pole kwa tatizo', r[0])
+
+
+class CoverageTests(TestCase):
+    """'Uko na taarifa za mikoa gani?' na mifano ya bot vinatoka kwenye data, si maneno ya kudumu."""
+
+    @classmethod
+    def setUpTestData(cls):
+        import glob
+        import os
+        from advisory.importer import import_files
+        from crops.models import Crop
+        Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize', crop_group='cereals')
+        fx = os.path.join(os.path.dirname(__file__), '..', 'advisory', 'fixtures')
+        import_files(sorted(glob.glob(os.path.join(fx, '*.xlsx'))))
+
+    def test_detector(self):
+        from advisory.coverage import wants_coverage
+        for t in ('Uko na taarifa za mikoa gani', 'unajua mazao gani', 'mnahudumia wilaya zipi'):
+            self.assertTrue(wants_coverage(t), t)
+        for t in ('mazao gani nipande baada ya mahindi', 'mbegu gani ya mahindi nipande singida',
+                  'wilaya gani nzuri kwa mahindi'):
+            self.assertFalse(wants_coverage(t), t)
+
+    def test_coverage_answer_from_data(self):
+        from bot.engine import process_message
+        r = process_message('255700000501', 'Uko na taarifa za mikoa gani')
+        self.assertIn('Dodoma (Kondoa)', r)
+        self.assertIn('*Mahindi* — mbegu, wakati wa kupanda, udongo', r)
+        self.assertNotIn('wadudu na magonjwa', r)      # MHD-007 haikuingizwa → haidai
+        self.assertNotIn('nje ya uwezo wangu', r)
+
+    def test_examples_use_a_place_with_data(self):
+        from bot.messages import build_greeting, build_help_message
+        self.assertIn('nipande Kondoa?', build_greeting(is_returning=False))
+        self.assertNotIn('Singida', build_help_message())
+
+    def test_no_data_place_lists_known_places(self):
+        from bot.engine import process_message
+        r = process_message('255700000502', 'Mbegu gani ya mahindi nipande singida')
+        self.assertIn('Kwa sasa nina taarifa za maeneo haya: Dodoma (Kondoa)', r)

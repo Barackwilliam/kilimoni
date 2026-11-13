@@ -76,7 +76,7 @@ def build_greeting(is_returning: bool = False, last_crop: str = '') -> str:
         "mbegu, wakati wa kupanda, mbolea, wadudu na magonjwa, "
         "kuvuna, na bei za sokoni.\n\n"
         "Uliza tu kwa Kiswahili cha kawaida.\n"
-        "_Mfano: Ni mbegu gani ya mahindi nipande Singida?_\n\n"
+        f"_Mfano: {_seed_example()}_\n\n"
         "Ukihitaji mwongozo wakati wowote, andika *0*."
     )
 
@@ -260,14 +260,33 @@ def build_technical_issue() -> str:
     ])
 
 
+def _example_place():
+    """Eneo LILILOMO kwenye data ya maeneo (MHD-001) — mfano usimpeleke mkulima kwenye 'sina taarifa'."""
+    try:
+        from advisory.coverage import example_place
+        return example_place()
+    except Exception:
+        return ''
+
+
+def _seed_example():
+    place = _example_place()
+    return f"Ni mbegu gani ya mahindi nipande {place}?" if place else "Ni mbegu gani ya mahindi inafaa eneo langu?"
+
+
+def _planting_example():
+    place = _example_place()
+    return f"Mahindi yapandwe lini {place}?" if place else "Mahindi yapandwe lini?"
+
+
 # ── Mwongozo ──────────────────────────────────────────
 def build_help_message() -> str:
     return (
         "📋 *Jinsi ya kunitumia*\n\n"
         "Uliza tu kwa Kiswahili cha kawaida, kama unavyoongea na "
         "afisa ugani. Mifano:\n\n"
-        "• _Ni mbegu gani ya mahindi nipande Singida?_\n"
-        "• _Mahindi yapandwe lini Dodoma?_\n"
+        f"• _{_seed_example()}_\n"
+        f"• _{_planting_example()}_\n"
         "• _Mbolea ya kupandia mahindi ni ipi?_\n"
         "• _Mahindi yana viwavi, nifanye nini?_\n"
         "• _Mahindi yanavunwa lini?_\n"
