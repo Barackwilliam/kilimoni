@@ -150,7 +150,7 @@
   </p>
   <ul style="font-size:13px;line-height:1.7;">
     {% for d in trace.dropped_text %}
-    <li>{% if d.reason == 'english' %}<span class="badge badge-yellow">Kiingereza</span>{% else %}<span class="badge badge-gray">Maelekezo ya mfumo</span>{% endif %} {{ d.text }}</li>
+    <li>{% if d.reason == 'english' %}<span class="badge badge-yellow">Kiingereza</span>{% elif d.reason == 'unsupported' %}<span class="badge badge-blue">Ombi lisilowezekana (picha)</span>{% else %}<span class="badge badge-gray">Maelekezo ya mfumo</span>{% endif %} {{ d.text }}</li>
     {% endfor %}
   </ul>
 </div>
