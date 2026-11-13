@@ -394,18 +394,11 @@ def build_capability_message() -> str:
 
 def build_offtopic_message() -> str:
     """
-    Swali la nje ya kilimo. Tunajibu kwa ucheshi kidogo na staha —
-    si kwa ukavu — kisha tunamrudisha kwenye kazi yetu.
+    Swali ambalo bot haikulielewa au liko nje ya kilimo. Kwa unyenyekevu:
+    tunaonyesha tunataka kumwelewa mkulima, na tunampa mada tunazoweza.
     """
-    opening = _pick([
-        "Hilo liko nje ya uwezo wangu 😅",
-        "Hapo umenishinda 😅",
-        "Hilo silijui vizuri 😅",
-    ])
-
     return (
-        f"{opening}\n\n"
-        "Mimi ni msaidizi wa *kilimo* — niko hapa kwa maswali ya shamba, "
-        "mazao, mbegu, mbolea, wadudu na masoko.\n\n"
-        "Una swali lolote la shamba lako?"
+        "Samahani, natamani nielewe vizuri shida yako. 🙏\n\n"
+        "Tafadhali niulize kuhusu hali ya shamba, mazao, mbegu, mbolea, "
+        "wadudu au masoko."
     )
