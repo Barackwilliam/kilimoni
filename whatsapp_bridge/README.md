@@ -175,14 +175,27 @@ sehemu nyingine.
 
 ---
 
-## Kilimoni: kusanidi Render
+## Kilimoni: kusanidi Render (web service MOJA)
 
-**Service ya bridge** (root `whatsapp_bridge/`, `npm install`, `node server.js`, health `/health`):
-`DJANGO_URL` (URL ya Django ya Kilimoni), `BRIDGE_API_KEY`, `DATABASE_URL` (Supabase ya Kilimoni),
-`PG_POOL_MAX=5`, `BRIDGE_NAME=Kilimoni AI`.
+Bridge inaendeshwa **ndani ya service ileile ya Django** na `start.sh`:
+inasikiliza `127.0.0.1:3001` tu (si ya umma), Django inaiita kwa ndani, na
+ikianguka inawashwa upya yenyewe. `build.sh` inasakinisha Node na
+`node_modules` (Node ikikosekana inapakuliwa kwenye `.node/`).
 
-**Service ya Django**: `BRIDGE_URL` (URL ya service ya bridge) na `BRIDGE_API_KEY` ileile.
-Hiari: `BAILEYS_SESSION` (chaguo-msingi `kilimoni` — ileile ya bridge ya zamani, hivyo session
-inaendelea), `BRIDGE_WORKERS` (chaguo-msingi 4 kwa kila worker wa gunicorn).
+Mipangilio ya Render (Settings):
+- **Build Command:** `bash build.sh`
+- **Start Command:** `bash start.sh`
+- **Health Check Path:** `/healthz/`
+
+Environment: zile zilizopo za Django (`DB_*`, `SECRET_KEY`, `GROQ_API_KEY`…).
+Hakuna haja ya `BRIDGE_URL`, `BRIDGE_API_KEY` wala `DATABASE_URL` — `start.sh`
+inaziweka zenyewe (ufunguo wa ndani unatengenezwa kila kuanza; DATABASE_URL
+inajengwa kutoka `DB_*`). Hiari: `GUNICORN_THREADS` (4), `BRIDGE_WORKERS` (4),
+`BRIDGE_MAX_MB` (256), `RUN_BRIDGE=0` (Django peke yake).
+
+**Service isilale.** Jumbe za WhatsApp haziwezi kuiamsha service iliyolala.
+Kwenye plan ya bure, weka UptimeRobot (HTTP, kila dakika 5) kwenye
+`https://<service>.onrender.com/healthz/`. `/healthz/` pia inaokota jumbe
+zilizokwama. Kwenye Starter haitalali.
 
 Hali ya namba, QR, kuanzisha upya na kutoa namba: **Dashboard → WhatsApp**.

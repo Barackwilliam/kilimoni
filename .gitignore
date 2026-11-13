@@ -18,3 +18,5 @@ media/
 /venv
 .venv
 .env.example
+# Node iliyopakuliwa na build.sh (Render)
+.node/

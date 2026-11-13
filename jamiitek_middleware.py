@@ -114,7 +114,7 @@ class JamiiTekStatusMiddleware:
     FAIL_TIMEOUT = 60    # paneli ikishindwa: jaribu tena baada ya dakika 1
     # /webhook/ — bot inashughulikiwa yenyewe (JSON, si HTML)
     # /dashboard/malipo/ — mteja lazima aweze kuona deni na jinsi ya kulipa
-    BYPASS_PATHS = ['/admin/', '/api/', '/static/', '/media/',
+    BYPASS_PATHS = ['/admin/', '/api/', '/static/', '/media/', '/healthz/',
                     '/dashboard/malipo/', '/dashboard/login/', '/dashboard/logout/']
 
     # Njia za bot: hapa hatutoi HTML — tunarudisha jibu la Kiswahili

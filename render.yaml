@@ -2,8 +2,10 @@ services:
   - type: web
     name: mkulima-ai-tanzania
     env: python
-    buildCommand: "./build.sh"
-    startCommand: "gunicorn mkulima_ai.wsgi:application --bind 0.0.0.0:$PORT --workers 2"
+    buildCommand: "bash build.sh"
+    # Django + bridge ya WhatsApp (Baileys) kwenye service hii MOJA — tazama start.sh
+    startCommand: "bash start.sh"
+    healthCheckPath: /healthz/
     envVars:
       - key: SECRET_KEY
         generateValue: true

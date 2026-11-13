@@ -215,3 +215,18 @@ class CrashRecoveryTests(TestCase):
         pm.assert_not_called()
         self.assertEqual(sent, [reply])
         self.assertEqual(IncomingMessage.objects.get(message_id='crash-1').status, 'done')
+
+
+class HealthzTests(TestCase):
+    """/healthz/ — UptimeRobot/Render: wazi (bila login), haitoi siri, inaokota foleni."""
+
+    @override_settings(**BRIDGE)
+    def test_reports_bridge(self):
+        with mock.patch.object(bridge, 'health', return_value={'success': True}):
+            r = self.client.get('/healthz/')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {'ok': True, 'bridge': True})
+
+    @override_settings(BRIDGE_URL='', BRIDGE_API_KEY='')
+    def test_without_bridge(self):
+        self.assertEqual(self.client.get('/healthz/').json(), {'ok': True, 'bridge': None})
