@@ -288,10 +288,9 @@ class Command(BaseCommand):
                 'au import_mhd007 kwanza.'))
 
         passed = failed = 0
-        ctx = patch('bot.groq_ai.get_groq_response', return_value='') if opts['offline'] else None
         ai_ctx = patch('diagnosis.ai_layer._chat', return_value=None) if opts['offline'] else None
+        ctx = ai_ctx
         if ctx:
-            ctx.start()
             ai_ctx.start()
 
         try:
@@ -339,7 +338,6 @@ class Command(BaseCommand):
                 User.objects.filter(phone_number=phone).delete()
         finally:
             if ctx:
-                ctx.stop()
                 ai_ctx.stop()
 
         self.stdout.write('\n' + '═' * 64)

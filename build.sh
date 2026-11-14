@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -o errexit
 pip install -r requirements.txt
+
+# ── Kipimo cha ubora KABLA ya deploy: benki ya mazungumzo 300+ kupitia bot nzima ──
+# Inatumia database ya muda ya majaribio (SQLite + data ya sample), si database ya production.
+# Ikishindwa (jibu la mfumo wa zamani, taarifa ya kubuni, jibu linalojirudia…) build inasimama
+# na toleo lililopo linaendelea kufanya kazi. Dharura tu: weka QUALITY_GATE=0 kwenye Render.
+if [ "${QUALITY_GATE:-1}" != "0" ]; then
+    DB_USER= GROQ_API_KEY= python manage.py test bot.test_quality --noinput -v 1
+fi
+
 python manage.py collectstatic --no-input
 python manage.py migrate
 

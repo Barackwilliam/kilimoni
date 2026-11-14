@@ -41,6 +41,8 @@ GOALS = {
     'challenge': 'anapinga ushauri ambao bot imempa (kwa nini umenishauri…, ungeanza kuniuliza…)',
     'complaint': 'analalamika kwamba bot haikumuelewa au haikujibu swali lake',
     'gap': 'anauliza mada ambayo bot haina data yake bado (tazama TOPICS)',
+    'crop_only': 'ametaja zao tu bila swali (mf. "mpunga", "sasa ni mahindi", "turudi kwenye mahindi")',
+    'location_only': 'ametaja eneo lake tu bila swali (mf. "niko Kondoa", "Ruvuma")',
     'greeting': 'salamu tu',
     'thanks': 'shukrani au kukubali (asante, sawa, poa) bila swali jipya',
     'identity': 'anauliza bot ni nani',
@@ -98,6 +100,20 @@ def pending_kind(user):
     return ''
 
 
+def rule_context(user):
+    """Muktadha wa mazungumzo kwa kanuni: zao la karibuni, maneno ya utambuzi uliotolewa."""
+    if not user:
+        return {}
+    from bot import engine as E
+    from diagnosis import engine as rx
+    ctx = {'ctx_crop': bool(E._recent_crop(user))}
+    dx = (user.session_state or {}).get('last_dx') or {}
+    cause = rx._cause(dx['cid']) if dx.get('cid') else None
+    if cause is not None:
+        ctx['dx_words'] = [w for w in re.findall(r'[a-z]+', rx._cause_name(cause).lower()) if len(w) >= 5]
+    return ctx
+
+
 def recent_turns(user, limit=4):
     from bot.models import Conversation
     if not user:
@@ -112,7 +128,7 @@ def recent_turns(user, limit=4):
 ANSWER_PENDING = {'question', 'extent', 'intake', 'location', 'crop', 'menu', 'offer', 'symptoms'}
 
 
-def rule_frame(text, pending='', normalized=None):
+def rule_frame(text, pending='', normalized=None, extra=None):
     """Fomu kwa kanuni za maneno tu — mpangilio uleule wa injini ya zamani."""
     from bot import engine as E
     from bot import diagnostic as dg
@@ -131,6 +147,8 @@ def rule_frame(text, pending='', normalized=None):
     ans = rx.parse_answer(low)
     f['answer'] = ans if ans != 'unknown' or any(p in low for p in rx.UNKNOWN_PHRASES) else None
     words = low.split()
+    extra = extra or {}
+    has_crop_ctx = bool(f['crop'] or extra.get('ctx_crop'))
 
     def done(goal, topic=''):
         f['goal'], f['topic'] = goal, topic
@@ -146,12 +164,14 @@ def rule_frame(text, pending='', normalized=None):
         return done('complaint')
     if pending == 'after_diagnosis' and (E.FOLLOWUP.search(low)) and rx.is_vague(low):
         return done('followup')
+    if pending == 'after_diagnosis' and any(w in low for w in extra.get('dx_words', [])):
+        return done('followup')                   # "si dalili za Fall Armyworm? nifanye nini?"
     if pending in ANSWER_PENDING:
         if f['answer'] or len(words) <= 4 or (pending == 'location' and f['place']) \
                 or (pending == 'intake' and rx.parse_intake(low)[0]):
-            if not (coverage.wants_where_grows(low, bool(f['crop'])) or E.knowledge_gap_topic(low)):
+            if not (coverage.wants_where_grows(low, has_crop_ctx) or E.knowledge_gap_topic(low)):
                 return done('answer')
-    if coverage.wants_where_grows(low, has_crop_context=bool(f['crop'])):
+    if coverage.wants_where_grows(low, has_crop_context=has_crop_ctx):
         return done('where_grows')
     if coverage.wants_coverage(low):
         return done('coverage')
@@ -170,6 +190,13 @@ def rule_frame(text, pending='', normalized=None):
         return done('diagnosis')
     if pending == 'after_diagnosis' and E.FOLLOWUP.search(low):
         return done('followup')
+    if f['crop'] and len(words) <= 6:
+        names = set(f['crop'].crop_name_sw.lower().split()) | set(f['crop'].crop_name_en.lower().split())
+        rest = [w for w in words if w not in names and not E.CROP_SWITCH.match(w) and not E.RESUME.match(w)]
+        if not rest:
+            return done('crop_only')
+    if not f['crop'] and len(words) <= 4 and (f['place'] or E.resolve_farm_location(low)):
+        return done('location_only')
     if E.is_acknowledgement(low):
         return done('thanks')
     kind = detect_offtopic_kind(low)
@@ -349,7 +376,7 @@ def combine(ai, rules):
 def understand(text, user=None, pending=None, normalized=None, use_ai=True):
     """Fomu ya ujumbe: kanuni + AI (ikipatikana), zikiunganishwa kwa combine()."""
     pending = pending_kind(user) if pending is None else pending
-    rules = rule_frame(text, pending, normalized)
+    rules = rule_frame(text, pending, normalized, extra=rule_context(user))
     ai = None
     if use_ai and rules['goal'] in RULE_UNSURE | {'answer', 'diagnosis', 'complaint'}:
         # AI inaitwa tu pale inapoongeza kitu: kanuni hazijaelewa, au tunahitaji
