@@ -76,24 +76,47 @@ class Command(BaseCommand):
                           + (f"  — kesi {missed} AI haikujibu (hazijahesabiwa)" if missed else ''))
         return ok, len(scored)
 
+    def _system(self, ai_results):
+        """Mfumo kamili (combine): kanuni + AI pale kanuni hazijaelewa — kutoka majibu ya AI yaliyokwisha patikana."""
+        out = []
+        for case, ai_f, _ in ai_results:
+            pending = case.get('pending', '')
+            rules = understand.rule_frame(case['msg'], pending)
+            ai = None
+            if ai_f['source'] == 'ai' and rules['goal'] in understand.RULE_UNSURE | {'answer', 'diagnosis', 'complaint'}:
+                ai = understand.context_check(dict(ai_f), pending)
+            f = understand.combine(ai, rules)
+            out.append((case, f, check(case, f)))
+        return out
+
     def handle(self, *args, **opts):
         from diagnosis import ai_layer
         from django.conf import settings
         self.only, self.delay = opts['only'], opts['delay']
         self.primary = getattr(settings, 'GROQ_UNDERSTAND_MODEL', '') or None
-        self.stdout.write(f"Model (kwa mpangilio): {', '.join(ai_layer.model_chain(self.primary))}")
         ai_ok = ai_layer.available()
+        if ai_ok:
+            self.stdout.write(f"Model (kwa mpangilio): {', '.join(ai_layer.model_chain(self.primary))}")
         if opts['compare']:
             if not ai_ok:
                 self.stdout.write(self.style.WARNING('AI haipatikani (GROQ_API_KEY) — siwezi kulinganisha.'))
                 return
-            r, rn = self._report('KANUNI ZA MANENO', self._run(False))
-            self.stdout.write(f"\nAI: maombi {len(CASES)}, sekunde {self.delay} kati ya kila moja "
-                              f"(takriban dakika {round(len(CASES) * (self.delay + 2) / 60)})…")
-            a, an = self._report('AI + UTHIBITISHO', self._run(True))
-            self.stdout.write(f"\nKanuni: {r}/{rn}   AI: {a}/{an}")
+            r, rn = self._report('1) KANUNI ZA MANENO PEKE YAKE', self._run(False))
+            self.stdout.write(f"\nAI: maombi {len(CASES)}, sekunde {self.delay} kati ya kila moja…")
+            ai_results = self._run(True)
+            a, an = self._report('2) AI PEKE YAKE', ai_results)
+            m, mn = self._report('3) MFUMO KAMILI (kanuni + AI) — ndivyo bot inavyofanya kazi', self._system(ai_results))
+            self.stdout.write(f"\nKanuni: {r}/{rn}   AI peke yake: {a}/{an}   Mfumo kamili: {m}/{mn}")
+            for tag in ('variant', 'variant2'):
+                cases = {c['id'] for c in CASES if c['src'] == tag}
+                if cases:
+                    sys_ok = sum(1 for c, f, e in self._system(ai_results) if c['id'] in cases and not e)
+                    self.stdout.write(f"  └ maneno mapya ({tag}): {sys_ok}/{len(cases)}")
             return
         use_ai = ai_ok and not opts['rules']
         if not use_ai and not opts['rules']:
             self.stdout.write(self.style.WARNING('AI haipatikani — napima kanuni za maneno tu.'))
-        self._report('AI + UTHIBITISHO' if use_ai else 'KANUNI ZA MANENO', self._run(use_ai))
+        if use_ai:
+            self._report('MFUMO KAMILI (kanuni + AI)', self._system(self._run(True)))
+        else:
+            self._report('KANUNI ZA MANENO', self._run(False))

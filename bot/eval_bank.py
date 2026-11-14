@@ -168,6 +168,31 @@ CASES = [
     dict(id='NEW17', src='variant', msg="samadi ya kuku inafaa kwa mahindi?", goal='gap', topic='mbolea'),
     dict(id='NEW18', src='variant', pending='location', bot="Tafadhali taja wilaya au kata yako",
          msg="kijiji cha pahi huko kondoa", goal='answer'),
+
+    # ── Kundi la pili la maneno mapya (15 Nov): yaliongezwa BAADA ya kurekebisha kanuni kwa
+    #    kundi la kwanza, ili kupima tena kwa uaminifu. Usirekebishe kanuni kwa ajili ya haya —
+    #    yapime, kisha ongeza kundi jipya. ──
+    dict(id='V2-1', src='variant2', msg="majani ya mahindi yamejaa vidoti vyeusi, ni ugonjwa gani huu?",
+         goal='diagnosis', crop='Mahindi'),
+    dict(id='V2-2', src='variant2', msg="msimu wa mvua za vuli nianze lini kupanda mahindi huku kondoa",
+         goal='planting'),
+    dict(id='V2-3', src='variant2', msg="mbegu ya muda mfupi ya mahindi ipi nzuri?", goal='seed'),
+    dict(id='V2-4', src='variant2', msg="shamba langu ni la mchanga mtupu, nipande nini?", goal=('soil', 'seed')),
+    dict(id='V2-5', src='variant2', pending='question', bot="Swali 1: Je, kuna funza ndani ya kitovu?",
+         msg="kwa kweli sijaangalia vizuri", goal='answer', answer='unknown'),
+    dict(id='V2-6', src='variant2', pending='question', bot="Swali 2: Je, majani yana mistari ya njano?",
+         msg="yapo machache sana", goal='answer', answer='yes'),
+    dict(id='V2-7', src='variant2', msg="dawa ya kuua magugu kwenye mahindi ni ipi", goal='gap',
+         topic='kupalilia na kudhibiti magugu'),
+    dict(id='V2-8', src='variant2', msg="niuze mahindi yangu sasa au nisubiri bei ipande?", goal='gap',
+         topic='bei na masoko'),
+    dict(id='V2-9', src='variant2', msg="nimeanza kulima mwaka huu, naomba ushauri nianze na nini",
+         goal=('unclear', 'capability')),
+    dict(id='V2-10', src='variant2', msg="kuna wadudu weusi wadogo wamejaa chini ya majani", goal='diagnosis'),
+    dict(id='V2-11', src='variant2', pending='after_diagnosis', bot="Matokeo ya uchunguzi — Funza jeshi vamizi",
+         msg="hivyo ni kweli umehakikisha au unakisia tu?", goal=('followup', 'challenge')),
+    dict(id='V2-12', src='variant2', msg="mahindi yaliyopandwa baada ya maharage huwa yanastawi?",
+         goal='rotation'),
 ]
 
 

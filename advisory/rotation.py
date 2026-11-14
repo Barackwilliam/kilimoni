@@ -102,7 +102,10 @@ def wants_rotation(text):
     if any(s in low for s in ROT_STEMS):
         return True
     m = re.search(r'baada ya ([a-z]+)', low)          # "baada ya mahindi" — si "baada ya mvua"
-    return bool(m and m.group(1) in lexicon())
+    if m and m.group(1) in lexicon():
+        return True
+    # "baada ya kuvuna mahindi msimu ujao nilime nini?"
+    return bool(re.search(r'baada ya (kuvuna|mavuno)\b.*\b(nilime|nipande|tulime|tupande|zao gani)\b', low))
 
 
 def _family(name):

@@ -61,7 +61,7 @@ class UnderstandTests(TestCase):
         llm = FrameLLM({msg: fr('diagnosis', crop='Kahawa ya Brazil', affirmed=['majani yana mashimo', 'mmea umedumaa'])})
         with patch('diagnosis.ai_layer._chat', llm):
             f = understand.understand(msg, None, pending='')
-        self.assertEqual(f['source'], 'ai')
+        self.assertEqual(f['source'], 'rules+ai')                         # kanuni: diagnosis; AI: dalili
         self.assertIsNone(f['crop'])
         self.assertEqual(f['affirmed'], ['majani yana mashimo'])          # "umedumaa" hakulisema
 
@@ -83,7 +83,7 @@ class UnderstandTests(TestCase):
         self.assertIn('udongo', r[0].lower())                              # moduli ya udongo (MHD-004)
         self.assertIn('siku', r[1])                                        # muda wa kukomaa (MHD-003A)
         self.assertIn('siwezi kuthibitisha', r[2])                         # jibu la ukweli
-        self.assertEqual(llm.calls, 3)
+        self.assertGreaterEqual(llm.calls, 1)                              # AI inaitwa pale kanuni hazijaelewa
 
     def test_complaint_with_real_question_is_answered_with_apology(self):
         msg = 'mbona unanijibu vitu ambavyo sijauliza, mimi nimeuliza bei ya mahindi'
@@ -202,3 +202,23 @@ class RateLimitTests(TestCase):
             ai_layer._COOLDOWN[m] = time.time() + 60
         f = understand.understand('Jinsi ya kuvuna', None, pending='')
         self.assertEqual((f['source'], f['goal']), ('rules', 'gap'))
+
+
+class CombineTests(TestCase):
+    """Sera ya kuunganisha (kipimo cha 15 Nov: kanuni 50/74, AI peke yake 44/69, pamoja ~71/74)."""
+
+    def test_context_impossible_goals_are_dropped(self):
+        f = understand.empty('ai'); f['goal'] = 'answer'
+        self.assertEqual(understand.context_check(f, '')['goal'], 'unclear')         # bot haikuuliza kitu
+        f = understand.empty('ai'); f['goal'] = 'followup'
+        self.assertEqual(understand.context_check(f, 'question')['goal'], 'answer')   # hakuna utambuzi bado
+
+    def test_specific_rule_goal_wins_and_ai_fills_gaps(self):
+        rules = understand.empty('rules'); rules.update(goal='gap', topic='kuvuna')
+        ai = understand.empty('ai'); ai.update(goal='answer', answer='yes', question='nivune lini')
+        f = understand.combine(ai, rules)
+        self.assertEqual((f['goal'], f['topic'], f['source']), ('gap', 'kuvuna', 'rules+ai'))
+        self.assertEqual(f['question'], 'nivune lini')
+        rules = understand.empty('rules')                                           # kanuni hazijaelewa
+        ai = understand.empty('ai'); ai.update(goal='soil')
+        self.assertEqual(understand.combine(ai, rules)['goal'], 'soil')

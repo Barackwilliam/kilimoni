@@ -156,6 +156,10 @@ GREETINGS = [
 ]
 
 
+GREETING_TAILS = {'asubuhi', 'mchana', 'jioni', 'usiku', 'leo', 'kazi', 'nyumbani', 'siku', 'saa', 'shamba',
+                  'wikendi', 'za', 'yako', 'zako', 'mzee', 'mkuu', 'familia', 'huko', 'kwenu'}
+
+
 def is_greeting(text: str) -> bool:
     """
     Angalia kama ujumbe ni salamu.
@@ -166,6 +170,10 @@ def is_greeting(text: str) -> bool:
     """
     t = (text or '').strip()
     if not t:
+        return False
+    # "habari za mpira jana" si salamu; "habari za asubuhi/shamba" ni salamu
+    m = re.match(r'habari (?:za|ya) ([a-z]+)', t)
+    if m and m.group(1) not in GREETING_TAILS:
         return False
     return any(t == g or t.startswith(g + ' ') for g in GREETINGS)
 
@@ -228,6 +236,11 @@ def detect_location(text: str) -> str:
     # 0. Dataset ya maeneo ya mteja (MHD-001): kata → wilaya → mkoa
     adv = resolve_farm_location(text)
     if adv and adv['level'] != 'ambiguous':
+        if adv['level'] == 'region':
+            # "Kongwa, Dodoma": wilaya iliyotajwa (hata isiyo kwenye dataset) ni mahususi zaidi
+            for district in TANZANIA_DISTRICTS:
+                if district not in AMBIGUOUS_LOCATIONS and _word_match(district, text):
+                    return district.title()
         return adv_location.display_name(adv)
 
     # 1. Muktadha wa wazi — hushinda vyote, na huruhusu hata maneno ambiguous
@@ -243,24 +256,22 @@ def detect_location(text: str) -> str:
                 return cand.title()
 
     try:
-        locations = LocationMapping.objects.all().values('region_name', 'district_name')
-        # District first (more specific)
-        for loc in locations:
-            name = (loc['district_name'] or '').lower()
-            if name and name not in AMBIGUOUS_LOCATIONS and _word_match(name, text):
-                return loc['district_name'].title()
-        # Then region
-        for loc in locations:
-            name = (loc['region_name'] or '').lower()
-            if name and name not in AMBIGUOUS_LOCATIONS and _word_match(name, text):
-                return loc['region_name'].title()
+        locations = list(LocationMapping.objects.all().values('region_name', 'district_name'))
     except Exception as e:
         logger.error(f"Location DB error: {e}")
-
-    # Fallback to hardcoded lists
+        locations = []
+    # Wilaya kwanza (DB, kisha orodha), kisha mkoa — "Kongwa, Dodoma" ni Kongwa
+    for loc in locations:
+        name = (loc['district_name'] or '').lower()
+        if name and name not in AMBIGUOUS_LOCATIONS and _word_match(name, text):
+            return loc['district_name'].title()
     for district in TANZANIA_DISTRICTS:
         if district not in AMBIGUOUS_LOCATIONS and _word_match(district, text):
             return district.title()
+    for loc in locations:
+        name = (loc['region_name'] or '').lower()
+        if name and name not in AMBIGUOUS_LOCATIONS and _word_match(name, text):
+            return loc['region_name'].title()
     for region in TANZANIA_REGIONS:
         if region not in AMBIGUOUS_LOCATIONS and _word_match(region, text):
             return region.title()
@@ -762,7 +773,18 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
     # kanuni za maneno hapa chini inaendelea kama zamani.
     frame = understanding.understand(raw_message, user, normalized=normalized,
                                      use_ai=understanding_enabled())
-    if frame['source'] == 'ai':
+    # Malalamiko yenye swali jipya ("mbona hunijibu… nimeuliza bei") → jibu la swali lianze kwa radhi
+    if _is_complaint(normalized) and frame['goal'] not in ('complaint', 'challenge'):
+        _ap = dict(user.session_state or {})
+        _ap['apologize'] = True
+        user.session_state = _ap
+        user.save(update_fields=['session_state'])
+    _waiting = frame.get('pending') not in ('', 'after_diagnosis')
+    if (frame['source'] == 'ai'
+            # Kanuni hazikuelewa, AI imeelewa → elekeza kwa fomu
+            or (_waiting and frame['goal'] in understanding.MODULE_GOALS | {'challenge'})
+            # Bot inasubiri jibu lakini mkulima ameuliza jambo jingine → acha kusubiri
+            or (frame['source'] == 'rules+ai' and frame['goal'] == 'answer' and frame.get('answer'))):
         handled = _route_by_frame(user, raw_message, normalized, frame, start_time, message_id)
         if handled is not None:
             return handled
@@ -1736,7 +1758,8 @@ def _start_diagnostic(user, raw_message, normalized, fresh_crop, start_time, mes
 # Mada za kilimo ambazo bado hazina dataset iliyothibitishwa (MHD) wala wasifu wa zao.
 KNOWLEDGE_GAPS = [
     (re.compile(r'\b(ku)?palili\w*|\bmagugu\b|\bpalizi\b'), 'kupalilia na kudhibiti magugu'),
-    (re.compile(r'\b(mifugo|ufugaji|kufuga|ng\'ombe|mbuzi|kondoo|kuku|nguruwe)\b'), 'mifugo'),
+    (re.compile(r'\b(samadi|mbolea)\b'), '__mbolea__'),          # "samadi ya kuku" ni mbolea, si mifugo
+    (re.compile(r'\b(mifugo|ufugaji|kufuga|ng\'?ombe|ng ombe|mbuzi|kondoo|kuku|nguruwe)\b'), 'mifugo'),
     (re.compile(r'\b(ku)?pogoa\b|\bkupunguza matawi\b'), 'kupogoa'),
 ]
 
@@ -1744,9 +1767,11 @@ KNOWLEDGE_GAPS = [
 # Hali ya data pekee: mada ambazo dataset za MHD hazina bado. Zamani zilijibiwa na majibu ya demo
 # au AI ya bure (live: "bei za takriban 2024", "Actellic Super", "maji ya baridi 15-20 °C kupalilia").
 STRICT_GAPS = [
-    (re.compile(r'\b(kuvuna|mavuno|kuvunwa|nivune|tuvune|ukomavu)\b'), 'kuvuna'),
+    (re.compile(r'\b(kuvuna|mavuno|kuvunwa|nivune|tuvune|ukomavu|yamekomaa|imekomaa|yamekomaa)\b'),
+     'kuvuna'),
     (re.compile(r'\b(kuhifadhi|uhifadhi|kuhifadhiwa|ghala|nihifadhi)\b'), 'kuhifadhi mazao'),
-    (re.compile(r'\b(bei|soko|masoko|sokoni|kuuza|nauza|niuze)\b'), 'bei na masoko'),
+    (re.compile(r'\b(bei|soko|masoko|sokoni|kuuza|nauza|niuze|yanauzwa|inauzwa|kuuzwa|shilingi ngapi)\b'),
+     'bei na masoko'),
     (re.compile(r'\b(hali ya hewa|utabiri|hewa ikoje)\b'), 'hali ya hewa'),
     (re.compile(r'\b(mbolea|dap|urea|can|npk|samadi)\b'), 'mbolea'),
     (re.compile(r'\b(vifaa|zana|jembe|trekta|kuandaa shamba|maandalizi ya shamba|kulima shamba)\b'),
@@ -1886,8 +1911,13 @@ def _self_correction(user, raw_message, normalized, crop, start_time, message_id
 def knowledge_gap_topic(normalized):
     for rx_, topic in KNOWLEDGE_GAPS:
         if rx_.search(normalized):
+            if topic == '__mbolea__':
+                if _strict() and not dg.is_problem_message(normalized, None):
+                    return 'mbolea'
+                continue
             return topic
-    if _strict() and not dg.is_problem_message(normalized, None):
+    if (_strict() and not dg.is_problem_message(normalized, None) and not adv_rotation.wants_rotation(normalized)
+            and not adv_seed.wants_seed(normalized)):
         for rx_, topic in STRICT_GAPS:
             if rx_.search(normalized):
                 return topic
@@ -1932,7 +1962,7 @@ ABIOTIC = re.compile(
     r'|virutubisho|upungufu wa (mbolea|naitrojeni|nitrojeni|virutubisho))\b')
 ABIOTIC_ASK = re.compile(
     r'\?|\b(inaweza|yaweza|huenda|sababu|chanzo|unadhani|au ni|ni hiyo|ndiyo inasababisha|inasababisha'
-    r'|nifanyeje|nifanye nini)\b')
+    r'|nifanyeje|nifanye nini|tu au|au kuna)\b')
 
 
 def is_abiotic_question(normalized):
