@@ -662,6 +662,9 @@ def interpret(state, question, text):
     "sijui") yanasomwa kwa kanuni; sentensi ndefu zinaelezwa na AI kwanza
     ("nimeona vitu vyeusi kama unga ndani"), kanuni zikiwa akiba.
     """
+    hint = state.pop('answer_hint', None)     # kutoka fomu ya kuelewa (AI iliyoona muktadha)
+    if hint in ('yes', 'no', 'unknown'):
+        return hint
     rule = parse_answer(text)
     if len(_words(text)) <= 2:
         return rule

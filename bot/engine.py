@@ -17,6 +17,7 @@ from crops.models import (
 )
 from bot.models import User, Conversation, UnresolvedQuery
 from bot import diagnostic as dg
+from bot import understand as understanding
 from diagnosis import engine as rx
 from advisory import coverage as adv_coverage
 from advisory import location as adv_location
@@ -756,6 +757,16 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
     # ── MODULE 4: Apply synonyms ─────────────────────
     normalized = apply_synonyms(normalized)
 
+    # ── KUELEWA KWANZA: fomu ya ujumbe (AI ya lugha + uthibitisho) ──
+    # Ujumbe unaeleweka kabla ya kwenda kwenye dataset. AI isipopatikana, njia ya
+    # kanuni za maneno hapa chini inaendelea kama zamani.
+    frame = understanding.understand(raw_message, user, normalized=normalized,
+                                     use_ai=understanding_enabled())
+    if frame['source'] == 'ai':
+        handled = _route_by_frame(user, raw_message, normalized, frame, start_time, message_id)
+        if handled is not None:
+            return handled
+
     # ── "Uko na taarifa za mikoa/mazao gani?" → kutoka data (MHD-001 + moduli) ──
     # Kabla ya hali zinazosubiri: ni swali la pembeni, halibadilishi mazungumzo yake.
     if adv_coverage.wants_coverage(normalized):
@@ -819,17 +830,7 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
         user.save(update_fields=['session_state'])
         challenge_crop = (detect_crop(normalized) or _recent_crop(user)) if CHALLENGE.search(normalized) else None
         if challenge_crop:
-            # Kiri kosa, futa ushauri wa awali, anza uchunguzi upya kwa kuuliza dalili (intake)
-            state = rx.new_state()
-            state.update({'phase': 'intake', 'crop_id': challenge_crop.id, 'intake_tries': 0})
-            _save_rx(user, state)
-            response = ("Uko sahihi, samahani. 🙏 Nilipaswa kuanza kwa kukuuliza maswali kabla ya kukushauri "
-                        "chochote. Ushauri wowote wa kuondoa, kuchoma au kunyunyizia mimea *usiufuate* mpaka "
-                        "tatizo lithibitishwe.\n\nTuanze upya. " + rx.intake_message(challenge_crop.crop_name_sw))
-            _log_all(user, raw_message, normalized, challenge_crop, None, '', None, response, True,
-                     start_time, message_id=message_id,
-                     trace={'mode': 'rules_engine', 'decision': 'self_correction', 'asked': 'intake'})
-            return response
+            return _self_correction(user, raw_message, normalized, challenge_crop, start_time, message_id)
         response = ("Samahani, nadhani nilikuelewa vibaya. 🙏\n\n"
                     "Niambie tena swali lako kwa maneno yako, nami nitakusaidia. "
                     "Mfano: _" + _seed_example_text() + "_")
@@ -1755,6 +1756,133 @@ STRICT_GAPS = [
 ]
 
 
+def understanding_enabled():
+    from diagnosis import ai_layer
+    return getattr(settings, 'UNDERSTAND_FIRST', True) and ai_layer.available()
+
+
+def _clear_pending(user, keep_rx=False):
+    sess = dict(user.session_state or {})
+    for k in ('adv', 'awaiting_location', 'awaiting_crop', 'saved_intent', 'goal_pending'):
+        sess.pop(k, None)
+    if not keep_rx:
+        sess.pop(rx.STATE_KEY, None)
+    user.session_state = sess
+    user.save(update_fields=['session_state'])
+
+
+def _route_by_frame(user, raw_message, normalized, frame, start_time, message_id):
+    """
+    Peleka ujumbe kwenye moduli sahihi kwa mujibu wa fomu ya AI.
+    None = acha njia ya kawaida ishughulikie (mf. jibu la swali linalosubiriwa).
+    """
+    goal, pending = frame['goal'], frame.get('pending', '')
+    crop = frame['crop'] or detect_crop(normalized)
+    ctx_crop = crop or _recent_crop(user) or (
+        Crop.objects.filter(id=user.last_crop_id).first() if user.last_crop_id else None)
+    sess = user.session_state or {}
+    in_rx = bool(rx.get_state(sess))
+    trace = {'mode': 'understand', 'frame': understanding.as_trace(frame)}
+
+    def log(response, success=True, c=None):
+        _log_all(user, raw_message, normalized, c or crop, None, frame.get('place') or '', None, response,
+                 success, start_time, message_id=message_id, trace={**trace, 'decision': goal})
+        return response
+
+    if goal in ('answer', 'unclear', 'greeting'):
+        if goal == 'answer' and in_rx and frame.get('answer'):
+            st = dict(sess)
+            st[rx.STATE_KEY] = {**st[rx.STATE_KEY], 'answer_hint': frame['answer']}
+            user.session_state = st
+            user.save(update_fields=['session_state'])
+        return None
+    if goal == 'diagnosis':
+        if in_rx:
+            return None                    # maelezo zaidi ndani ya uchunguzi unaoendelea
+        _clear_pending(user)
+        return _start_diagnostic(user, raw_message, normalized, crop, start_time, message_id)
+    if goal == 'followup':
+        response = _diagnosis_followup(user, normalized, force=True)
+        return log(response) if response else None
+    if goal == 'abiotic':
+        _clear_pending(user)
+        return _abiotic_reply(user, raw_message, normalized, ctx_crop, start_time, message_id)
+    if goal == 'challenge':
+        _clear_pending(user)
+        if ctx_crop:
+            return _self_correction(user, raw_message, normalized, ctx_crop, start_time, message_id)
+        return None
+    if goal == 'complaint':
+        _clear_pending(user)
+        question = frame.get('question') or ''
+        if question and question.strip().lower() != raw_message.strip().lower():
+            inner = understanding.understand(question, user, normalized=apply_synonyms(normalize_text(question)),
+                                             use_ai=True)
+            if inner['source'] == 'ai' and inner['goal'] not in ('complaint', 'challenge', 'answer', 'unclear'):
+                st = dict(user.session_state or {})
+                st['apologize'] = True
+                user.session_state = st
+                user.save(update_fields=['session_state'])
+                handled = _route_by_frame(user, raw_message, apply_synonyms(normalize_text(question)), inner,
+                                          start_time, message_id)
+                if handled is not None:
+                    return handled
+        return None                         # njia ya kawaida: "Samahani, nadhani nilikuelewa vibaya…"
+    if goal == 'gap':
+        _clear_pending(user)
+        response = gap_answer(frame['topic'], ctx_crop)
+        log(response, success=False, c=ctx_crop)
+        _log_unresolved(user, raw_message, normalized, ctx_crop, None, response)
+        return response
+    if goal == 'where_grows':
+        _clear_pending(user)
+        _s = dict(user.session_state or {})
+        rep = time.time() - float(_s.get('where_grows_at', 0)) < RECENT_CROP_MINUTES * 60
+        _s['where_grows_at'] = time.time()
+        user.session_state = _s
+        user.save(update_fields=['session_state'])
+        response = adv_coverage.where_grows_message(ctx_crop, repeat=rep)
+        log(response, success=False, c=ctx_crop)
+        _log_unresolved(user, raw_message, normalized, ctx_crop, None, response)
+        return response
+    if goal == 'coverage':
+        return log(adv_coverage.coverage_message())
+    if goal in ('seed', 'planting', 'soil', 'rotation'):
+        _clear_pending(user)
+        if goal == 'seed':
+            return _seed_turn(user, raw_message, normalized, crop, start_time, message_id)
+        if goal == 'planting':
+            return _planting_turn(user, raw_message, normalized, crop, start_time, message_id)
+        if goal == 'soil':
+            return _soil_turn(user, raw_message, normalized, crop, start_time, message_id)
+        return _rotation_turn(user, raw_message, normalized, start_time, message_id)
+    if pending and pending != 'after_diagnosis':
+        return None                         # "sawa" n.k. katikati ya swali — njia ya kawaida
+    if goal == 'thanks':
+        return log(build_acknowledgement(ctx_crop.crop_name_sw if ctx_crop else ''))
+    if goal == 'identity':
+        return log(build_identity_message())
+    if goal == 'capability':
+        return log(build_capability_message())
+    if goal == 'offtopic':
+        return log(build_offtopic_message())
+    return None
+
+
+def _self_correction(user, raw_message, normalized, crop, start_time, message_id):
+    """Kiri kosa, futa ushauri wa awali, anza uchunguzi upya kwa kuuliza dalili (intake)."""
+    state = rx.new_state()
+    state.update({'phase': 'intake', 'crop_id': crop.id, 'intake_tries': 0})
+    _save_rx(user, state)
+    response = ("Uko sahihi, samahani. 🙏 Nilipaswa kuanza kwa kukuuliza maswali kabla ya kukushauri "
+                "chochote. Ushauri wowote wa kuondoa, kuchoma au kunyunyizia mimea *usiufuate* mpaka "
+                "tatizo lithibitishwe.\n\nTuanze upya. " + rx.intake_message(crop.crop_name_sw))
+    _log_all(user, raw_message, normalized, crop, None, '', None, response, True,
+             start_time, message_id=message_id,
+             trace={'mode': 'rules_engine', 'decision': 'self_correction', 'asked': 'intake'})
+    return response
+
+
 def knowledge_gap_topic(normalized):
     for rx_, topic in KNOWLEDGE_GAPS:
         if rx_.search(normalized):
@@ -1873,7 +2001,7 @@ def _remember_diagnosis(user, state, trace, response):
     user.save(update_fields=['session_state'])
 
 
-def _diagnosis_followup(user, normalized):
+def _diagnosis_followup(user, normalized, force=False):
     dx = (user.session_state or {}).get('last_dx')
     if not dx or time.time() - float(dx.get('at', 0)) > RECENT_CROP_MINUTES * 60:
         return ''
@@ -1886,7 +2014,7 @@ def _diagnosis_followup(user, normalized):
     mentions = any(w in low for w in name_words)
     # Maelezo ya dalili mpya bila kutaja tatizo lililotambuliwa = uchunguzi mpya, si kufuatilia
     new_symptoms = not rx.is_vague(low)
-    if not (mentions or (FOLLOWUP.search(low) and not new_symptoms)):
+    if not force and not (mentions or (FOLLOWUP.search(low) and not new_symptoms)):
         return ''
     conf = dx.get('confidence')
     lines = [("Ndiyo. " if mentions else '') + f"Kwa majibu uliyonipa, tatizo linaloendana zaidi ni *{name}*"
