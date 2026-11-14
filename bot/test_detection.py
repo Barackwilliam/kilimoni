@@ -327,3 +327,45 @@ class ClientTestRound2(TestCase):
         self.assertIn('Chagua namba', r[0])
         self.assertIn('Uko sahihi', r[1])
         self.assertIn('Swali 1', r[2])
+
+
+class LiveRound3Tests(ClientTestRound2):
+    """Mazungumzo mawili ya live (14 Nov): FAW iliyothibitishwa, na mkulima anayeuliza kuhusu maji/mbolea."""
+
+    C1 = ["Kilimoni, nina shamba la mahindi huko Morogoro. Baadhi ya majani yana mashimo na mengine yameanza kujikunja. Nimeambiwa nitumie dawa ya kuua wadudu, lakini sijui ni dawa gani. Naomba unishauri dawa ya kutumia na kiasi cha kuchanganya kwenye bomba la lita 20.",
+     "Ndiyo, nimeona kinyesi kama vumbi la mbao ndani ya kitovu cha mahindi na baadhi ya funza wana alama ya Y kichwani. Sasa niambie nitumie dawa gani na nichanganye mililita ngapi kwenye bomba la lita 20? Nataka kunyunyizia leo.",
+     "Hapana, hawatembei kwa makundi. Nimeona funza wachache ndani ya vitovu vya mahindi, na majani mengine yana mashimo. Mahindi yana wiki tano tangu kupandwa. Je, sasa unaweza kuniambia tatizo linaweza kuwa nini na nifanye nini?",
+     "Hapana, hakuna panzi. Nimekuambia kuna funza wenye alama ya Y kichwani, kinyesi ndani ya kitovu na mashimo kwenye majani. Je, hizi si dalili za Fall Armyworm? Na kama ni hivyo, nifanye nini sasa?",
+     "nusu ya shamba"]
+    C2 = ["Mkuu kilimoni mambo vp, mahindi yangu yana shida bana. Yameanza kuwa ya njano chini chini, mengine kama yanakauka. Nimepanda kama wiki 4 hivi, mvua nazo zimezingua. Sasa nifanyeje?",
+     "Hapana mkuu, sijaona wadudu wakitembea makundi wala funza. Ila mvua ni shida huku, ardhi imekauka sana. Na mbolea pia sikuweka nilipopanda. Hivi hiyo inaweza kuwa sababu ya mahindi yangu kuwa ya njano?",
+     "Mkuu mbona hunijibu swali langu? Nimekuambia mahindi yana njano chini, ardhi imekauka, mvua hakuna na mbolea sikuweka. Hakuna mistari wala madoa kwenye majani. Sasa unadhani ni wadudu kweli au ni shida ya maji na virutubisho?"]
+
+    def test_first_answer_word_decides(self):
+        from diagnosis.engine import parse_answer
+        self.assertEqual(parse_answer(self.C1[1]), 'yes')            # 'la' ya "vumbi la mbao" si "hapana"
+        self.assertEqual(parse_answer('Hapana, hakuna panzi'), 'no')
+        self.assertEqual(parse_answer('la'), 'no')
+        self.assertEqual(parse_answer('sijui kama ndiyo'), 'unknown')
+
+    def test_confirmed_faw_is_diagnosed_and_followup_is_answered(self):
+        r = self.ask('255700000901', *self.C1[:4])
+        self.assertIn('Matokeo ya uchunguzi', r[2])
+        self.assertIn('Funza jeshi vamizi', r[2])
+        self.assertIn('Ndiyo. Kwa majibu uliyonipa', r[3])            # si uchunguzi mpya wala "hazilingani"
+        self.assertIn('Hatua za kuchukua', r[3])
+        d = self.ask('255700000901', 'sasa nitumie dawa gani na nichanganye mililita ngapi kwenye bomba la lita 20?')[0]
+        self.assertIn('sitoi jina la dawa wala kipimo', d)
+
+    def test_negated_clause_is_not_a_symptom(self):
+        from diagnosis.engine import strip_negated
+        self.assertNotIn('funza', strip_negated('Hapana mkuu, sijaona wadudu wakitembea makundi wala funza. Ila mvua ni shida'))
+        self.assertIn('mvua', strip_negated('sijaona wadudu wala funza. Ila mvua ni shida'))
+
+    def test_water_and_fertilizer_question_is_answered_honestly_without_repeating(self):
+        r = self.ask('255700000902', *self.C2)
+        self.assertIn('siwezi kuthibitisha', r[1])
+        self.assertNotIn('*Swali', r[1])                               # haiendelei na maswali ya wadudu
+        self.assertNotEqual(r[1], r[2])
+        self.assertIn('Samahani kama jibu langu halikuwa wazi', r[2])
+        self.assertNotIn('mbegu', r[2].lower())                         # si mfano wa mbegu tena
