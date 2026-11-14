@@ -4,9 +4,13 @@ Pima uelewa wa bot dhidi ya ujumbe halisi wa wakulima (bot/eval_bank.py).
     python manage.py kilimoni_eval            # AI ikipatikana (GROQ_API_KEY), vinginevyo kanuni
     python manage.py kilimoni_eval --rules    # kanuni za maneno tu
     python manage.py kilimoni_eval --compare  # kanuni dhidi ya AI, kesi kwa kesi
+    python manage.py kilimoni_eval --delay 4  # sekunde kati ya maombi ya AI (vikomo vya maombi)
 
-Inasoma tu (haiandiki database). Iendeshe kwenye Render Shell kupima AI halisi.
+Inasoma tu (haiandiki database). Kesi ambazo AI haikujibu (mf. kikomo cha maombi, 429)
+hazihesabiwi kama matokeo ya AI — zinaonyeshwa kando ili namba zisidanganye.
 """
+import time
+
 from django.core.management.base import BaseCommand
 
 from bot import understand
@@ -20,6 +24,22 @@ class Command(BaseCommand):
         parser.add_argument('--rules', action='store_true', help='kanuni za maneno tu (bila AI)')
         parser.add_argument('--compare', action='store_true', help='linganisha kanuni na AI')
         parser.add_argument('--only', default='', help='ID za kesi, mf. FAW2,DRY2')
+        parser.add_argument('--delay', type=float, default=3.0,
+                            help='sekunde kati ya maombi ya AI (default 3)')
+
+    def _ai(self, case, turns):
+        from diagnosis import ai_layer
+        for attempt in range(3):
+            if ai_layer.rate_limited():
+                wait = max(1.0, ai_layer._COOLDOWN['until'] - time.time())
+                self.stdout.write(f"   … kikomo cha maombi — nasubiri sekunde {wait:.0f}")
+                time.sleep(wait + 1)
+            f = understand.ai_frame(case['msg'], case.get('pending', ''), turns)
+            if f is not None:
+                return f
+            if not ai_layer.rate_limited():
+                return None                       # AI ilijibu vibaya (si kikomo) — hesabu kama imeshindwa
+        return None
 
     def _run(self, use_ai):
         results = []
@@ -29,39 +49,46 @@ class Command(BaseCommand):
                 continue
             turns = [('bot', case['bot'])] if case.get('bot') else []
             if use_ai:
-                f = understand.ai_frame(case['msg'], case.get('pending', ''), turns) or None
+                f = self._ai(case, turns)
                 if f is None:
                     f = understand.rule_frame(case['msg'], case.get('pending', ''))
-                    f['source'] = 'rules (AI haikujibu)'
+                    f['source'] = 'AI haikujibu'
+                time.sleep(self.delay)
             else:
                 f = understand.rule_frame(case['msg'], case.get('pending', ''))
             results.append((case, f, check(case, f)))
         return results
 
     def _report(self, title, results):
-        ok = sum(1 for _, _, e in results if not e)
         self.stdout.write(f"\n{'═' * 64}\n{title}\n{'═' * 64}")
         for case, f, errors in results:
             mark = self.style.SUCCESS('✓') if not errors else self.style.ERROR('✗')
-            line = f"{mark} {case['id']:<7} {f['goal']:<12} [{f['source']}] {case['msg'][:60]}"
-            self.stdout.write(line)
+            if f['source'] == 'AI haikujibu':
+                mark = self.style.WARNING('?')
+            self.stdout.write(f"{mark} {case['id']:<7} {f['goal']:<12} [{f['source']}] {case['msg'][:60]}")
             for e in errors:
                 self.stdout.write(f"          └ {e}")
-        pct = round(100 * ok / len(results)) if results else 0
-        self.stdout.write(f"\nMATOKEO: {ok}/{len(results)} ({pct}%)")
-        return ok
+        scored = [r for r in results if r[1]['source'] != 'AI haikujibu']
+        missed = len(results) - len(scored)
+        ok = sum(1 for _, _, e in scored if not e)
+        pct = round(100 * ok / len(scored)) if scored else 0
+        self.stdout.write(f"\nMATOKEO: {ok}/{len(scored)} ({pct}%)"
+                          + (f"  — kesi {missed} AI haikujibu (hazijahesabiwa)" if missed else ''))
+        return ok, len(scored)
 
     def handle(self, *args, **opts):
         from diagnosis import ai_layer
-        self.only = opts['only']
+        self.only, self.delay = opts['only'], opts['delay']
         ai_ok = ai_layer.available()
         if opts['compare']:
             if not ai_ok:
                 self.stdout.write(self.style.WARNING('AI haipatikani (GROQ_API_KEY) — siwezi kulinganisha.'))
                 return
-            r = self._report('KANUNI ZA MANENO', self._run(False))
-            a = self._report('AI + UTHIBITISHO', self._run(True))
-            self.stdout.write(f"\nKanuni: {r}/{len(CASES)}   AI: {a}/{len(CASES)}")
+            r, rn = self._report('KANUNI ZA MANENO', self._run(False))
+            self.stdout.write(f"\nAI: maombi {len(CASES)}, sekunde {self.delay} kati ya kila moja "
+                              f"(takriban dakika {round(len(CASES) * (self.delay + 2) / 60)})…")
+            a, an = self._report('AI + UTHIBITISHO', self._run(True))
+            self.stdout.write(f"\nKanuni: {r}/{rn}   AI: {a}/{an}")
             return
         use_ai = ai_ok and not opts['rules']
         if not use_ai and not opts['rules']:

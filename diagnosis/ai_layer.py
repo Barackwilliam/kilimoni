@@ -57,12 +57,38 @@ def available():
         return False
 
 
-def _chat(system, user, max_tokens=900, timeout=20):
+# Kikomo cha maombi (HTTP 429): tukipata 429, hatutumi maombi mengine mpaka muda wa
+# 'retry-after' uishe — kila ujumbe unaenda moja kwa moja kwenye kanuni (akiba) badala ya
+# kusubiri AI itakayokataa tena. Hali hii inashirikiwa na threads zote za mchakato.
+_COOLDOWN = {'until': 0.0}
+LAST_ERROR = {'code': None, 'at': 0.0}
+
+
+def rate_limited():
+    import time
+    return time.time() < _COOLDOWN['until']
+
+
+def _note_429(resp):
+    import time
+    try:
+        wait = float(resp.headers.get('retry-after') or 0)
+    except (TypeError, ValueError):
+        wait = 0
+    wait = min(max(wait, 5.0), 120.0)
+    _COOLDOWN['until'] = time.time() + wait
+    LAST_ERROR.update(code=429, at=time.time())
+    logger.warning(f"[AI layer] kikomo cha maombi (429) — kanuni zinatumika kwa sekunde {wait:.0f}")
+
+
+def _chat(system, user, max_tokens=900, timeout=20, model=None):
     """Wito mmoja kwa Groq (JSON mode). Rudisha dict au None. Tests hu-patch hii."""
     import requests
     from decouple import config
+    if rate_limited():
+        return None
     body = {
-        "model": getattr(settings, 'GROQ_MODEL', 'openai/gpt-oss-120b'),
+        "model": model or getattr(settings, 'GROQ_MODEL', 'openai/gpt-oss-120b'),
         "max_tokens": max_tokens,
         # gpt-oss ni reasoning model — bila 'low' content hurudi tupu
         "reasoning_effort": config('GROQ_REASONING', default='low'),
@@ -74,6 +100,9 @@ def _chat(system, user, max_tokens=900, timeout=20):
     headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
     try:
         resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=timeout)
+        if resp.status_code == 429:
+            _note_429(resp)
+            return None
         if resp.status_code == 400:
             # Model isiyokubali JSON mode — jaribu tena bila hiyo (prompt inaomba JSON)
             body.pop('response_format', None)

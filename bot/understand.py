@@ -241,6 +241,16 @@ def _grounded(phrase, text):
     return bool(toks) and sum(1 for t in toks if any(rx._same(t, o) for o in own)) >= max(1, len(toks) // 2)
 
 
+def _call(ai_layer, prompt):
+    """Wito wa AI ya kuelewa: model yake (GROQ_UNDERSTAND_MODEL) na timeout fupi."""
+    from django.conf import settings
+    model = getattr(settings, 'GROQ_UNDERSTAND_MODEL', '') or None
+    try:
+        return ai_layer._chat(SYSTEM, prompt, max_tokens=700, timeout=10, model=model)
+    except TypeError:                              # mbadala wa _chat (tests) bila vigezo hivi
+        return ai_layer._chat(SYSTEM, prompt, max_tokens=700)
+
+
 def ai_frame(text, pending='', turns=(), normalized=None):
     """Fomu kutoka AI, iliyothibitishwa. None = AI haipo/imeshindwa → tumia kanuni."""
     from diagnosis import ai_layer
@@ -250,10 +260,7 @@ def ai_frame(text, pending='', turns=(), normalized=None):
         return None
     crops = list(Crop.objects.filter(active_status='active').values_list('crop_name_sw', flat=True)) \
         if hasattr(Crop, 'active_status') else list(Crop.objects.values_list('crop_name_sw', flat=True))
-    try:
-        out = ai_layer._chat(SYSTEM, _prompt(text, pending, list(turns), crops), max_tokens=700, timeout=10)
-    except TypeError:                              # mbadala wa _chat (tests) bila 'timeout'
-        out = ai_layer._chat(SYSTEM, _prompt(text, pending, list(turns), crops), max_tokens=700)
+    out = _call(ai_layer, _prompt(text, pending, list(turns), crops))
     if not isinstance(out, dict) or out.get('goal') not in GOALS:
         logger.info("[understand] AI haikutoa goal halali: %s", str(out)[:200])
         return None
