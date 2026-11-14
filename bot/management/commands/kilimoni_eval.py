@@ -30,14 +30,14 @@ class Command(BaseCommand):
     def _ai(self, case, turns):
         from diagnosis import ai_layer
         for attempt in range(3):
-            if ai_layer.rate_limited():
-                wait = max(1.0, ai_layer._COOLDOWN['until'] - time.time())
+            if ai_layer.rate_limited(self.primary):
+                wait = max(1.0, ai_layer.cooldown_left(self.primary))
                 self.stdout.write(f"   … kikomo cha maombi — nasubiri sekunde {wait:.0f}")
                 time.sleep(wait + 1)
             f = understand.ai_frame(case['msg'], case.get('pending', ''), turns)
             if f is not None:
                 return f
-            if not ai_layer.rate_limited():
+            if not ai_layer.rate_limited(self.primary):
                 return None                       # AI ilijibu vibaya (si kikomo) — hesabu kama imeshindwa
         return None
 
@@ -78,7 +78,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         from diagnosis import ai_layer
+        from django.conf import settings
         self.only, self.delay = opts['only'], opts['delay']
+        self.primary = getattr(settings, 'GROQ_UNDERSTAND_MODEL', '') or None
+        self.stdout.write(f"Model (kwa mpangilio): {', '.join(ai_layer.model_chain(self.primary))}")
         ai_ok = ai_layer.available()
         if opts['compare']:
             if not ai_ok:

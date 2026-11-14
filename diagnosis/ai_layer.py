@@ -57,70 +57,130 @@ def available():
         return False
 
 
-# Kikomo cha maombi (HTTP 429): tukipata 429, hatutumi maombi mengine mpaka muda wa
-# 'retry-after' uishe — kila ujumbe unaenda moja kwa moja kwenye kanuni (akiba) badala ya
-# kusubiri AI itakayokataa tena. Hali hii inashirikiwa na threads zote za mchakato.
-_COOLDOWN = {'until': 0.0}
-LAST_ERROR = {'code': None, 'at': 0.0}
+# ─────────────────────────── Vikomo na model mbadala ───────────────────────────
+# Kila model ina vikomo vyake vya maombi kwenye akaunti moja. Model ikijibu 429 (kikomo),
+# inapumzishwa kwa muda wa 'retry-after' na ombi linajaribiwa kwa model inayofuata kwenye
+# orodha. Model isiyopatikana tena (404 / decommissioned) inapumzishwa saa nzima.
+# Zote zikipumzishwa, _chat inarudisha None mara moja → kanuni (akiba) zinatumika.
+# Hali hii inashirikiwa na threads zote za mchakato.
+_COOLDOWN = {}          # model -> muda (epoch) wa kuruhusiwa tena
+LAST_ERROR = {'code': None, 'at': 0.0, 'model': ''}
 
 
-def rate_limited():
+def model_chain(primary=None):
+    """Orodha ya model kwa mpangilio: ya msingi, kisha GROQ_FALLBACK_MODELS (bila marudio)."""
+    chain = [primary or getattr(settings, 'GROQ_MODEL', 'openai/gpt-oss-120b')]
+    extra = getattr(settings, 'GROQ_FALLBACK_MODELS', '') or ''
+    for m in [x.strip() for x in extra.split(',') if x.strip()]:
+        if m not in chain:
+            chain.append(m)
+    return chain
+
+
+def _cooling(model):
     import time
-    return time.time() < _COOLDOWN['until']
+    return time.time() < _COOLDOWN.get(model, 0.0)
 
 
-def _note_429(resp):
+def rate_limited(primary=None):
+    """Kweli kama KILA model ya orodha imepumzishwa."""
+    return all(_cooling(m) for m in model_chain(primary))
+
+
+def cooldown_left(primary=None):
     import time
+    left = [_COOLDOWN.get(m, 0.0) - time.time() for m in model_chain(primary)]
+    return max(0.0, min(left)) if left else 0.0
+
+
+def _rest(model, seconds, code):
+    import time
+    _COOLDOWN[model] = time.time() + seconds
+    LAST_ERROR.update(code=code, at=time.time(), model=model)
+
+
+def _note_429(model, resp):
     try:
         wait = float(resp.headers.get('retry-after') or 0)
     except (TypeError, ValueError):
         wait = 0
     wait = min(max(wait, 5.0), 120.0)
-    _COOLDOWN['until'] = time.time() + wait
-    LAST_ERROR.update(code=429, at=time.time())
-    logger.warning(f"[AI layer] kikomo cha maombi (429) — kanuni zinatumika kwa sekunde {wait:.0f}")
+    _rest(model, wait, 429)
+    logger.warning(f"[AI layer] {model}: kikomo cha maombi (429) — inapumzishwa sekunde {wait:.0f}")
+
+
+def _bad_model(resp):
+    if resp.status_code == 404:
+        return True
+    try:
+        err = (resp.json() or {}).get('error') or {}
+    except Exception:
+        return False
+    text = f"{err.get('code', '')} {err.get('message', '')}".lower()
+    return 'decommission' in text or 'model_not_found' in text or 'does not exist' in text
 
 
 def _chat(system, user, max_tokens=900, timeout=20, model=None):
-    """Wito mmoja kwa Groq (JSON mode). Rudisha dict au None. Tests hu-patch hii."""
+    """
+    Wito kwa Groq (JSON mode), ukijaribu model mbadala ikiwa ya kwanza imefika kikomo.
+    Rudisha dict au None. Tests hu-patch hii.
+    """
+    for m in model_chain(model):
+        if _cooling(m):
+            continue
+        status, data = _chat_once(m, system, user, max_tokens, timeout)
+        if status == 'ok':
+            return data
+        if status == 'error':
+            return None              # mtandao/jibu baya: usiongeze ucheleweshaji kwa model nyingine
+    return None
+
+
+def _chat_once(model, system, user, max_tokens, timeout):
     import requests
     from decouple import config
-    if rate_limited():
-        return None
     body = {
-        "model": model or getattr(settings, 'GROQ_MODEL', 'openai/gpt-oss-120b'),
+        "model": model,
         "max_tokens": max_tokens,
-        # gpt-oss ni reasoning model — bila 'low' content hurudi tupu
-        "reasoning_effort": config('GROQ_REASONING', default='low'),
         "temperature": 0,
         "response_format": {"type": "json_object"},
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": user}],
     }
+    if 'gpt-oss' in model:
+        # gpt-oss ni reasoning model — bila 'low' content hurudi tupu
+        body["reasoning_effort"] = config('GROQ_REASONING', default='low')
     headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
     try:
         resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=timeout)
         if resp.status_code == 429:
-            _note_429(resp)
-            return None
+            _note_429(model, resp)
+            return 'limited', None
+        if _bad_model(resp):
+            _rest(model, 3600, resp.status_code)
+            logger.warning(f"[AI layer] {model}: haipatikani ({resp.status_code}) — inarukwa saa nzima")
+            return 'limited', None
         if resp.status_code == 400:
             # Model isiyokubali JSON mode — jaribu tena bila hiyo (prompt inaomba JSON)
             body.pop('response_format', None)
             resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=timeout)
+            if resp.status_code == 429:
+                _note_429(model, resp)
+                return 'limited', None
         resp.raise_for_status()
         content = (resp.json()['choices'][0]['message'].get('content') or '').strip()
         if not content:
-            logger.warning("[AI layer] jibu tupu")
-            return None
+            logger.warning(f"[AI layer] {model}: jibu tupu")
+            return 'error', None
         content = re.sub(r'^```(?:json)?|```$', '', content).strip()
         if not content.startswith('{'):
             found = re.search(r'\{.*\}', content, re.S)
             content = found.group(0) if found else content
         data = json.loads(content)
-        return data if isinstance(data, dict) else None
+        return ('ok', data) if isinstance(data, dict) else ('error', None)
     except Exception as exc:
-        logger.warning(f"[AI layer] imeshindwa: {exc}")
-        return None
+        logger.warning(f"[AI layer] {model}: imeshindwa: {exc}")
+        return 'error', None
 
 
 def _log(state, step, given, got, accepted, note=''):
