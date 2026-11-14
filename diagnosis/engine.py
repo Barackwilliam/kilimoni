@@ -120,10 +120,21 @@ def intake_message(crop_name, again=False):
     return '\n'.join(lines)
 
 
+NUMBER_WORDS = {'moja': 1, 'mbili': 2, 'tatu': 3, 'nne': 4, 'tano': 5, 'sita': 6, 'saba': 7, 'nane': 8,
+                'tisa': 9, 'kumi': 10}
+
+
+def parse_age_weeks(text):
+    """'nilipanda wiki tatu zilizopita' → 3; 'miezi 2' → 8; hakuna → None."""
+    return parse_intake(text)[1]
+
+
 def parse_intake(text):
     """'2 na 5, wiki 6' → ([1, 4], 6). Namba 1–6 (si ile ya umri) ni chaguo."""
     low = (text or '').lower()
     weeks = None
+    for word, num in NUMBER_WORDS.items():                  # "wiki tatu" → "wiki 3"
+        low = re.sub(rf'\b(wiki|week|mwezi|miezi)\s+{word}\b', rf'\1 {num}', low)
     # "wiki 6" (namba BAADA ya neno) kwanza: "2 wiki 6" = chaguo 2, umri wiki 6
     for unit, mult in (('wiki|week', 1), ('mwezi|miezi', 4)):
         m_age = (re.search(rf'(?:{unit})\s*(\d{{1,2}})', low)
@@ -761,12 +772,32 @@ def _ack(state):
     return (ACKS.get(asked[-1]['answer'], '') + '\n\n') if asked else ''
 
 
+REASON_STOP = {'ya', 'na', 'wa', 'za', 'la', 'kwa', 'kwenye', 'yangu', 'mmea', 'mimea', 'zao', 'yana', 'ina',
+               'kuna', 'sana', 'kama', 'au', 'ni', 'mahindi', 'majani', 'jani'}
+# Mipaka ya data: MHD-007 ina wadudu na magonjwa tu. Visababishi vingine (upungufu wa
+# virutubisho, ukame/maji, udongo) havijawekwa — tunasema wazi badala ya kuvibuni.
+COVERAGE_NOTE = ("_Kumbuka: taarifa zangu za uchunguzi kwa sasa zinahusu *wadudu na magonjwa* tu. "
+                 "Upungufu wa virutubisho (mf. mbolea), ukame au hali ya udongo bado havimo kwenye "
+                 "data yangu — kama unashuku hivyo, afisa ugani anaweza kukagua._")
+
+
+def _reason_words(c):
+    return [w for w in c.get('matched', []) if w not in REASON_STOP and len(w) > 2][:4]
+
+
 def question_message(state, spec, number):
-    names = [_cause_name(_cause(cid)) for cid, c in _ranked(state['candidates']) if not c['rejected']]
+    ranked = [(cid, c) for cid, c in _ranked(state['candidates']) if not c['rejected']]
     intro = ''
-    if number == 1 and len(names) > 1:
-        intro = ("Dalili ulizotaja zinaweza kusababishwa na: *" + '*, *'.join(names[:4]) +
-                 "*. Nitakuuliza maswali mafupi ili kuvitofautisha. 🔍\n\n")
+    if number == 1 and ranked:
+        lines = ["Kutokana na dalili ulizotaja, visababishi vinavyowezekana (kuanzia kinacholingana zaidi):"
+                 if len(ranked) > 1 else "Kutokana na dalili ulizotaja, kisababishi kinachowezekana ni:"]
+        for cid, c in ranked[:4]:
+            why = _reason_words(c)
+            lines.append(f"• *{_cause_name(_cause(cid))}*" + (f" — umetaja: {', '.join(why)}" if why else ''))
+        lines += ['', COVERAGE_NOTE, '',
+                  "Nitakuuliza maswali mafupi ili kuvitofautisha. 🔍" if len(ranked) > 1 else
+                  "Nitakuuliza maswali mafupi ili kuthibitisha. 🔍", '', '']
+        intro = '\n'.join(lines)
     return f"{_ack(state) if number > 1 else ''}{intro}*Swali {number}:* {_plain_q(spec['text'])}\n{ANSWER_HINT}"
 
 
@@ -1048,6 +1079,8 @@ def step(state, text, crop=None):
             if understood['spreading']:
                 state['spreading'] = True
             trace['ai_symptoms'] = understood['phrases']
+        if state.get('crop_age_weeks') is None:
+            state['crop_age_weeks'] = parse_age_weeks(state['symptom_text'])
         state['growth_stage'] = (_stage_from_weeks(state.get('crop_age_weeks')) or _detect_stage(state['symptom_text'])
                                  or (understood or {}).get('growth_stage'))
         cands, symptoms = match_candidates(crop, match_text, state['growth_stage'])

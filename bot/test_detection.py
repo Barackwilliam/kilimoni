@@ -235,3 +235,56 @@ class ExtensionOfficerFlowTests(TestCase):
         r = self.ask('255700000706', 'mahindi yangu mizizi imeoza kabisa')[0]
         self.assertIn('Nimeelewa dalili ulizotaja', r)
         self.assertIn('ninayoweza kuchunguza kwa sasa', r)
+
+
+class ClientTestRound2(TestCase):
+    """Tests 1–3 za mteja (14 Nov, mazungumzo moja): kuuliza, kujirekebisha, mipaka ya data."""
+
+    @classmethod
+    def setUpTestData(cls):
+        import glob
+        import os
+        from crops.models import Crop
+        from diagnosis.importer import import_mhd007
+        Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize', crop_group='cereals')
+        fx = os.path.join(os.path.dirname(__file__), '..', 'diagnosis', 'fixtures', 'mhd007')
+        import_mhd007(sorted(glob.glob(os.path.join(fx, '*.xlsx'))))
+
+    T1 = ("Habari Kilimoni. Nina shamba la mahindi, lakini siku hizi mimea yangu haionekani vizuri. "
+          "Naomba unisaidie nifanye nini?")
+    T2 = ("Lakini Kilimoni, mimi sijakuambia bado dalili za mahindi yangu. Kwa nini umenishauri niondoe na "
+          "kuchoma mimea? Si ungeanza kwa kuniuliza maswali ili ujue tatizo ni nini?")
+    T3 = ("Kilimoni, nina shamba la mahindi la ekari mbili huko Kongwa, Dodoma. Nilipanda wiki tatu zilizopita, "
+          "lakini sasa majani ya chini yanaanza kuwa ya njano, wakati majani ya juu bado ni ya kijani. "
+          "Hii inaweza kuwa ni tatizo gani, na nifanye nini?")
+
+    def ask(self, phone, *msgs):
+        from bot.engine import process_message
+        return [process_message(phone, m) for m in msgs]
+
+    def test_challenge_to_advice_is_acknowledged_and_restarts_with_questions(self):
+        r = self.ask('255700000801', self.T1, self.T2)
+        self.assertNotEqual(r[0], r[1])                          # si jibu lilelile
+        self.assertIn('Uko sahihi, samahani', r[1])
+        self.assertIn('usiufuate', r[1])
+        self.assertIn('Chagua namba', r[1])
+        self.assertNotIn('ichome', r[1])
+
+    def test_differential_shows_reasons_and_data_limits(self):
+        r = self.ask('255700000802', self.T3)[0]
+        self.assertIn('umetaja:', r)
+        self.assertIn('wadudu na magonjwa', r)
+        self.assertIn('Upungufu wa virutubisho', r)               # haibuni, lakini inasema mipaka
+        self.assertIn('Swali 1', r)
+
+    def test_age_in_words(self):
+        from diagnosis.engine import parse_age_weeks
+        self.assertEqual(parse_age_weeks('nilipanda wiki tatu zilizopita'), 3)
+        self.assertEqual(parse_age_weeks('mahindi ya miezi miwili'), None)   # 'miwili' si namba tunayoikisia
+        self.assertEqual(parse_age_weeks('miezi 2'), 8)
+
+    def test_full_conversation_in_one_thread(self):
+        r = self.ask('255700000803', self.T1, self.T2, self.T3)
+        self.assertIn('Chagua namba', r[0])
+        self.assertIn('Uko sahihi', r[1])
+        self.assertIn('Swali 1', r[2])

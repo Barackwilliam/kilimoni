@@ -92,7 +92,8 @@ SCENARIOS = [
             ('[2] Kila swali la kufuatilia linatoka kwenye kanuni za dalili hizi',
              lambda r, t: all(x.get('sources') for x in t if x.get('asked') not in (None, 'crop', 'symptoms', 'extent'))),
             ('[3] Inalinganisha visababishi (orodha + "kwa nini si vingine")',
-             lambda r, t: 'kusababishwa na' in r[2].lower() and 'kwa nini si vingine' in r[-1].lower()),
+             lambda r, t: ('kusababishwa na' in r[2].lower() or 'visababishi vinavyowezekana' in r[2].lower())
+             and 'kwa nini si vingine' in r[-1].lower()),
             ('[4] Uhakika unatokana na kanuni (zimeandikwa kwenye trace)',
              lambda r, t: any(x.startswith('DR-') for x in t[-1].get('rules_used', []))
              and 'DR-' in t[-1].get('rules_text', '') and '%' in r[-1]),

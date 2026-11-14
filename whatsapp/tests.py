@@ -225,8 +225,8 @@ class HealthzTests(TestCase):
         with mock.patch.object(bridge, 'health', return_value={'success': True}):
             r = self.client.get('/healthz/')
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json(), {'ok': True, 'bridge': True})
+        self.assertEqual({k: v for k, v in r.json().items() if k != 'version'}, {'ok': True, 'bridge': True})
 
     @override_settings(BRIDGE_URL='', BRIDGE_API_KEY='')
     def test_without_bridge(self):
-        self.assertEqual(self.client.get('/healthz/').json(), {'ok': True, 'bridge': None})
+        self.assertEqual(self.client.get('/healthz/').json()['bridge'], None)

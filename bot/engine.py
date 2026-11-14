@@ -758,6 +758,19 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
         sess.pop('apologize', None)
         user.session_state = sess
         user.save(update_fields=['session_state'])
+        challenge_crop = (detect_crop(normalized) or _recent_crop(user)) if CHALLENGE.search(normalized) else None
+        if challenge_crop:
+            # Kiri kosa, futa ushauri wa awali, anza uchunguzi upya kwa kuuliza dalili (intake)
+            state = rx.new_state()
+            state.update({'phase': 'intake', 'crop_id': challenge_crop.id, 'intake_tries': 0})
+            _save_rx(user, state)
+            response = ("Uko sahihi, samahani. 🙏 Nilipaswa kuanza kwa kukuuliza maswali kabla ya kukushauri "
+                        "chochote. Ushauri wowote wa kuondoa, kuchoma au kunyunyizia mimea *usiufuate* mpaka "
+                        "tatizo lithibitishwe.\n\nTuanze upya. " + rx.intake_message(challenge_crop.crop_name_sw))
+            _log_all(user, raw_message, normalized, challenge_crop, None, '', None, response, True,
+                     start_time, message_id=message_id,
+                     trace={'mode': 'rules_engine', 'decision': 'self_correction', 'asked': 'intake'})
+            return response
         response = ("Samahani, nadhani nilikuelewa vibaya. 🙏\n\n"
                     "Niambie tena swali lako kwa maneno yako, nami nitakusaidia. "
                     "Mfano: _" + _seed_example_text() + "_")
@@ -1650,7 +1663,14 @@ def _recent_crop(user):
 # halikuwa wazi…", na "Nimeuliza hatua za kupanda mahindi" ikajibiwa "Hakuna shida" + Swali 2.
 COMPLAINT = re.compile(
     r'\b(sijauliza|sikuuliza|nimeuliza|nimekuuliza|mbona|hujanielewa|hujaelewa|umenielewa vibaya'
-    r'|sio hivyo|si hivyo|sio swali langu|si swali langu|swali langu ni|sikuuliza hilo)\b')
+    r'|sio hivyo|si hivyo|sio swali langu|si swali langu|swali langu ni|sikuuliza hilo'
+    r'|sijakuambia|sijakueleza|sijataja|hukuniuliza|umekosea|si ungeanza|ungeanza|ungeniuliza'
+    r'|kwa nini umenishauri|kwa nini unanishauri|kwa nini umesema|kwa nini unasema)\b')
+# Changamoto kwa USHAURI wa bot (Test 2 ya mteja): "kwa nini umenishauri niondoe na kuchoma
+# mimea? Si ungeanza kwa kuniuliza maswali?" → kiri, futa ushauri, anza upya kwa kuuliza.
+CHALLENGE = re.compile(
+    r'\b(umenishauri|unanishauri|ushauri wako|kuniuliza maswali|ungeniuliza|ungeanza|hukuniuliza'
+    r'|sijakuambia|sijakueleza|sijataja)\b')
 NEW_QUESTION = re.compile(
     r'\b(jinsi ya|namna ya|hatua za|bei ya|bei za|soko la|masoko|mbolea gani|mbolea ya|mbegu gani'
     r'|mbegu ya|nipande|nitapanda|kupanda|nivune|kuvuna|wakati wa kupanda|lini)\b')
