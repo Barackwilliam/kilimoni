@@ -71,7 +71,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'mkulima_ai.wsgi.application'
 
-#database botikawilly@gmail.com
+#database victorwema888@gmail.com
 #hosting jafarikilindo@gmail.com
 
 # Database - Supabase kwa production, SQLite kwa local dev
