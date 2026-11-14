@@ -277,6 +277,24 @@ class ClientTestRound2(TestCase):
         self.assertIn('Upungufu wa virutubisho', r)               # haibuni, lakini inasema mipaka
         self.assertIn('Swali 1', r)
 
+    def test_ai_cannot_add_symptoms_the_farmer_never_said(self):
+        """Live 14 Nov: AI iliongeza 'mmea unadumaa', 'mistari ya mashimo' → FAW na Stem Borer,
+        na 'umetaja:' ilionyesha maneno ambayo mkulima hakuyasema."""
+        from unittest import mock
+        picked = {'phrases': [
+            'Majani yana mistari ya njano, mmea unadumaa, majani hukauka kuanzia pembeni, na mahindi '
+            'yanaweza kushindwa kutoa punje vizuri',
+            'mmea unadumaa', 'majani yana mistari ya mashimo',
+            'Majani yana mistari myembamba ya njano au meupe inayofuata mishipa ya jani'],
+            'growth_stage': None, 'extent_pct': None, 'spreading': False}
+        with mock.patch('diagnosis.ai_layer.understand_symptoms', return_value=picked):
+            r = self.ask('255700000803', self.T3)[0]
+        self.assertNotIn('Fall Armyworm', r)
+        self.assertNotIn('Stem Borer', r)
+        for invented in ('unadumaa', 'hukauka', 'kushindwa', 'mishipa', 'meupe', 'mistari'):
+            self.assertNotIn(invented, r.split('Kumbuka')[0].split('umetaja:', 1)[-1])
+        self.assertIn('umetaja: njano', r)
+
     def test_age_in_words(self):
         from diagnosis.engine import parse_age_weeks
         self.assertEqual(parse_age_weeks('nilipanda wiki tatu zilizopita'), 3)
