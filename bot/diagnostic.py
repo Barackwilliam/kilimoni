@@ -99,11 +99,30 @@ def _has_stem(text: str, stems) -> bool:
     return any(_stem_re(s).match(w) for w in words for s in stems)
 
 
+# "Mimea yangu haionekani vizuri", "mahindi hayako sawa", "shamba liko vibaya":
+# mkulima anasema zao lina shida bila kutaja dalili. Ni tatizo — uchunguzi
+# uanze na kumuuliza dalili (maoni ya mteja), si kumpa jibu la jumla.
+UNWELL_RE = re.compile(
+    r'\b(haionekani|hayaonekani|hazionekani|haionekan\w*)\s+(vizuri|sawa|vyema)\b'
+    r'|\b(haiko|hayako|haipo|hayapo|hazipo|hauko|halipo|haliko)\s+(sawa|vizuri|poa|vyema)\b'
+    r'|\b(si|sio|siyo)\s+(mazuri|mizuri|nzuri|vizuri|salama)\b'
+    r'|\b(mibaya|vibaya|mabaya|hali mbaya)\b'
+    r'|\b(hayakui|haikui|hazikui|haukui|hayastawi|haistawi|hazistawi)\b')
+PLANT_CONTEXT_RE = re.compile(
+    r'\b(mimea|mmea|miche|mche|zao|mazao|shamba|mahindi|mpunga|maharage|mtama|alizeti|muhogo|nyanya'
+    r'|viazi|karanga|kunde|mbaazi|ndizi|kahawa|pamba)\b')
+
+
+def is_unwell_crop(text: str) -> bool:
+    low = (text or '').lower()
+    return bool(UNWELL_RE.search(low) and PLANT_CONTEXT_RE.search(low))
+
+
 def is_problem_message(text: str, intent=None) -> bool:
-    """Mkulima anaeleza tatizo la zao (ugonjwa, wadudu, dalili)."""
+    """Mkulima anaeleza tatizo la zao (ugonjwa, wadudu, dalili) — au anasema zao halipo sawa."""
     if intent is not None and getattr(intent, 'intent_name', '') in PROBLEM_INTENTS:
         return True
-    return _has_stem(text, PROBLEM_STEMS)
+    return _has_stem(text, PROBLEM_STEMS) or is_unwell_crop(text)
 
 
 def is_broad_request(text: str, crop, intent, location) -> bool:

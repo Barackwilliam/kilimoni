@@ -870,6 +870,18 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
     # ── MODULE 7: Zone Mapping ────────────────────────
     zone = map_location_to_zone(location)
 
+    # ── Mada ya kilimo isiyo na data iliyothibitishwa ("jinsi ya kupalilia") ──
+    # Ni swali halali la kilimo: tunasema ukweli (hatuna data yake) badala ya
+    # "sielewi", na linaandikwa kama pengo (UnresolvedQuery) ili mteja aone mada za kuongezea data.
+    _gap = knowledge_gap_topic(normalized)
+    if _gap:
+        response = knowledge_gap_message(_gap)
+        _log_all(user, raw_message, normalized, detect_crop(normalized), None, '', None, response,
+                 False, start_time, message_id=message_id,
+                 trace={'mode': 'profile', 'decision': 'knowledge_gap', 'topic': _gap})
+        _log_unresolved(user, raw_message, normalized, detect_crop(normalized), None, response)
+        return response
+
     # ── Maswali yasiyo ya kilimo ──────────────────────
     # Tunaangalia HAPA (si mwanzo) ili majibu mafupi ya mkulima
     # kama "Singida" au "mahindi" yasihesabiwe kama yasiyo ya kilimo.
@@ -1583,12 +1595,54 @@ def _start_diagnostic(user, raw_message, normalized, fresh_crop, start_time, mes
     # Zao linachukuliwa tu kama limetajwa kwenye ujumbe huu —
     # si kutoka kumbukumbu ya zamani — ili tusichunguze zao lisilo sahihi.
     state = rx.new_state()
+    if not fresh_crop:
+        # Muktadha: zao lililotajwa kwenye ujumbe uliotangulia (ndani ya dakika 30)
+        # — "mahindi yangu hayako sawa" → "majani yana mistari ya njano" isiulize "zao gani?".
+        fresh_crop = _recent_crop(user)
     if not fresh_crop and len(normalized.split()) >= 3:
         # "majani yamekuwa ya kahawia" bila zao: tunauliza zao, lakini maelezo haya
         # yanatumika baadaye — mkulima asiulizwe dalili mara ya pili.
         state['early_symptoms'] = normalized
     return _rx_step(user, state, raw_message, normalized, start_time,
                     message_id, fresh_crop=fresh_crop)
+
+
+# Mada za kilimo ambazo bado hazina dataset iliyothibitishwa (MHD) wala wasifu wa zao.
+KNOWLEDGE_GAPS = [
+    (re.compile(r'\b(ku)?palili\w*|\bmagugu\b|\bpalizi\b'), 'kupalilia na kudhibiti magugu'),
+    (re.compile(r'\b(mifugo|ufugaji|kufuga|ng\'ombe|mbuzi|kondoo|kuku|nguruwe)\b'), 'mifugo'),
+    (re.compile(r'\b(ku)?pogoa\b|\bkupunguza matawi\b'), 'kupogoa'),
+]
+
+
+def knowledge_gap_topic(normalized):
+    for rx_, topic in KNOWLEDGE_GAPS:
+        if rx_.search(normalized):
+            return topic
+    return ''
+
+
+def knowledge_gap_message(topic):
+    return (
+        f"🌱 Swali lako kuhusu *{topic}* ni muhimu, lakini bado sina taarifa za kitaalamu "
+        "zilizothibitishwa kuhusu hilo kwenye data yangu — kwa hiyo sitabuni.\n\n"
+        "📞 Afisa ugani wa eneo lako atakusaidia kwa hili.\n\n"
+        "Kwa sasa naweza kukusaidia kuhusu: *matatizo ya mazao* (wadudu, magonjwa, dalili), "
+        "*mbegu bora*, *wakati wa kupanda*, *udongo* na *mzunguko wa mazao*."
+    )
+
+
+RECENT_CROP_MINUTES = 30
+
+
+def _recent_crop(user):
+    """Zao la ujumbe wa mwisho wa mkulima, ikiwa ulikuwa ndani ya dakika 30."""
+    from datetime import timedelta
+    from django.utils import timezone
+    prev = (Conversation.objects.filter(user=user, message_direction='inbound',
+                                        created_at__gte=timezone.now() - timedelta(minutes=RECENT_CROP_MINUTES))
+            .exclude(detected_crop=None).order_by('-id').first())
+    return prev.detected_crop if prev else None
 
 
 # ── Mkulima akibadilisha mada au akilalamika katikati ya uchunguzi ──

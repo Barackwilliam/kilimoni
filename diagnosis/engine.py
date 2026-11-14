@@ -70,11 +70,79 @@ NO_CHEMICAL_YET = (
     "• Kemikali si hatua ya kwanza. Anza na hatua zilizo juu, na kagua "
     "shamba tena baada ya siku 2–3."
 )
+# Hatua za tahadhari KABLA tatizo halijajulikana: zisimsababishie mkulima hasara.
+# (Zamani: "ondoa mimea iliyoathirika, ichome au izike" — maoni ya mteja: hatua
+# inayoharibu mimea haipaswi kutolewa kabla ya ushahidi.)
 SAFE_FIRST_STEPS = (
-    "• Kagua mimea mingine uone kama dalili zinaenea\n"
-    "• Ondoa mimea iliyoathirika sana, ichome au izike mbali na shamba\n"
-    "• *Usitumie kemikali yoyote* kabla tatizo halijathibitishwa"
+    "• Kagua mimea mingine sehemu tofauti za shamba uone kama dalili zinaenea\n"
+    "• Weka alama kwenye mimea michache iliyoathirika na uiangalie tena baada ya siku 2–3\n"
+    "• *Usitumie kemikali yoyote* wala usiharibu mimea kabla tatizo halijathibitishwa"
 )
+
+# ── Maelezo yasiyo na dalili ("mimea haionekani vizuri") ──
+# Taarifa HAZITOSHI ≠ SINA UJUZI: tunauliza kama afisa ugani badala ya kuhitimisha.
+SYMPTOM_STEMS = (
+    'jani', 'majani', 'shina', 'mizizi', 'mzizi', 'gunzi', 'mbelewele', 'ndevu', 'kitovu', 'tunda', 'matunda',
+    'rangi', 'njano', 'manjano', 'kahawia', 'nyeusi', 'cheusi', 'nyeupe', 'jeupe', 'zambarau', 'nyekundu',
+    'doa', 'madoa', 'michirizi', 'mistari', 'mstari', 'mabaka', 'mashimo', 'shimo', 'matundu', 'tundu',
+    'tobo', 'tobolewa', 'liwa', 'meliwa', 'nyauka', 'nyong', 'kauka', 'dumaa', 'oza', 'ozea', 'kunja',
+    'kunjamana', 'pukutika', 'anguka', 'vunjika', 'funza', 'mdudu', 'wadudu', 'kiwavi', 'viwavi', 'panzi',
+    'buu', 'ukungu', 'kutu', 'vumbi', 'kinyesi', 'utando', 'chipukizi', 'ungua', 'babuka',
+    'kula', 'tafuna', 'haribu', 'haribika',
+)
+_STEM_PREFIX = r'(?:ya|ma|ki|vi|ku|wa|zi|li|mi|me|na|ta|ka|ji|ni|si|ha|hu|i|a|u|m|n)*'
+_SYMPTOM_RE = re.compile(r'\b' + _STEM_PREFIX + '(' + '|'.join(sorted(SYMPTOM_STEMS, key=len, reverse=True)) + ')')
+
+INTAKE_OPTIONS = [
+    # (kinachoonyeshwa kwa mkulima, maneno ya kulinganisha na dalili za dataset)
+    ("Majani yana rangi isiyo ya kawaida (njano, kahawia au mistari)", "majani yana mistari ya njano madoa rangi ya kahawia"),
+    ("Majani yana mashimo au yameliwa", "majani yana mashimo makubwa yameliwa"),
+    ("Mimea inanyauka au majani yanakauka", "majani hukauka mmea unanyauka"),
+    ("Mimea imedumaa, haikui vizuri", "mmea unadumaa haukui"),
+    ("Kuna wadudu au funza wanaoonekana kwenye mmea", "kuna wadudu funza kwenye mmea"),
+    ("Shina au gunzi limeharibika au lina matundu", "shina lina matundu limeharibika gunzi"),
+]
+NUMBERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
+
+
+def is_vague(text):
+    """Hakuna dalili yoyote halisi (sehemu ya mmea, rangi, mashimo, wadudu…)."""
+    return not _SYMPTOM_RE.search((text or '').lower())
+
+
+def intake_message(crop_name, again=False):
+    head = ("Bado sijaelewa tatizo vizuri. Tafadhali " if again else
+            "Pole sana. Ili nielewe tatizo vizuri *kabla ya kukushauri chochote*, ")
+    lines = [head + f"niambie unachokiona kwenye {crop_name}. Chagua namba moja au zaidi:", '']
+    lines += [f"{NUMBERS[i]} {label}" for i, (label, _) in enumerate(INTAKE_OPTIONS)]
+    lines += ['', f"Pia, kama unajua: {crop_name.lower()} yana umri gani? (mf. wiki 6)",
+              "_Mfano wa jibu: 2 na 5, wiki 6 — au eleza kwa maneno yako_"]
+    return '\n'.join(lines)
+
+
+def parse_intake(text):
+    """'2 na 5, wiki 6' → ([1, 4], 6). Namba 1–6 (si ile ya umri) ni chaguo."""
+    low = (text or '').lower()
+    weeks = None
+    # "wiki 6" (namba BAADA ya neno) kwanza: "2 wiki 6" = chaguo 2, umri wiki 6
+    for unit, mult in (('wiki|week', 1), ('mwezi|miezi', 4)):
+        m_age = (re.search(rf'(?:{unit})\s*(\d{{1,2}})', low)
+                 or re.search(rf'(\d{{1,2}})\s*(?:{unit})', low))
+        if m_age:
+            weeks = int(m_age.group(1)) * mult
+            low = low[:m_age.start()] + ' ' + low[m_age.end():]
+            break
+    picks = []
+    for n in re.findall(r'(?<![\d.])([1-6])(?![\d.])', low):
+        if int(n) - 1 not in picks:
+            picks.append(int(n) - 1)
+    return picks, weeks
+
+
+def _stage_from_weeks(weeks):
+    if weeks is None:
+        return None
+    return 'seedling' if weeks <= 3 else 'vegetative' if weeks <= 10 else None
 DISCLAIMER = "_Ushauri huu unatokana na taarifa za kitaalamu za Kilimoni AI; si mbadala wa afisa ugani._"
 
 # ─────────────────────────── Misamiati ───────────────────────────
@@ -766,7 +834,11 @@ def diagnosis_message(state, cid, crop_name, gate):
     lines.append(f"*Tatizo linalowezekana zaidi:* {_cause_name(cause)}")
     lines.append(f"*Kiwango cha uhakika:* {round(c['score'] * 100)}% ({plain.band_sw(band)})")
     lines += ['', '*Kwa nini:*']
-    lines.append(f"• Dalili ulizotaja: {state['symptom_text'].strip().rstrip('.')}")
+    # Kwa chaguo za intake tunaonyesha alichochagua mkulima (si maneno ya kulinganisha)
+    shown = '; '.join(state.get('intake_picks') or []) or state['symptom_text'].strip().rstrip('.')
+    lines.append(f"• Dalili ulizotaja: {shown}")
+    if state.get('crop_age_weeks'):
+        lines.append(f"• Umri wa mimea: wiki {state['crop_age_weeks']}")
     for ev in state['evidence']:
         if ev['answer'] == 'yes' and cid in ev['deltas']:
             lines.append(f"• Ulijibu *ndiyo*: {plain.as_statement(_plain_q(ev['question']))}")
@@ -865,11 +937,28 @@ def uncertain_message(state, crop_name):
     return '\n'.join(lines)
 
 
-def no_match_message(crop_name):
+def no_match_message(crop_name, crop=None):
+    """Dalili ZIMEELEZWA lakini hazilingani na kanuni — pengo la ujuzi, si la taarifa."""
+    known = ''
+    if crop is not None:
+        names = [c.name_sw for c in list(m.Pest.objects.filter(crop=crop, is_active=True))
+                 + list(m.Disease.objects.filter(crop=crop, is_active=True)) if c.name_sw]
+        if names:
+            known = ("\n\nMatatizo ya " + crop_name + " ninayoweza kuchunguza kwa sasa: "
+                     + ', '.join(names[:8]) + '.')
     return (
-        f"Asante. Dalili hizi za *{crop_name}* hazilingani na taarifa za kitaalamu "
-        "nilizonazo kwa sasa, kwa hiyo siwezi kukupa utambuzi wa uhakika — na "
-        "sitabuni. 🌱\n\n*Hatua salama za sasa:*\n" + SAFE_FIRST_STEPS + "\n\n" + REFER_EXTENSION
+        f"Asante kwa maelezo. Nimeelewa dalili ulizotaja, lakini hazilingani na matatizo ya *{crop_name}* "
+        "yaliyo kwenye taarifa zangu za kitaalamu zilizothibitishwa — kwa hiyo sitabuni utambuzi. 🌱"
+        + known + "\n\n*Hatua salama za sasa:*\n" + SAFE_FIRST_STEPS + "\n\n" + REFER_EXTENSION
+    )
+
+
+def insufficient_message(crop_name):
+    """Mkulima hakuweza kueleza dalili hata baada ya kuulizwa — taarifa hazitoshi, si pengo la ujuzi."""
+    return (
+        f"Sawa. Bila kujua dalili za *{crop_name}* siwezi kukisia tatizo — na sitabuni. 🌱\n\n"
+        "Ukiweza, kagua mimea kwa makini (majani, shina, mizizi) kisha niambie unachokiona; "
+        "nitaendelea kukusaidia.\n\n*Hatua salama za sasa:*\n" + SAFE_FIRST_STEPS + "\n\n" + REFER_EXTENSION
     )
 
 
@@ -911,6 +1000,35 @@ def step(state, text, crop=None):
         if not state['symptom_text']:
             state['symptoms_asked'] = True
             return ASK_SYMPTOMS.format(crop=crop_name), {**trace, 'asked': 'symptoms'}, False
+        # "Mimea haionekani vizuri" — hakuna dalili halisi: uliza (intake), usihitimishe.
+        if is_vague(state['symptom_text']) and not state.get('intake_done'):
+            state['phase'] = 'intake'
+            state['intake_tries'] = 0
+            state['vague_text'] = state['symptom_text']
+            state['symptom_text'] = ''
+            return intake_message(crop_name), {**trace, 'asked': 'intake', 'decision': 'need_symptoms'}, False
+
+    if state['phase'] == 'intake':
+        picks, weeks = parse_intake(text)
+        if weeks is not None:
+            state['crop_age_weeks'] = weeks
+        described = text if not is_vague(text) else ''
+        if picks or described:
+            parts = [INTAKE_OPTIONS[i][1] for i in picks]
+            if described:
+                parts.append(described)
+            state['symptom_text'] = '. '.join(parts)
+            state['intake_picks'] = [INTAKE_OPTIONS[i][0] for i in picks]
+            state['intake_done'] = True
+            state['phase'] = 'symptoms'
+        else:
+            state['intake_tries'] = state.get('intake_tries', 0) + 1
+            if state['intake_tries'] >= 2:
+                state['active'] = False
+                return insufficient_message(crop_name), {**trace, 'decision': 'insufficient_info'}, True
+            return intake_message(crop_name, again=True), {**trace, 'asked': 'intake'}, False
+
+    if state['phase'] == 'symptoms':
         if not _rule_for(crop):
             state['active'] = False
             names = ', '.join(supported_crop_names()) or '—'
@@ -930,7 +1048,8 @@ def step(state, text, crop=None):
             if understood['spreading']:
                 state['spreading'] = True
             trace['ai_symptoms'] = understood['phrases']
-        state['growth_stage'] = _detect_stage(state['symptom_text']) or (understood or {}).get('growth_stage')
+        state['growth_stage'] = (_stage_from_weeks(state.get('crop_age_weeks')) or _detect_stage(state['symptom_text'])
+                                 or (understood or {}).get('growth_stage'))
         cands, symptoms = match_candidates(crop, match_text, state['growth_stage'])
         if not cands and state['growth_stage']:
             cands, symptoms = match_candidates(crop, match_text)
@@ -939,7 +1058,7 @@ def step(state, text, crop=None):
         state['initial'] = trace['initial']
         if not cands:
             state['active'] = False
-            return no_match_message(crop_name), {**trace, 'decision': 'no_rule_matched'}, True
+            return no_match_message(crop_name, crop), {**trace, 'decision': 'no_rule_matched'}, True
         qs = build_questions(state)
         for key, ans in preanswered(state, qs, state['symptom_text']):
             apply_answer(state, qs, key, ans, via='farmer_message')
