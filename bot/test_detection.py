@@ -443,3 +443,31 @@ class StrictDataModeTests(CoverageTests):
         self.assertNotIn('Bei ya soko', menu)
         self.assertIn('Udongo', menu)
         self.assertEqual(dg.parse_goal_reply('4'), 'soil')
+
+
+class GreetingFollowThroughTests(CoverageTests):
+    """Live 15 Nov: salamu iliuliza 'tuendelee hapo, au una swali jipya?' lakini majibu hayakueleweka."""
+
+    def ask(self, phone, *msgs):
+        from bot.engine import process_message
+        return [process_message(phone, m) for m in msgs]
+
+    def setUp(self):
+        from crops.models import Crop
+        Crop.objects.get_or_create(crop_name_sw='Mpunga', defaults={'crop_name_en': 'Rice', 'crop_group': 'cereals'})
+
+    def test_live_conversation(self):
+        r = self.ask('255700777011', 'nipande lini mahindi niko kondoa', 'Hello', 'Sasa ni mpunga', '3',
+                     'Hello', 'Nina swali jipya', 'Hello', 'Basi turudi kwenye mahindi', '2')
+        self.assertIn('tuendelee hapo', r[1])
+        self.assertIn('tuongelee *Mpunga*', r[2])                       # si salamu ileile tena
+        self.assertIn('Wakati wa kupanda Mpunga', r[3])                 # menyu → moduli ya kupanda
+        self.assertIn('Uliza swali lako', r[5])                         # si "sielewi"
+        self.assertIn('tuongelee *Mahindi*', r[7])                      # inauliza, haijirudii
+        self.assertIn('Mbegu za Mahindi', r[8])
+
+    def test_sasa_is_greeting_only_alone(self):
+        from bot.engine import is_greeting
+        self.assertTrue(is_greeting('sasa'))
+        self.assertTrue(is_greeting('sasa vipi'))
+        self.assertFalse(is_greeting('sasa ni mpunga'))

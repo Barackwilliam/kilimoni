@@ -160,6 +160,9 @@ GREETING_TAILS = {'asubuhi', 'mchana', 'jioni', 'usiku', 'leo', 'kazi', 'nyumban
                   'wikendi', 'za', 'yako', 'zako', 'mzee', 'mkuu', 'familia', 'huko', 'kwenu'}
 
 
+SASA_TAILS = {'vipi', 'mzee', 'mkuu', 'kaka', 'dada', 'bro', 'ndugu', 'habari', 'rafiki', 'boss', 'mambo'}
+
+
 def is_greeting(text: str) -> bool:
     """
     Angalia kama ujumbe ni salamu.
@@ -174,6 +177,10 @@ def is_greeting(text: str) -> bool:
     # "habari za mpira jana" si salamu; "habari za asubuhi/shamba" ni salamu
     m = re.match(r'habari (?:za|ya) ([a-z]+)', t)
     if m and m.group(1) not in GREETING_TAILS:
+        return False
+    # "sasa" ni salamu peke yake ("sasa", "sasa vipi") — "sasa ni mpunga" si salamu
+    words = t.split()
+    if words[0] == 'sasa' and len(words) > 1 and words[1] not in SASA_TAILS:
         return False
     return any(t == g or t.startswith(g + ' ') for g in GREETINGS)
 
@@ -761,12 +768,23 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
             is_returning=user.message_count > 1,
             last_crop=last_crop_name,
         )
+        if last_crop_name and user.message_count > 1:
+            # Salamu imeuliza "tuendelee hapo, au una swali jipya?" — jibu lake lishughulikiwe
+            _gs = dict(user.session_state or {})
+            _gs['resume_offer'] = time.time()
+            user.session_state = _gs
+            user.save(update_fields=['session_state'])
         _log_all(user, raw_message, normalized, None, None, '', None, response, True,
                  start_time, message_id=message_id)
         return response
 
     # ── MODULE 4: Apply synonyms ─────────────────────
     normalized = apply_synonyms(normalized)
+
+    # ── Jibu la salamu "tuendelee hapo, au una swali jipya?" / zao peke yake ──
+    handled = _handle_resume_or_crop_only(user, raw_message, normalized, start_time, message_id)
+    if handled is not None:
+        return handled
 
     # ── KUELEWA KWANZA: fomu ya ujumbe (AI ya lugha + uthibitisho) ──
     # Ujumbe unaeleweka kabla ya kwenda kwenye dataset. AI isipopatikana, njia ya
@@ -1781,6 +1799,74 @@ STRICT_GAPS = [
 ]
 
 
+NEW_TOPIC = re.compile(r'\b(swali (jipya|jingine|lingine)|kitu (kingine|kipya)|jambo (jingine|jipya)|nina swali)\b')
+RESUME = re.compile(r'\b(tuendelee|endelea|tuendeleee|turudi|rudi|hapo hapo|hapohapo|ndiyo|ndio|sawa|yes|poa)\b')
+CROP_SWITCH = re.compile(r'\b(sasa|ni|kuhusu|tuongelee|turudi|kwenye|basi|nataka|zao|la|ya|kwa|tuendelee|na)\b')
+TOPIC_NAMES = {'planting_advisor': 'wakati wa kupanda', 'seed_advisor': 'mbegu bora', 'soil_advisor': 'udongo',
+               'rotation_advisor': 'mzunguko wa mazao', 'rules_engine': 'tatizo shambani'}
+
+
+def _last_topic(user):
+    last = (Conversation.objects.filter(user=user, message_direction='inbound').exclude(trace=None)
+            .order_by('-id').first())
+    mode = (last.trace or {}).get('mode') if last else ''
+    return TOPIC_NAMES.get(mode, '')
+
+
+def _crop_menu_reply(user, raw_message, normalized, crop, start_time, message_id, decision):
+    topic = _last_topic(user) if decision == 'resume' else ''
+    _clear_pending(user)
+    if user.last_crop_id != crop.id:
+        user.last_crop_id = crop.id
+        user.save(update_fields=['last_crop_id'])
+    sess = dict(user.session_state or {})
+    sess['goal_pending'] = True
+    user.session_state = sess
+    user.save(update_fields=['session_state'])
+    response = dg.build_crop_menu(crop.crop_name_sw, topic)
+    _log_all(user, raw_message, normalized, crop, None, '', None, response, True, start_time,
+             message_id=message_id, trace={'mode': 'goal_question', 'decision': decision})
+    return response
+
+
+def _handle_resume_or_crop_only(user, raw_message, normalized, start_time, message_id):
+    """
+    Live 15 Nov: salamu iliuliza "tuendelee hapo, au una swali jipya?", lakini "Sasa ni mpunga"
+    ilipata salamu ileile tena, "Nina swali jipya" ikapata "sielewi", na "turudi kwenye mahindi"
+    ikarudia jibu la zamani bila kuuliza. Sasa majibu hayo yanashughulikiwa hapa.
+    """
+    sess = dict(user.session_state or {})
+    offer = sess.pop('resume_offer', None)
+    if offer is not None:
+        user.session_state = sess
+        user.save(update_fields=['session_state'])
+    fresh = (offer is not None and time.time() - float(offer) < 900)
+    words = normalized.split()
+    if len(words) > 6 or rx.get_state(sess):
+        return None
+    adv = sess.get('adv') or {}
+    if adv.get('stage') in ('crop', 'location'):
+        return None                              # "mahindi"/"kondoa" ni jibu la swali linalosubiriwa
+    crop = detect_crop(normalized)
+    leftover = [w for w in words if not CROP_SWITCH.match(w) and not RESUME.match(w)
+                and not (crop and (w in crop.crop_name_sw.lower().split() or w in crop.crop_name_en.lower().split()))]
+    if fresh and NEW_TOPIC.search(normalized) and not crop:
+        response = ("Sawa, karibu! 🌿 Uliza swali lako — kuhusu *tatizo shambani*, *mbegu bora*, "
+                    "*wakati wa kupanda*, *udongo* au *mzunguko wa mazao*.")
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True, start_time,
+                 message_id=message_id, trace={'mode': 'goal_question', 'decision': 'new_topic'})
+        return response
+    if crop and not leftover:
+        # "Sasa ni mpunga", "mpunga", "turudi kwenye mahindi" — zao tu, bila swali
+        return _crop_menu_reply(user, raw_message, normalized, crop, start_time, message_id,
+                                'resume' if user.last_crop_id == crop.id else 'crop_switch')
+    if fresh and RESUME.search(normalized) and not leftover and user.last_crop_id:
+        last = Crop.objects.filter(id=user.last_crop_id).first()
+        if last:
+            return _crop_menu_reply(user, raw_message, normalized, last, start_time, message_id, 'resume')
+    return None
+
+
 def understanding_enabled():
     from diagnosis import ai_layer
     return getattr(settings, 'UNDERSTAND_FIRST', True) and ai_layer.available()
@@ -2125,8 +2211,18 @@ def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_i
         if route == 'diagnosis':
             return _start_diagnostic(user, raw_message, normalized,
                                      detect_crop(normalized), start_time, message_id)
+        _gcrop = detect_crop(normalized) or (Crop.objects.filter(id=user.last_crop_id).first()
+                                             if user.last_crop_id else None)
+        if route == 'seed_selection':
+            handled = _seed_turn(user, raw_message, normalized, _gcrop, start_time, message_id)
+            if handled is not None:
+                return handled
+        if route == 'planting_time':
+            handled = _planting_turn(user, raw_message, normalized, _gcrop, start_time, message_id)
+            if handled is not None:
+                return handled
         if route == 'soil':
-            return _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
+            return _soil_turn(user, raw_message, normalized, _gcrop, start_time, message_id)
         if route == 'rotation':
             return _rotation_turn(user, raw_message, normalized, start_time, message_id)
         if route:
