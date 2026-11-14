@@ -262,6 +262,14 @@ def detect_location(text: str) -> str:
     for region in TANZANIA_REGIONS:
         if region not in AMBIGUOUS_LOCATIONS and _word_match(region, text):
             return region.title()
+    # Kosa moja la uchapaji ("Morogolo" → Morogoro), kwa majina ya herufi 7+ tu — majina mafupi
+    # yanakaribiana na maneno ya kawaida ("mwanzo" ≈ Mwanza, "kusoma" ≈ Musoma, "kahawa" ≈ Kahama).
+    from diagnosis.engine import _near
+    for w in re.findall(r"[a-z']+", text.lower()):
+        if len(w) >= 7:
+            for name in TANZANIA_REGIONS + TANZANIA_DISTRICTS:
+                if ' ' not in name and len(name) >= 7 and name not in AMBIGUOUS_LOCATIONS and _near(w, name):
+                    return name.title()
     return ''
 
 
@@ -750,6 +758,20 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
         handled = _handle_advisory_pending(user, raw_message, normalized, start_time, message_id)
         if handled is not None:
             return handled
+
+    # ── "Mahindi hustawi wapi Tanzania?" / "taja maeneo" (live: ilijibiwa kwa swali la udongo) ──
+    _wg_crop = detect_crop(normalized) or _recent_crop(user)
+    if adv_coverage.wants_where_grows(normalized, has_crop_context=bool(_wg_crop)):
+        _s = dict(user.session_state or {})
+        _rep = time.time() - float(_s.get('where_grows_at', 0)) < RECENT_CROP_MINUTES * 60
+        _s['where_grows_at'] = time.time()
+        user.session_state = _s
+        user.save(update_fields=['session_state'])
+        response = adv_coverage.where_grows_message(_wg_crop, repeat=_rep)
+        _log_all(user, raw_message, normalized, _wg_crop, None, '', None, response, False, start_time,
+                 message_id=message_id, trace={'mode': 'profile', 'decision': 'where_grows'})
+        _log_unresolved(user, raw_message, normalized, _wg_crop, None, response)
+        return response
 
     # ── Swali kuhusu maji/ukame/mbolea kama chanzo cha tatizo ──
     if is_abiotic_question(normalized):
@@ -1410,6 +1432,9 @@ def _planting_turn(user, raw_message, normalized, crop, start_time, message_id, 
     place = _place_without_data(user, normalized) if dec == 'need_location' and not loc else ''
     if place:
         response = _no_data_place_message(place, 'kukuambia wakati wa kupanda')
+        _ov = adv_planting.zone_overview(crop)
+        if _ov:
+            response += '\n\n' + _ov
         trace.update({'decision': 'location_not_in_data', 'place': place})
         dec = 'location_not_in_data'
         _set_adv(user, {'module': 'planting', 'stage': 'location', 'crop_id': crop.id if crop else None,
@@ -1457,6 +1482,17 @@ def _handle_planting_pending(user, raw_message, normalized, start_time, message_
         if attempts >= 2 or detect_intent(normalized, detect_crop(normalized), '') or dg.is_problem_message(normalized, None):
             _set_adv(user, None)
             return None
+        place = _place_without_data(user, normalized)
+        if place:
+            _set_adv(user, None)
+            response = _no_data_place_message(place, 'kukuambia tarehe sahihi za kupanda')
+            overview = adv_planting.zone_overview(crop)
+            if overview:
+                response += '\n\n' + overview
+            _log_all(user, raw_message, normalized, crop, None, place, None, response, False, start_time,
+                     message_id=message_id, trace={'mode': 'planting_advisor', 'decision': 'location_not_in_data',
+                                                   'place': place})
+            return response
         pend['attempts'] = attempts
         _set_adv(user, pend)
         response = ("Sijaweza kutambua eneo hilo. 🙏\n\nTafadhali taja *wilaya au kata* yako kwa jina, "
@@ -1559,6 +1595,17 @@ def _handle_advisory_pending(user, raw_message, normalized, start_time, message_
         if attempts >= 2 or detect_intent(normalized, detect_crop(normalized), '') or dg.is_problem_message(normalized, None):
             _set_adv(user, None)
             return None
+        place = _place_without_data(user, normalized)
+        if place:
+            _set_adv(user, None)
+            response = _no_data_place_message(place, 'kukuambia tarehe sahihi za kupanda')
+            overview = adv_planting.zone_overview(crop)
+            if overview:
+                response += '\n\n' + overview
+            _log_all(user, raw_message, normalized, crop, None, place, None, response, False, start_time,
+                     message_id=message_id, trace={'mode': 'planting_advisor', 'decision': 'location_not_in_data',
+                                                   'place': place})
+            return response
         pend['attempts'] = attempts
         _set_adv(user, pend)
         response = ("Sijaweza kutambua eneo hilo. 🙏\n\nTafadhali taja *wilaya au kata* yako kwa jina, "

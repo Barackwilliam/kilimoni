@@ -369,3 +369,35 @@ class LiveRound3Tests(ClientTestRound2):
         self.assertNotEqual(r[1], r[2])
         self.assertIn('Samahani kama jibu langu halikuwa wazi', r[2])
         self.assertNotIn('mbegu', r[2].lower())                         # si mfano wa mbegu tena
+
+
+class LiveRound4Tests(CoverageTests):
+    """Live 14 Nov: 'mahindi hustawi wapi?', 'taja maeneo', wakati wa kupanda bila eneo, 'Morogolo'."""
+
+    def ask(self, phone, *msgs):
+        from bot.engine import process_message
+        return [process_message(phone, m) for m in msgs]
+
+    def test_where_crop_grows_is_answered_from_data_without_repeating(self):
+        r = self.ask('255759000011', 'Mahindi  ni zao linalostawi sana wapi?kwa tanzania',
+                     'Okee sawa .taja maeneo specific kwa Tanzania')
+        self.assertIn('sitataja mikoa kwa kubahatisha', r[0])
+        self.assertNotIn('udongo wako unaonekana', r[0].lower())          # si swali la udongo
+        self.assertNotEqual(r[0], r[1])
+        self.assertIn('Kanda za kilimo zilizo kwenye data yangu', r[1])
+
+    def test_planting_time_without_place_gives_national_overview(self):
+        r = self.ask('255759000012', 'Kipindi Cha kupanda mahindi ni kipindi gani katika mwaka')[0]
+        self.assertIn('Kanda ya Ziwa', r)
+        self.assertIn('wilaya au', r)
+
+    def test_misspelt_place_without_data_is_named_honestly(self):
+        r = self.ask('255759000013', 'Kipindi Cha kupanda mahindi ni kipindi gani katika mwaka', 'Morogolo vijijini')
+        self.assertIn('Morogoro', r[1])
+        self.assertIn('sina taarifa za kanda', r[1])
+        self.assertNotIn('Sijaweza kutambua eneo hilo', r[1])
+
+    def test_typo_matching_skips_common_words(self):
+        from bot.engine import detect_location
+        for text in ('nimeanza mwanzo', 'nataka kusoma', 'kahawa yangu'):
+            self.assertEqual(detect_location(text), '')
