@@ -373,14 +373,37 @@ def combine(ai, rules):
     return f
 
 
+def combine_ai_first(ai, rules):
+    """AI inaongoza; kanuni zinachukua nafasi pale AI haijaelewa (unclear/offtopic) au haipo."""
+    if ai is None:
+        return rules
+    if ai['goal'] in RULE_UNSURE and rules['goal'] not in RULE_UNSURE:
+        f = dict(rules)
+        f['source'] = 'rules+ai'
+    else:
+        f = dict(ai)
+        f['source'] = 'ai'
+        if f['goal'] == 'gap' and not f.get('topic'):
+            f['topic'] = rules.get('topic') or ''
+    f['crop'] = ai['crop'] or rules['crop']
+    f['place'] = ai['place'] or rules['place']
+    f['answer'] = ai['answer'] or rules['answer']
+    for key in ('affirmed', 'denied', 'question'):
+        f[key] = ai.get(key) or rules.get(key) or ([] if key != 'question' else '')
+    return f
+
+
 def understand(text, user=None, pending=None, normalized=None, use_ai=True):
-    """Fomu ya ujumbe: kanuni + AI (ikipatikana), zikiunganishwa kwa combine()."""
+    """
+    Fomu ya ujumbe. Kwa UNDERSTAND_MODE='ai_first' (default) AI inasoma kila ujumbe kwanza na
+    kanuni ni akiba; kwa 'rules_first' AI inaitwa tu pale kanuni hazijaelewa.
+    """
+    from django.conf import settings
     pending = pending_kind(user) if pending is None else pending
     rules = rule_frame(text, pending, normalized, extra=rule_context(user))
+    ai_first = getattr(settings, 'UNDERSTAND_MODE', 'ai_first') != 'rules_first'
     ai = None
-    if use_ai and rules['goal'] in RULE_UNSURE | {'answer', 'diagnosis', 'complaint'}:
-        # AI inaitwa tu pale inapoongeza kitu: kanuni hazijaelewa, au tunahitaji
-        # jibu/dalili/swali la ndani (huokoa maombi — vikomo vya maombi)
+    if use_ai and (ai_first or rules['goal'] in RULE_UNSURE | {'answer', 'diagnosis', 'complaint'}):
         try:
             ai = ai_frame(text, pending, recent_turns(user), normalized)
             if ai is not None:
@@ -388,7 +411,7 @@ def understand(text, user=None, pending=None, normalized=None, use_ai=True):
         except Exception as e:                     # AI isiangushe mazungumzo
             logger.error("[understand] AI error: %s", e)
             ai = None
-    f = combine(ai, rules)
+    f = combine_ai_first(ai, rules) if ai_first else combine(ai, rules)
     f['pending'] = pending
     return f
 

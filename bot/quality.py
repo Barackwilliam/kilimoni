@@ -18,6 +18,7 @@ UELEWA (kinapimwa, si kizuizi) — kila kesi inaweza kuwa na matarajio:
 import re
 
 LEGACY_TEXT = (
+    'shikamoo',
     'nahitaji kidogo zaidi', 'hilo liko nje ya uwezo', 'hapo umenishinda', 'hilo silijui vizuri',
     'uko mkoa gani', 'sijalitambua hilo eneo', 'jaribu kuandika jina la mkoa', 'ninajua tunaongelea',
     'bei za takriban', 'hutofautiana kulingana na eneo',

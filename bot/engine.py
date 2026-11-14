@@ -380,6 +380,15 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     response = _process_message(phone_number, raw_message, whatsapp_type, message_id)
     user = User.objects.filter(phone_number=phone_number).first()          # session mpya baada ya jibu
     final = response
+    # AI kama mwandishi: jibu la data → maelezo ya kawaida (ukweli wa rasimu tu; ukaguzi ukishindwa → rasimu)
+    last = (Conversation.objects.filter(user=user, message_direction='outbound').order_by('-id').first()
+            if user and response else None)
+    if last is not None and last.raw_message == response:
+        from bot import writer
+        if writer.eligible(last.trace):
+            final, info = writer.write(response, raw_message, last.trace)
+            last.trace = {**(last.trace or {}), **info}
+            last.save(update_fields=['trace'])
     prefix = _apology_prefix(user) if user and response else ''
     if prefix:
         final = prefix + final

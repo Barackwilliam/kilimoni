@@ -81,11 +81,14 @@ class Command(BaseCommand):
         out = []
         for case, ai_f, _ in ai_results:
             pending = case.get('pending', '')
+            from django.conf import settings
             rules = understand.rule_frame(case['msg'], pending)
+            ai_first = getattr(settings, 'UNDERSTAND_MODE', 'ai_first') != 'rules_first'
             ai = None
-            if ai_f['source'] == 'ai' and rules['goal'] in understand.RULE_UNSURE | {'answer', 'diagnosis', 'complaint'}:
+            if ai_f['source'] == 'ai' and (ai_first or rules['goal'] in understand.RULE_UNSURE |
+                                           {'answer', 'diagnosis', 'complaint'}):
                 ai = understand.context_check(dict(ai_f), pending)
-            f = understand.combine(ai, rules)
+            f = understand.combine_ai_first(ai, rules) if ai_first else understand.combine(ai, rules)
             out.append((case, f, check(case, f)))
         return out
 
