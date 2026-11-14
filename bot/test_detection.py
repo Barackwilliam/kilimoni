@@ -166,3 +166,72 @@ class LiveFeedbackTests(TestCase):
     def test_answers_still_work_mid_diagnosis(self):
         r = self.ask('255700000605', 'mahindi majani yana mistari ya njano', 'Hqpana')
         self.assertIn('Swali 2', r[1])
+
+
+class ExtensionOfficerFlowTests(TestCase):
+    """Maoni ya mteja (14 Nov): taarifa zisipotosha, uliza kama afisa ugani; usishauri kuharibu mimea."""
+
+    @classmethod
+    def setUpTestData(cls):
+        import glob
+        import os
+        from crops.models import Crop
+        from diagnosis.importer import import_mhd007
+        Crop.objects.create(crop_name_sw='Mahindi', crop_name_en='Maize', crop_group='cereals')
+        fx = os.path.join(os.path.dirname(__file__), '..', 'diagnosis', 'fixtures', 'mhd007')
+        import_mhd007(sorted(glob.glob(os.path.join(fx, '*.xlsx'))))
+
+    def ask(self, phone, *msgs):
+        from bot.engine import process_message
+        return [process_message(phone, m) for m in msgs]
+
+    TITO = ("Habari Kilimoni. Nina shamba la mahindi, lakini siku hizi mimea yangu haionekani vizuri. "
+            "Naomba unisaidie nifanye nini?")
+
+    def test_vague_problem_asks_diagnostic_questions(self):
+        r = self.ask('255700000701', self.TITO)[0]
+        self.assertIn('kabla ya kukushauri chochote', r)
+        self.assertIn('2️⃣ Majani yana mashimo', r)
+        self.assertIn('umri', r)
+        self.assertNotIn('hazilingani', r)                    # si hitimisho
+        self.assertNotIn('ichome', r)
+
+    def test_numbered_answer_with_age_continues_diagnosis(self):
+        r = self.ask('255700000702', self.TITO, '2, wiki 6')
+        self.assertIn('Funza jeshi vamizi', r[1])
+        self.assertIn('Swali 1', r[1])
+
+    def test_age_and_choice_parsing(self):
+        from diagnosis.engine import parse_intake
+        self.assertEqual(parse_intake('2 wiki 6'), ([1], 6))
+        self.assertEqual(parse_intake('1 na 3'), ([0, 2], None))
+        self.assertEqual(parse_intake('5 6 miezi 2'), ([4, 5], 8))
+
+    def test_insufficient_info_is_not_reported_as_no_knowledge(self):
+        r = self.ask('255700000703', 'mahindi hayako sawa', 'sijui', 'sijui kabisa')
+        self.assertIn('Bado sijaelewa tatizo vizuri', r[1])
+        self.assertIn('Bila kujua dalili', r[2])
+        self.assertNotIn('hazilingani', r[2])
+
+    def test_safe_steps_never_destroy_plants(self):
+        from diagnosis.engine import SAFE_FIRST_STEPS
+        for word in ('ichome', 'izike', 'ng\'oa', 'ondoa mimea'):
+            self.assertNotIn(word, SAFE_FIRST_STEPS.lower())
+
+    def test_crop_from_previous_message_is_remembered(self):
+        r = self.ask('255700000704', 'nipande lini mahindi', 'majani yana mashimo makubwa')
+        self.assertNotIn('zao gani', r[1])
+        self.assertIn('Swali 1', r[1])
+
+    def test_weeding_is_a_knowledge_gap_not_misunderstanding(self):
+        from bot.models import UnresolvedQuery
+        r = self.ask('255700000705', 'Sawa alafu jinsi ya kupalilia pia haielewi')[0]
+        self.assertIn('kupalilia', r)
+        self.assertIn('sina taarifa za kitaalamu', r)
+        self.assertNotIn('natamani nielewe', r)
+        self.assertTrue(UnresolvedQuery.objects.exists())       # pengo linaonekana kwenye dashboard
+
+    def test_described_symptoms_without_match_list_known_problems(self):
+        r = self.ask('255700000706', 'mahindi yangu mizizi imeoza kabisa')[0]
+        self.assertIn('Nimeelewa dalili ulizotaja', r)
+        self.assertIn('ninayoweza kuchunguza kwa sasa', r)
