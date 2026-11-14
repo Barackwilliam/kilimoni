@@ -537,4 +537,8 @@ def healthz(request):
     if wa_bridge.is_configured():
         h = wa_bridge.health(timeout=2)
         bridge_ok = bool(h.get('success'))
-    return JsonResponse({'ok': True, 'bridge': bridge_ok})
+    import os
+    # Toleo lililoko live (Render inaweka RENDER_GIT_COMMIT): wanaojaribu wajue
+    # kama wanajaribu marekebisho ya karibuni.
+    version = (os.environ.get('RENDER_GIT_COMMIT') or os.environ.get('GIT_COMMIT') or '')[:7]
+    return JsonResponse({'ok': True, 'bridge': bridge_ok, 'version': version})
