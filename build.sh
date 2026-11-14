@@ -3,7 +3,6 @@ set -o errexit
 pip install -r requirements.txt
 python manage.py collectstatic --no-input
 python manage.py migrate
-python manage.py kilimoni_eval --compare
 
 # ── Bridge ya WhatsApp (Node) — inaendeshwa pamoja na Django na start.sh ──
 # Node ikikosekana (au ni ya zamani) tunaipakua kwenye .node/ ya mradi.
