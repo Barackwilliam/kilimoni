@@ -169,6 +169,11 @@ CASES = [
     dict(id='NEW18', src='variant', pending='location', bot="Tafadhali taja wilaya au kata yako",
          msg="kijiji cha pahi huko kondoa", goal='answer'),
 
+    # ── Live 15 Nov 01:29 ──
+    dict(id='L5-1', src='live 15 Nov', bot="Samahani, nadhani nilikuelewa vibaya…",
+         msg="Sasa jua ni Kali sana nilime au niache kwanza", goal='planting'),
+    dict(id='L5-2', src='live 15 Nov', msg="Ruvuma", goal=('unclear', 'answer')),
+
     # ── Kundi la pili la maneno mapya (15 Nov): yaliongezwa BAADA ya kurekebisha kanuni kwa
     #    kundi la kwanza, ili kupima tena kwa uaminifu. Usirekebishe kanuni kwa ajili ya haya —
     #    yapime, kisha ongeza kundi jipya. ──

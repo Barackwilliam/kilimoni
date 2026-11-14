@@ -626,7 +626,9 @@ def needs_location_prompt(intent, location: str) -> bool:
         'variety_by_location', 'planting_time', 'market_question',
         'weather_planting_decision', 'seed_selection',
     ]
-    if not intent:
+    if not intent or _strict():
+        # Hali ya data pekee: moduli za data (mbegu, kupanda) zinauliza eneo zenyewe; swali la
+        # eneo la mtiririko wa zamani liliishia kwenye "nahitaji kidogo zaidi" (live: Ruvuma)
         return False
     return intent.intent_name in location_required_intents and not location
 
@@ -890,6 +892,13 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
 
     # ── Check session state — pending location reply ─
     session = user.session_state or {}
+    if session.get('awaiting_location') and _strict():
+        _al = dict(session)
+        for k in ('awaiting_location', 'saved_intent', 'location_attempts'):
+            _al.pop(k, None)
+        user.session_state = _al
+        user.save(update_fields=['session_state'])
+        session = _al
     if session.get('awaiting_location') and not is_greeting(normalized):
         # User is replying with their location
         location = detect_location(normalized)
@@ -1006,7 +1015,8 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
         # kuuliza swali la nje ya kilimo.
         _fresh_crop = detect_crop(normalized)
         _fresh_loc = detect_location(normalized)
-        if _kind and not _fresh_crop and not _fresh_loc and not adv_seed.wants_seed(normalized):
+        if (_kind and not _fresh_crop and not _fresh_loc and not adv_seed.wants_seed(normalized)
+                and not adv_planting.wants_planting(normalized) and not adv_soil.wants_soil(normalized)):
             if _kind == 'identity':
                 response = build_identity_message()
             elif _kind == 'capability':
@@ -1087,6 +1097,23 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
                  trace={'mode': 'profile', 'decision': 'location_saved', 'aez': _only_loc.get('aez_id')})
         return response
 
+    # ── Eneo tu, ambalo halimo kwenye data ("Ruvuma") → sema ukweli, likumbuke, muulize swali lake ──
+    if (len(normalized.split()) <= 3 and not _only_loc and not detect_crop(normalized)
+            and not dg.is_problem_message(normalized, None) and not adv_planting.wants_planting(normalized)
+            and not adv_seed.wants_seed(normalized)):
+        _place = _place_without_data(user, normalized) if detect_location(normalized) else ''
+        if _place:
+            known = adv_coverage.places_line(limit=6)
+            response = (f"📍 Sawa, nimeona uko *{_place}*. Bado sina taarifa za kanda ya kilimo ya eneo hilo "
+                        "kwenye data yangu, kwa hiyo ushauri unaotegemea eneo (mbegu, wakati wa kupanda) "
+                        "utakuwa wa jumla tu — sitabuni."
+                        + (f"\n\n📍 Maeneo niliyo na taarifa kamili: {known}." if known else '')
+                        + "\n\nNiulize swali lako, mf. _nipande lini?_ au _mahindi yana mashimo, nifanye nini?_")
+            _log_all(user, raw_message, normalized, crop, None, _place, None, response, False, start_time,
+                     message_id=message_id, trace={'mode': 'profile', 'decision': 'location_not_in_data',
+                                                   'place': _place})
+            return response
+
     # ── Wakati wa kupanda kwa kanuni (MHD-006 + eneo + mbegu) ──
     if adv_planting.wants_planting(normalized, intent) and not adv_seed.mentioned_variety(normalized):
         handled = _planting_turn(user, raw_message, normalized, crop, start_time, message_id)
@@ -1123,6 +1150,16 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
             handled = _rotation_turn(user, raw_message, normalized, start_time, message_id, state=_rs)
         if handled is not None:
             return handled
+
+    # ── Neno moja lisilotambulika ("Katoro") → uliza, usijifanye umeelewa ──
+    if (len(normalized.split()) == 1 and not detect_crop(normalized) and not intent
+            and not detect_location(normalized) and not rx.parse_answer(normalized) in ('yes', 'no')):
+        response = (f"Samahani, sijaelewa \"*{raw_message.strip()[:40]}*\" peke yake. 🙏 Kama ni jina la eneo lako, "
+                    "bado halimo kwenye data yangu ya maeneo.\n\nNiandikie swali lako kamili, mf. "
+                    "_nipande lini mahindi?_ au _mbegu gani inafaa eneo langu?_")
+        _log_all(user, raw_message, normalized, None, None, '', None, response, False, start_time,
+                 message_id=message_id, trace={'mode': 'profile', 'decision': 'single_unknown_word'})
+        return response
 
     # ── Ombi pana: uliza lengo kwanza, usitoe ushauri ──
     _fresh_c = detect_crop(normalized)
@@ -1459,6 +1496,10 @@ def _seed_location(user, normalized):
         user.save(update_fields=['session_state'])
     if loc and loc.get('aez_id'):
         return loc
+    if not loc and (user.session_state or {}).get('place_no_data'):
+        # Mkulima amesema yuko eneo lisilo kwenye data (mf. Ruvuma) baada ya eneo la profile —
+        # tusimpe ushauri wa eneo la zamani (Kondoa) kana kwamba ndilo lake
+        return None
     prof = adv_seed.location_from_user(user)
     if loc and loc['level'] == 'region' and prof and prof.get('region') != loc['region']:
         return loc                      # mkoa mpya wenye kanda nyingi → uliza wilaya/kata
@@ -1478,7 +1519,23 @@ def _seed_turn(user, raw_message, normalized, crop, start_time, message_id, text
                  message_id=message_id, trace={'mode': 'seed_advisor', 'decision': 'need_crop'})
         return response
     if not adv_seed.has_data(crop):
-        return None                     # mtiririko wa zamani (templates) unaendelea
+        if not _strict():
+            return None                 # mtiririko wa zamani (templates) unaendelea
+        # Live 15 Nov: "2" (mbegu) kwa Mpunga → "Uko mkoa gani?" ya mtiririko wa zamani, kisha
+        # "nahitaji kidogo zaidi". Sasa: ukweli kwamba data ya mbegu ya zao hili haipo bado.
+        from advisory.models import VarietyAgronomy
+        have = sorted(set(VarietyAgronomy.objects.filter(is_active=True).exclude(crop=None)
+                          .values_list('crop__crop_name_sw', flat=True)))
+        _set_adv(user, None)
+        response = (f"🌱 Samahani, bado sina taarifa zilizothibitishwa za *mbegu za {crop.crop_name_sw}* "
+                    "kwenye data yangu — kwa hiyo sitabuni.\n\n"
+                    + (f"Kwa sasa ushauri wa mbegu unapatikana kwa: *{', '.join(have)}*.\n\n" if have else '')
+                    + "📞 Afisa ugani wa eneo lako atakusaidia kuchagua mbegu ya "
+                    + f"{crop.crop_name_sw}.")
+        _log_all(user, raw_message, normalized, crop, None, '', None, response, False, start_time,
+                 message_id=message_id, trace={'mode': 'seed_advisor', 'decision': 'crop_without_seed_data'})
+        _log_unresolved(user, raw_message, normalized, crop, None, response)
+        return response
     loc = _seed_location(user, normalized)
     state = state if state is not None else {}
     response, trace = adv_seed.advise(crop, loc, text or normalized, state, soil=_farm_soil(user, normalized))
@@ -1919,6 +1976,8 @@ def _route_by_frame(user, raw_message, normalized, frame, start_time, message_id
         _clear_pending(user)
         return _abiotic_reply(user, raw_message, normalized, ctx_crop, start_time, message_id)
     if goal == 'challenge':
+        if not understanding.advice_recent(user):
+            return None                     # hakuna ushauri wa kupinga — si changamoto
         _clear_pending(user)
         if ctx_crop:
             return _self_correction(user, raw_message, normalized, ctx_crop, start_time, message_id)

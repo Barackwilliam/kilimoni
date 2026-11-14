@@ -471,3 +471,23 @@ class GreetingFollowThroughTests(CoverageTests):
         self.assertTrue(is_greeting('sasa'))
         self.assertTrue(is_greeting('sasa vipi'))
         self.assertFalse(is_greeting('sasa ni mpunga'))
+
+
+class LiveRound5Tests(GreetingFollowThroughTests):
+    """Live 15 Nov 01:29: mbegu ya Mpunga, Katoro, Ruvuma, 'jua ni kali nilime au niache'."""
+
+    def test_live_conversation(self):
+        r = self.ask('255700778011', 'nipande lini mahindi niko kondoa', 'Hello', 'Sasa ni mpunga', '2',
+                     'Katoro', 'Ruvuma', 'Sasa jua ni Kali sana nilime au niache kwanza')
+        self.assertIn('sina taarifa zilizothibitishwa za *mbegu za Mpunga*', r[3])   # si "Uko mkoa gani?"
+        self.assertIn('sijaelewa', r[4])
+        self.assertIn('uko *Ruvuma*', r[5])
+        self.assertNotIn('nahitaji kidogo zaidi', r[5])
+        self.assertNotIn('Uko sahihi, samahani', r[6])                  # si changamoto: haikutoa ushauri
+        self.assertIn('Ruvuma', r[6])                                   # haitumii Kondoa ya zamani
+        self.assertIn('Kanda ya Ziwa', r[6])                            # muhtasari wa kitaifa
+
+    def test_challenge_needs_prior_advice(self):
+        from bot import understand
+        f = understand.empty('ai'); f['goal'] = 'challenge'
+        self.assertEqual(understand.context_check(f, '', advice=False)['goal'], 'unclear')
