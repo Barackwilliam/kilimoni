@@ -41,8 +41,9 @@ cp .env.example .env         # Mac/Linux
 # 5. Run migrations
 python manage.py migrate
 
-# 6. Ingiza data ya mwanzo
-python scripts/seed_data.py
+# 6. Ingiza data ya mwanzo (sample za MHD)
+python manage.py import_mhd007 diagnosis/fixtures/mhd007 --if-empty --create-crops
+python manage.py import_advisory advisory/fixtures --if-empty --create-crops
 
 # 7. Run server
 python manage.py runserver

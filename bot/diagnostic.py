@@ -136,30 +136,16 @@ def is_broad_request(text: str, crop, intent, location) -> bool:
     return _has_stem(text, BROAD_STEMS)
 
 
-def build_goal_question() -> str:
-    from django.conf import settings
-    if getattr(settings, 'STRICT_DATA_MODE', True):
-        # Menyu inaonyesha tu huduma zenye data iliyothibitishwa (si mbolea/kuvuna/bei bado)
-        return (
-            "Karibu, nitafurahi kukusaidia. 🌿\n\n"
-            "Ili nikupe ushauri sahihi, niambie unahitaji msaada gani:\n\n"
-            "*1.* Tatizo shambani (ugonjwa, wadudu, dalili)\n"
-            "*2.* Mbegu bora\n"
-            "*3.* Wakati wa kupanda\n"
-            "*4.* Udongo\n"
-            "*5.* Mzunguko wa mazao\n\n"
-            "Jibu kwa namba, na ukiweza taja *zao* na *eneo* lako.\n"
-            "_Mfano: 1, mahindi, Kondoa_"
-        )
+def build_goal_question(opener: str = "Karibu, nitafurahi kukusaidia. 🌿") -> str:
+    """Menyu ya huduma zenye data iliyothibitishwa (si mbolea/kuvuna/bei — hazina data bado)."""
     return (
-        "Karibu, nitafurahi kukusaidia. 🌿\n\n"
+        f"{opener}\n\n"
         "Ili nikupe ushauri sahihi, niambie unahitaji msaada gani:\n\n"
         "*1.* Tatizo shambani (ugonjwa, wadudu, dalili)\n"
         "*2.* Mbegu bora\n"
         "*3.* Wakati wa kupanda\n"
-        "*4.* Mbolea\n"
-        "*5.* Kuvuna na kuhifadhi\n"
-        "*6.* Bei ya soko\n\n"
+        "*4.* Udongo\n"
+        "*5.* Mzunguko wa mazao\n\n"
         "Jibu kwa namba, na ukiweza taja *zao* na *eneo* lako.\n"
         "_Mfano: 1, mahindi, Kondoa_"
     )
@@ -202,10 +188,7 @@ def parse_goal_reply(text: str):
     t = (text or '').strip().lower()
     m = re.match(r'^\s*([1-6])\b', t)
     if m:
-        from django.conf import settings
-        if getattr(settings, 'STRICT_DATA_MODE', True):
-            return STRICT_GOAL_ROUTES.get(m.group(1))
-        return GOAL_ROUTES[m.group(1)]
+        return STRICT_GOAL_ROUTES.get(m.group(1))
     if _has_stem(t, PROBLEM_STEMS):
         return 'diagnosis'
     word_routes = (

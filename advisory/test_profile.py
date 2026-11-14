@@ -55,9 +55,12 @@ class ProfileMemoryTests(ProfileBase):
 @override_settings(GROQ_API_KEY='test-key')
 class RouterTests(ProfileBase):
     def test_ai_routes_unusual_wording(self):
-        def fake(system, user, max_tokens=900):
-            if 'CHAGUO:' in user and 'rotation' in user:
-                return {'code': 'rotation'} if 'msimu ujao' in user else {'code': 'other'}
+        # Hatua ya kuelewa (bot/understand.py) — AI inajaza fomu yenye goal 'rotation'
+        from bot import understand
+
+        def fake(system, user, max_tokens=900, **kw):
+            if system == understand.SYSTEM and 'msimu ujao' in user:
+                return {'goal': 'rotation', 'crop': 'Mahindi'}
             return None
         with patch('diagnosis.ai_layer._chat', fake):
             r = self.say('255701000004', 'mwaka jana nililima mahindi, msimu ujao niweke nini shambani')

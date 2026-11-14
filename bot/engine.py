@@ -10,11 +10,7 @@ import re
 import time
 import logging
 from django.conf import settings
-from django.utils import timezone
-from crops.models import (
-    Crop, Zone, LocationMapping, CropProfile,
-    SeedVariety, Intent, FarmerQuestion, Synonym, AnswerTemplate
-)
+from crops.models import Crop, LocationMapping, Synonym
 from bot.models import User, Conversation, UnresolvedQuery
 from bot import diagnostic as dg
 from bot import understand as understanding
@@ -329,321 +325,9 @@ def map_location_to_zone(location: str):
 # ═══════════════════════════════════════════════════════
 # MODULE 8: INTENT DETECTION ENGINE
 # ═══════════════════════════════════════════════════════
-INTENT_KEYWORD_MAP = {
-    'variety_by_location': [
-        ['mbegu', 'nipande'], ['mbegu', 'eneo'], ['mbegu', 'singida'],
-        ['mbegu', 'dodoma'], ['mbegu', 'mbeya'], ['mbegu', 'arusha'],
-        ['mbegu', 'mwanza'], ['mbegu', 'morogoro'], ['mbegu', 'tabora'],
-        ['mbegu', 'zone'], ['variety', 'location'],
-    ],
-    'seed_selection': [
-        ['mbegu', 'gani'], ['mbegu', 'bora'], ['aina', 'mbegu'],
-        ['seed', 'selection'], ['variety', 'gani'],
-    ],
-    'planting_time': [
-        ['lini', 'kupanda'], ['wakati', 'kupanda'], ['msimu', 'kupanda'],
-        ['mwezi', 'kupanda'], ['ratiba', 'kupanda'], ['when', 'plant'],
-        ['nipande', 'lini'], ['naweza', 'kupanda'],
-    ],
-    'spacing': [
-        ['nafasi', 'kupanda'], ['umbali', 'kupanda'], ['spacing'],
-        # "jinsi ya kupanda mahindi" (live) — jibu la upandaji: nafasi, kina, mbegu kwa shimo
-        ['jinsi', 'kupanda'], ['namna', 'kupanda'], ['hatua', 'kupanda'], ['jinsi', 'kupanda'],
-        ['cm', 'safu'], ['mstari', 'umbali'], ['shimo', 'shimo'],
-        ['nafasi', 'mstari'],
-    ],
-    'fertilizer_planting': [
-        ['mbolea', 'kupandia'], ['mbolea', 'kupanda'], ['basal', 'fertilizer'],
-        ['dap', 'kupanda'], ['can', 'kupanda'], ['mbolea', 'awali'],
-        ['mbolea', 'shimo'],
-    ],
-    'fertilizer_top_dressing': [
-        ['mbolea', 'juu'], ['top', 'dressing'], ['urea', 'lini'],
-        ['can', 'juu'], ['mbolea', 'baada'], ['topdress'],
-        ['mbolea', 'wiki'], ['urea', 'wakati'],
-    ],
-    'fertilizer_amount': [
-        ['mbolea', 'ngapi'], ['kiasi', 'mbolea'], ['gramu', 'mbolea'],
-        ['kilo', 'mbolea'], ['debe', 'mbolea'], ['mbolea', 'kiwango'],
-    ],
-    'pest_identification': [
-        ['wadudu'], ['pest'], ['viwavi'], ['nondo'], ['inzi'],
-        ['aphid'], ['chawa'], ['mdudu'], ['fall armyworm'],
-        ['stalk borer'], ['thrips'],
-    ],
-    'disease_identification': [
-        ['ugonjwa'], ['disease'], ['maradhi'], ['gray leaf'],
-        ['leaf blight'], ['streak virus'], ['smut'], ['rust'],
-        ['kuoza'], ['ukungu'],
-    ],
-    'symptom_analysis': [
-        ['dalili'], ['majani', 'njano'], ['majani', 'kukauka'],
-        ['majani', 'madoa'], ['mmea', 'kufa'], ['shina', 'mashimo'],
-        ['rangi', 'majani'], ['majani', 'meupe'], ['majani', 'kahawia'],
-        ['yellow', 'leaves'], ['brown', 'leaves'],
-    ],
-    'harvest_time': [
-        ['lini', 'kuvuna'], ['wakati', 'kuvuna'], ['tayari', 'kuvuna'],
-        ['kuvuna', 'lini'], ['harvest', 'time'], ['mavuno', 'lini'],
-        ['ukomavu'], ['kukomaa'],
-    ],
-    'storage_advice': [
-        ['kuhifadhi'], ['storage'], ['ghala'], ['panya'],
-        ['unyevu', 'mahindi'], ['pics', 'gunia'], ['actellic'],
-        ['hifadhi', 'mahindi'], ['baada', 'kuvuna'],
-    ],
-    'market_question': [
-        ['bei'], ['soko'], ['market'], ['price'], ['kuuza'],
-        ['faida'], ['nfra'], ['wanunuzi'], ['uza', 'wapi'],
-    ],
-    'weather_planting_decision': [
-        ['mvua', 'lini'], ['hali', 'hewa'], ['weather'], ['ukame'],
-        ['mvua', 'yataanza'], ['mvua', 'kupanda'], ['masika', 'lini'],
-        ['vuli', 'lini'],
-    ],
-}
-
-# Single keyword fallbacks (lower priority)
-SINGLE_KEYWORD_INTENTS = {
-    'wadudu': 'pest_identification', 'viwavi': 'pest_identification',
-    'nondo': 'pest_identification', 'pest': 'pest_identification',
-    'ugonjwa': 'disease_identification', 'disease': 'disease_identification',
-    'maradhi': 'disease_identification',
-    'dalili': 'symptom_analysis',
-    'kuvuna': 'harvest_time', 'harvest': 'harvest_time',
-    'kuhifadhi': 'storage_advice', 'ghala': 'storage_advice',
-    'bei': 'market_question', 'soko': 'market_question',
-    'nafasi': 'spacing', 'spacing': 'spacing',
-    'urea': 'fertilizer_top_dressing',
-    'dap': 'fertilizer_planting',
-}
-
-
-def detect_intent(text: str, crop=None, location: str = ''):
-    """
-    Tambua aina ya swali la mkulima kwa kutumia keyword matching.
-    Multi-keyword patterns zinapewa kipaumbele juu ya single keywords.
-    """
-    # Try multi-keyword patterns first (highest accuracy)
-    best_intent = None
-    best_score = 0
-
-    for intent_name, patterns in INTENT_KEYWORD_MAP.items():
-        for pattern_keywords in patterns:
-            if all(kw in text for kw in pattern_keywords):
-                score = len(pattern_keywords)  # More keywords = higher confidence
-                if score > best_score:
-                    best_score = score
-                    best_intent = intent_name
-
-    # Upgrade seed_selection → variety_by_location if location present
-    if best_intent == 'seed_selection' and location:
-        best_intent = 'variety_by_location'
-
-    if best_intent:
-        try:
-            return Intent.objects.get(intent_name=best_intent)
-        except Intent.DoesNotExist:
-            pass
-
-    # Single keyword fallback — word boundary, si substring
-    # ('bei' isipatikane ndani ya neno lingine, 'dap' ndani ya neno lingine n.k.)
-    for keyword, intent_name in SINGLE_KEYWORD_INTENTS.items():
-        if _word_match(keyword, text):
-            try:
-                intent = Intent.objects.get(intent_name=intent_name)
-                # Upgrade if location present
-                if intent_name == 'seed_selection' and location:
-                    return Intent.objects.get(intent_name='variety_by_location')
-                return intent
-            except Intent.DoesNotExist:
-                pass
-
-    # Last resort: check 'mbegu' with location
-    if _word_match('mbegu', text) and location:
-        try:
-            return Intent.objects.get(intent_name='variety_by_location')
-        except Intent.DoesNotExist:
-            pass
-    elif _word_match('mbegu', text):
-        try:
-            return Intent.objects.get(intent_name='seed_selection')
-        except Intent.DoesNotExist:
-            pass
-
-    return None
-
-
-# ═══════════════════════════════════════════════════════
-# MODULE 9: KNOWLEDGE RETRIEVAL ENGINE
-# ═══════════════════════════════════════════════════════
-# Majibu ya demo yaliyowekwa na scripts/seed_data.py mwanzoni mwa mradi — si data ya mteja
-# (yana bei za "2024", majina ya dawa kama Actellic/Racumin, makampuni n.k.).
-DEMO_SEED_REFS = {
-    'maize_central_zone_varieties', 'maize_disease_identification', 'maize_fertilizer_planting',
-    'maize_fertilizer_top_dressing', 'maize_harvest_time', 'maize_lake_zone_varieties',
-    'maize_market_general', 'maize_pest_identification', 'maize_planting_time_central',
-    'maize_southern_highlands_varieties', 'maize_spacing_general', 'maize_storage',
-}
-
-
 def _strict():
-    return getattr(settings, 'STRICT_DATA_MODE', True)
-
-
-def get_answer_from_db(crop, intent, zone) -> dict:
-    if _strict():
-        return _answer_from_templates(crop, intent, zone, exclude=DEMO_SEED_REFS, profiles=False)
-    return _answer_from_templates(crop, intent, zone)
-
-
-def _answer_from_templates(crop, intent, zone, exclude=(), profiles=True) -> dict:
-    """
-    Tafuta jibu sahihi kutoka database kwa utaratibu:
-    1. crop + intent + zone (specific)
-    2. crop + intent (general)
-    3. intent only
-    4. Crop profile fallback
-    """
-    answer = None
-
-    # Baadhi ya intents zinamaanisha kitu kimoja kwenye maudhui.
-    # Mfano: mkulima akiandika "mbegu" tunapata 'seed_selection',
-    # lakini templates zote za mbegu zimehifadhiwa chini ya
-    # 'variety_by_location'. Bila ramani hii, kila swali la mbegu
-    # linaishia kwenye fallback licha ya jibu kuwepo.
-    INTENT_ALIASES = {
-        'seed_selection': ['variety_by_location'],
-        'variety_by_location': ['seed_selection'],
-        'symptom_analysis': ['disease_identification', 'pest_identification'],
-        'fertilizer_amount': ['fertilizer_planting', 'fertilizer_top_dressing'],
-    }
-
-    intents_to_try = [intent] if intent else []
-    if intent:
-        for alias_name in INTENT_ALIASES.get(intent.intent_name, []):
-            alt = Intent.objects.filter(intent_name=alias_name).first()
-            if alt:
-                intents_to_try.append(alt)
-
-    # 0. Jaribu intent halisi, kisha zinazofanana nayo
-    for candidate in intents_to_try:
-        if crop and zone:
-            answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
-                crop=crop, intent=candidate, zone=zone, active_status='active'
-            ).first()
-        if not answer and crop:
-            answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
-                crop=crop, intent=candidate, active_status='active'
-            ).first()
-        if answer:
-            break
-
-    # 1. Most specific: crop + intent + zone
-    if not answer and crop and intent and zone:
-        answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
-            crop=crop, intent=intent, zone=zone, active_status='active'
-        ).first()
-
-    # 2. crop + intent (no zone)
-    if not answer and crop and intent:
-        answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
-            crop=crop, intent=intent, active_status='active'
-        ).first()
-
-    # 3. intent only
-    if not answer and intent:
-        answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
-            intent=intent, active_status='active'
-        ).first()
-
-    if answer:
-        # Append seed varieties if relevant
-        extra = ''
-        if intent and intent.intent_name in ['seed_selection', 'variety_by_location'] and crop:
-            varieties = SeedVariety.objects.filter(
-                crop=crop, verification_status='verified'
-            )
-            if zone:
-                zone_varieties = varieties.filter(recommended_zone=zone)
-                if zone_varieties.exists():
-                    varieties = zone_varieties
-            if varieties.exists():
-                names = ', '.join([v.variety_name for v in varieties[:5]])
-                extra = f"\n\n🌱 *Mbegu zilizothibitishwa:*\n{names}"
-
-        return {
-            'found': True,
-            'source': 'template',
-            'answer_text': answer.answer_text_sw + extra,
-            'follow_up': answer.follow_up_question,
-            'caution': answer.caution_note,
-            'answer_reference': answer.answer_reference,
-        }
-
-    # 4. Crop profile fallback
-    if crop:
-        profile = None
-        if zone:
-            profile = CropProfile.objects.filter(crop=crop, zone=zone).first()
-        if not profile:
-            profile = CropProfile.objects.filter(crop=crop).first()
-
-        if profile and intent and profiles:
-            field_map = {
-                'planting_time': profile.planting_window_simple,
-                'spacing': profile.spacing,
-                'fertilizer_planting': profile.fertilizer_planting,
-                'fertilizer_top_dressing': profile.fertilizer_top_dressing,
-                'fertilizer_amount': profile.fertilizer_planting,
-                'pest_identification': profile.common_pests,
-                'disease_identification': profile.common_diseases,
-                'symptom_analysis': profile.common_symptoms,
-                'harvest_time': profile.harvest_window,
-                'storage_advice': profile.storage_notes,
-                'market_question': profile.market_notes,
-            }
-            field_value = field_map.get(intent.intent_name, '')
-            if field_value:
-                return {
-                    'found': True,
-                    'source': 'profile',
-                    'answer_text': field_value,
-                    'follow_up': '',
-                    'caution': profile.caution_note or '',
-                    'answer_reference': f'profile_{crop.id}_{intent.intent_name}',
-                }
-
-    return {'found': False, 'source': None}
-
-
-# ═══════════════════════════════════════════════════════
-# MODULE 10: FOLLOW-UP QUESTION LOGIC
-# ═══════════════════════════════════════════════════════
-def needs_location_prompt(intent, location: str) -> bool:
-    """Angalia kama intent inahitaji eneo lakini haijatajwa"""
-    location_required_intents = [
-        'variety_by_location', 'planting_time', 'market_question',
-        'weather_planting_decision', 'seed_selection',
-    ]
-    if not intent or _strict():
-        # Hali ya data pekee: moduli za data (mbegu, kupanda) zinauliza eneo zenyewe; swali la
-        # eneo la mtiririko wa zamani liliishia kwenye "nahitaji kidogo zaidi" (live: Ruvuma)
-        return False
-    return intent.intent_name in location_required_intents and not location
-
-
-def needs_crop_prompt(crop, intent) -> bool:
-    """Angalia kama intent inahitaji zao lakini haijatajwa"""
-    if not intent:
-        return False
-    crop_required = [
-        'seed_selection', 'variety_by_location', 'planting_time',
-        'spacing', 'fertilizer_planting', 'fertilizer_top_dressing',
-        'fertilizer_amount', 'pest_identification', 'disease_identification',
-        'symptom_analysis', 'harvest_time', 'storage_advice',
-    ]
-    return intent.intent_name in crop_required and not crop
+    """Hali ya data pekee ni ya kudumu sasa (mfumo wa zamani umeondolewa)."""
+    return True
 
 
 # ═══════════════════════════════════════════════════════
@@ -651,17 +335,8 @@ def needs_crop_prompt(crop, intent) -> bool:
 # ═══════════════════════════════════════════════════════
 from bot.messages import (            # noqa: E402
     build_greeting,
-    build_crop_prompt,
-    build_location_prompt,
-    build_location_retry,
-    build_symptom_followup,
     build_acknowledgement,
-    build_fallback_message,
-    build_technical_issue,
     build_help_message,
-    format_response,
-    topic_of,
-    detect_offtopic_kind,
     build_identity_message,
     build_capability_message,
     build_offtopic_message,
@@ -699,17 +374,32 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     Kama _process_message; jibu la kwanza baada ya malalamiko ya mkulima
     ("nimeuliza hatua za kupanda…") linaanza kwa kuomba radhi.
     """
-    response = _process_message(phone_number, raw_message, whatsapp_type, message_id)
     user = User.objects.filter(phone_number=phone_number).first()
+    previous = (Conversation.objects.filter(user=user, message_direction='outbound').order_by('-id')
+                .values_list('raw_message', flat=True).first() if user else None)
+    response = _process_message(phone_number, raw_message, whatsapp_type, message_id)
+    user = User.objects.filter(phone_number=phone_number).first()          # session mpya baada ya jibu
+    final = response
     prefix = _apology_prefix(user) if user and response else ''
     if prefix:
-        response = prefix + response
+        final = prefix + final
+    if previous and final == previous:
+        final = _not_again(final)            # kigezo 1: mkulima asipate jibu lilelile mara mbili mfululizo
+    if final != response and user:
         last = (Conversation.objects.filter(user=user, message_direction='outbound')
                 .order_by('-id').first())
         if last:
-            last.raw_message = response
+            last.raw_message = final
             last.save(update_fields=['raw_message'])
-    return response
+    return final
+
+
+def _not_again(text):
+    """Jibu lilelile la pili mfululizo → toleo fupi linalokiri kwamba tumeshalisema."""
+    first = (text or '').strip().split('\n\n')[0]
+    first = re.sub(r'^[^\w*_]+', '', first)
+    return ("Kama nilivyokueleza hapo juu 👆 — " + first[:1].lower() + first[1:] +
+            "\n\nUkiwa na swali jingine, niulize tu. Au andika *0* kuona ninachoweza kukusaidia.")
 
 
 def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = 'text',
@@ -771,7 +461,9 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
             last_crop=last_crop_name,
         )
         if last_crop_name and user.message_count > 1:
-            # Salamu imeuliza "tuendelee hapo, au una swali jipya?" — jibu lake lishughulikiwe
+            # Salamu imeuliza "tuendelee hapo, au una swali jipya?" — jibu lake lishughulikiwe;
+            # maswali yaliyokuwa yakisubiriwa kabla ya salamu yanafutwa
+            _clear_pending(user, keep_rx=True)
             _gs = dict(user.session_state or {})
             _gs['resume_offer'] = time.time()
             user.session_state = _gs
@@ -788,9 +480,7 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
     if handled is not None:
         return handled
 
-    # ── KUELEWA KWANZA: fomu ya ujumbe (AI ya lugha + uthibitisho) ──
-    # Ujumbe unaeleweka kabla ya kwenda kwenye dataset. AI isipopatikana, njia ya
-    # kanuni za maneno hapa chini inaendelea kama zamani.
+    # ── KUELEWA KWANZA: fomu ya ujumbe (kanuni + AI ya lugha, iliyothibitishwa) ──
     frame = understanding.understand(raw_message, user, normalized=normalized,
                                      use_ai=understanding_enabled())
     # Malalamiko yenye swali jipya ("mbona hunijibu… nimeuliza bei") → jibu la swali lianze kwa radhi
@@ -799,477 +489,111 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
         _ap['apologize'] = True
         user.session_state = _ap
         user.save(update_fields=['session_state'])
-    _waiting = frame.get('pending') not in ('', 'after_diagnosis')
-    if (frame['source'] == 'ai'
-            # Kanuni hazikuelewa, AI imeelewa → elekeza kwa fomu
-            or (_waiting and frame['goal'] in understanding.MODULE_GOALS | {'challenge'})
-            # Bot inasubiri jibu lakini mkulima ameuliza jambo jingine → acha kusubiri
-            or (frame['source'] == 'rules+ai' and frame['goal'] == 'answer' and frame.get('answer'))):
-        handled = _route_by_frame(user, raw_message, normalized, frame, start_time, message_id)
+    return _dispatch(user, raw_message, normalized, frame, start_time, message_id)
+
+
+# ═══════════════════════════════════════════════════════
+# NJIA MOJA: fomu ya kuelewa → kidhibiti kimoja kwa kila lengo
+# ═══════════════════════════════════════════════════════
+# Mfumo wa zamani (majibu ya templates/demo, AI ya kutunga majibu, maswali ya "uko mkoa
+# gani?" ya intent, "nahitaji kidogo zaidi") umeondolewa. Kila lengo lina kidhibiti kimoja
+# kinachorudisha jibu la maana kila mara: kutoka kwenye data, au "sina data ya X" mahususi,
+# au swali moja la kufafanua.
+
+# Malengo ambayo ni majibu yanayowezekana kwa swali linalosubiriwa
+ANSWERISH = {'answer', 'diagnosis', 'unclear', 'thanks', 'crop_only', 'location_only', 'greeting'}
+
+
+def _dispatch(user, raw_message, normalized, frame, start_time, message_id):
+    # Eneo lililotajwa kwenye ujumbe wowote (kata/wilaya ya MHD-001) linakumbukwa kwenye profile
+    if resolve_farm_location(normalized):
+        remember_farm_location(user, normalized)
+    sess = user.session_state or {}
+    goal = frame['goal']
+    in_rx = bool(rx.get_state(sess))
+    # 1. Bot inasubiri jibu (uchunguzi au menyu ya namba) na ujumbe ni jibu lake
+    if (in_rx and goal in ANSWERISH | {'complaint'}) or (sess.get('goal_pending') and goal in ANSWERISH):
+        handled = _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_id)
         if handled is not None:
             return handled
-
-    # ── "Uko na taarifa za mikoa/mazao gani?" → kutoka data (MHD-001 + moduli) ──
-    # Kabla ya hali zinazosubiri: ni swali la pembeni, halibadilishi mazungumzo yake.
-    if adv_coverage.wants_coverage(normalized):
-        response = adv_coverage.coverage_message()
-        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
-                 start_time, message_id=message_id)
-        return response
-
-    # ── Uchunguzi unaoendelea au swali la lengo ───────
-    # Hushughulikiwa KWANZA, ili majibu ya mkulima (mfano "wiki 3",
-    # "nusu ya shamba") yasichukuliwe kama maswali mapya.
-    _sess = user.session_state or {}
-    if _sess.get('goal_pending') or rx.get_state(_sess):
-        handled = _handle_diagnostic_turn(user, raw_message, normalized,
-                                          start_time, message_id)
-        if handled is not None:
-            return handled
-
-    # ── Ushauri wa kanuni unaosubiri jibu (zao/eneo kwa ajili ya mbegu) ──
-    if (user.session_state or {}).get('adv'):
+    # 2. Moduli ya ushauri inasubiri zao/eneo/mvua/udongo
+    if (user.session_state or {}).get('adv') and goal in ANSWERISH:
         handled = _handle_advisory_pending(user, raw_message, normalized, start_time, message_id)
         if handled is not None:
             return handled
+    # 3. Kidhibiti cha lengo — hakirudishi None
+    return _route_goal(user, raw_message, normalized, frame, start_time, message_id)
 
-    # ── "Mahindi hustawi wapi Tanzania?" / "taja maeneo" (live: ilijibiwa kwa swali la udongo) ──
-    _wg_crop = detect_crop(normalized) or _recent_crop(user)
-    if adv_coverage.wants_where_grows(normalized, has_crop_context=bool(_wg_crop)):
-        _s = dict(user.session_state or {})
-        _rep = time.time() - float(_s.get('where_grows_at', 0)) < RECENT_CROP_MINUTES * 60
-        _s['where_grows_at'] = time.time()
-        user.session_state = _s
-        user.save(update_fields=['session_state'])
-        response = adv_coverage.where_grows_message(_wg_crop, repeat=_rep)
-        _log_all(user, raw_message, normalized, _wg_crop, None, '', None, response, False, start_time,
-                 message_id=message_id, trace={'mode': 'profile', 'decision': 'where_grows'})
-        _log_unresolved(user, raw_message, normalized, _wg_crop, None, response)
+
+MODULE_NAMES = {'seed': 'mbegu', 'planting': 'wakati wa kupanda', 'soil': 'udongo', 'rotation': 'mzunguko wa mazao'}
+
+
+def _module_no_data(user, raw_message, normalized, module, crop, start_time, message_id):
+    """Moduli haina data ya ombi hili → sema ukweli mahususi (si 'nahitaji kidogo zaidi')."""
+    what = MODULE_NAMES.get(module, module)
+    subject = f"*{what}*" + (f" ya *{crop.crop_name_sw}*" if crop else '')
+    response = (f"🌱 Samahani, bado sina taarifa zilizothibitishwa za {subject} kwenye data yangu — "
+                "kwa hiyo sitabuni.\n\n📞 Afisa ugani wa eneo lako atakusaidia kwa hili.\n\n"
+                "Kwa sasa naweza kukusaidia kuhusu: *matatizo ya mazao* (wadudu, magonjwa, dalili), "
+                "*mbegu bora*, *wakati wa kupanda*, *udongo* na *mzunguko wa mazao*.")
+    _log_all(user, raw_message, normalized, crop, None, '', None, response, False, start_time,
+             message_id=message_id, trace={'mode': 'understand', 'decision': 'module_without_data',
+                                           'module': module})
+    _log_unresolved(user, raw_message, normalized, crop, None, response)
+    return response
+
+
+def _location_only(user, raw_message, normalized, crop, start_time, message_id):
+    loc = resolve_farm_location(normalized)
+    if loc and loc['level'] in ('ward', 'district'):
+        response = _profile_ack(user, loc)
+        _log_all(user, raw_message, normalized, None, None, adv_location.display_name(loc),
+                 adv_location.zone_for(loc), response, True, start_time, message_id=message_id,
+                 trace={'mode': 'profile', 'decision': 'location_saved', 'aez': loc.get('aez_id')})
         return response
+    place = _place_without_data(user, normalized)
+    if not place:
+        return None
+    known = adv_coverage.places_line(limit=6)
+    response = (f"📍 Sawa, nimeona uko *{place}*. Bado sina taarifa za kanda ya kilimo ya eneo hilo "
+                "kwenye data yangu, kwa hiyo ushauri unaotegemea eneo (mbegu, wakati wa kupanda) "
+                "utakuwa wa jumla tu — sitabuni."
+                + (f"\n\n📍 Maeneo niliyo na taarifa kamili: {known}." if known else '')
+                + "\n\nNiulize swali lako, mf. _nipande lini?_ au _mahindi yana mashimo, nifanye nini?_")
+    _log_all(user, raw_message, normalized, crop, None, place, None, response, False, start_time,
+             message_id=message_id, trace={'mode': 'profile', 'decision': 'location_not_in_data', 'place': place})
+    return response
 
-    # ── Swali kuhusu maji/ukame/mbolea kama chanzo cha tatizo ──
-    if is_abiotic_question(normalized):
-        crop = detect_crop(normalized) or _recent_crop(user) or (
-            Crop.objects.filter(id=user.last_crop_id).first() if user.last_crop_id else None)
-        return _abiotic_reply(user, raw_message, normalized, crop, start_time, message_id)
 
-    # ── Swali la kufuatilia utambuzi uliotolewa karibuni ("si dalili za FAW? nifanye nini?") ──
-    _dx = _diagnosis_followup(user, normalized)
-    if _dx:
-        response = _dx
-        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
-                 start_time, message_id=message_id,
-                 trace={'mode': 'rules_engine', 'decision': 'diagnosis_followup',
-                        'diagnosis': (user.session_state or {}).get('last_dx', {}).get('cid')})
-        return response
-
-    # ── Malalamiko bila swali jipya ("Mbona sijauliza swali hilo?") ──
-    # Live ilijibiwa "Hilo silijui vizuri 😅" kana kwamba si swali la kilimo.
-    if _is_complaint(normalized) and not _is_new_question(normalized):
-        sess = dict(user.session_state or {})
-        sess.pop('apologize', None)
-        user.session_state = sess
-        user.save(update_fields=['session_state'])
-        challenge_crop = (detect_crop(normalized) or _recent_crop(user)) if CHALLENGE.search(normalized) else None
-        if challenge_crop:
-            return _self_correction(user, raw_message, normalized, challenge_crop, start_time, message_id)
-        response = ("Samahani, nadhani nilikuelewa vibaya. 🙏\n\n"
-                    "Niambie tena swali lako kwa maneno yako, nami nitakusaidia. "
-                    "Mfano: _" + _seed_example_text() + "_")
-        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
-                 start_time, message_id=message_id, trace={'mode': 'profile', 'decision': 'complaint'})
-        return response
-
-    # ── Kukubali / shukrani ("sawa", "asante") ───────
-    # Bila hii, "sawa" hupelekwa kwenye injini ya maswali na
-    # mkulima anapata fallback isiyo na maana.
-    if is_acknowledgement(normalized) and not (user.session_state or {}).get('awaiting_location'):
-        _c = Crop.objects.filter(id=user.last_crop_id).first() if user.last_crop_id else None
-        response = build_acknowledgement(_c.crop_name_sw if _c else '')
-        _log_all(user, raw_message, normalized, _c, None, '', None, response, True,
-                 start_time, message_id=message_id)
-        return response
-
-    # ── Check session state — pending location reply ─
-    session = user.session_state or {}
-    if session.get('awaiting_location') and _strict():
-        _al = dict(session)
-        for k in ('awaiting_location', 'saved_intent', 'location_attempts'):
-            _al.pop(k, None)
-        user.session_state = _al
-        user.save(update_fields=['session_state'])
-        session = _al
-    if session.get('awaiting_location') and not is_greeting(normalized):
-        # User is replying with their location
-        location = detect_location(normalized)
-        if location:
-            remember_farm_location(user, normalized)
-            # Retrieve saved context and continue
-            saved_intent_name = session.get('saved_intent', '')
-            saved_crop_id = user.last_crop_id
-            crop = None
-            intent = None
-            if saved_crop_id:
-                try:
-                    crop = Crop.objects.get(id=saved_crop_id)
-                except Crop.DoesNotExist:
-                    pass
-            if saved_intent_name:
-                try:
-                    intent = Intent.objects.get(intent_name=saved_intent_name)
-                except Intent.DoesNotExist:
-                    pass
-            zone = map_location_to_zone(location)
-
-            # Ondoa hali ya kusubiri, LAKINI hifadhi eneo kwa mazungumzo yanayofuata
-            user.session_state = {
-                'last_location': location,
-                'last_location_at': time.time(),
-            }
-            user.save(update_fields=['session_state'])
-
-            # Now get answer with location
-            answer_data = get_answer_from_db(crop, intent, zone)
-            response = format_response(answer_data, crop, intent, location)
-            found = bool(response)
-            if not response:
-                response, _ = _get_ai_or_fallback(raw_message, crop, intent, location, zone, user)
-                _log_unresolved(user, raw_message, normalized, crop, intent, response)
-            _log_all(user, raw_message, normalized, crop, intent, location, zone, response,
-                     found, start_time, answer_data.get('answer_reference', ''),
-                     message_id=message_id)
-            return response
-
-        # Hakuna eneo lililotambulika. Je, mkulima ameuliza swali JIPYA badala yake?
-        # Bila ukaguzi huu, mtumiaji angeweza kunaswa kwenye "niambie eneo" milele.
-        maybe_crop = detect_crop(normalized)
-        maybe_intent = detect_intent(normalized, maybe_crop, '')
-        attempts = int(session.get('location_attempts', 0)) + 1
-
-        if maybe_crop or maybe_intent or attempts >= 2:
-            # Achana na swali la eneo — shughulikia ujumbe huu kama swali jipya
-            new_session = dict(session)
-            new_session.pop('awaiting_location', None)
-            new_session.pop('saved_intent', None)
-            new_session.pop('location_attempts', None)
-            user.session_state = new_session
-            user.save(update_fields=['session_state'])
-            session = new_session
-            # (hakuna return — mtiririko unaendelea chini kama kawaida)
-        else:
-            new_session = dict(session)
-            new_session['location_attempts'] = attempts
-            user.session_state = new_session
-            user.save(update_fields=['session_state'])
-            response = build_location_retry()
-            _log_all(user, raw_message, normalized, None, None, '', None, response, False,
-                     start_time, message_id=message_id)
-            return response
-
-    # ── MODULE 5: Crop Detection ──────────────────────
-    crop = detect_crop(normalized)
-
-    # Restore last crop from session if not detected
-    if not crop and user.last_crop_id:
-        try:
-            crop = Crop.objects.get(id=user.last_crop_id)
-        except Crop.DoesNotExist:
-            pass
-
-    # ── MODULE 6: Location Detection ─────────────────
-    location = detect_location(normalized)
-    if location:
-        remember_farm_location(user, normalized)
-
-    # Restore last location from session — TU ndani ya dakika 30
-    # (mazungumzo yanayoendelea), isije ikagandamana milele
-    if not location:
-        saved_loc = session.get('last_location')
-        saved_at = session.get('last_location_at', 0)
-        if saved_loc and (time.time() - float(saved_at)) < 1800:
-            location = saved_loc
-
-    # ── MODULE 7: Zone Mapping ────────────────────────
-    zone = map_location_to_zone(location)
-
-    # ── Mada ya kilimo isiyo na data iliyothibitishwa ("jinsi ya kupalilia") ──
-    # Ni swali halali la kilimo: tunasema ukweli (hatuna data yake) badala ya
-    # "sielewi", na linaandikwa kama pengo (UnresolvedQuery) ili mteja aone mada za kuongezea data.
-    _gap = knowledge_gap_topic(normalized)
-    if _gap:
-        response = gap_answer(_gap, detect_crop(normalized) or crop)
-        _log_all(user, raw_message, normalized, detect_crop(normalized), None, '', None, response,
-                 False, start_time, message_id=message_id,
-                 trace={'mode': 'profile', 'decision': 'knowledge_gap', 'topic': _gap})
-        _log_unresolved(user, raw_message, normalized, detect_crop(normalized), None, response)
-        return response
-
-    # ── Maswali yasiyo ya kilimo ──────────────────────
-    # Tunaangalia HAPA (si mwanzo) ili majibu mafupi ya mkulima
-    # kama "Singida" au "mahindi" yasihesabiwe kama yasiyo ya kilimo.
-    _pending = (user.session_state or {})
-    if not _pending.get('awaiting_location') and not _pending.get('awaiting_crop'):
-        _kind = detect_offtopic_kind(normalized)
-        # Tunatumia kilichotajwa KWENYE UJUMBE HUU, si kilichokumbukwa.
-        # Vinginevyo mkulima aliyewahi kutaja Singida hataweza kamwe
-        # kuuliza swali la nje ya kilimo.
-        _fresh_crop = detect_crop(normalized)
-        _fresh_loc = detect_location(normalized)
-        if (_kind and not _fresh_crop and not _fresh_loc and not adv_seed.wants_seed(normalized)
-                and not adv_planting.wants_planting(normalized) and not adv_soil.wants_soil(normalized)):
-            if _kind == 'identity':
-                response = build_identity_message()
-            elif _kind == 'capability':
-                response = build_capability_message()
-            else:
-                response = build_offtopic_message()
-            _log_all(user, raw_message, normalized, None, None, '', None, response,
-                     True, start_time, message_id=message_id)
-            return response
-
-    # ── MODULE 8: Intent Detection ────────────────────
-    intent = detect_intent(normalized, crop, location)
-
-    # Mkulima alichagua lengo kwa namba ("2" = mbegu, n.k.)
-    _forced = (user.session_state or {}).get('forced_intent')
-    if _forced:
-        if not intent:
-            intent = Intent.objects.filter(intent_name=_forced).first()
-        _fs = dict(user.session_state or {})
-        _fs.pop('forced_intent', None)
-        user.session_state = _fs
-        user.save(update_fields=['session_state'])
-
-    # Mkulima alikuwa akiulizwa zao — sasa ametaja. Rudisha swali lake
-    # la awali badala ya kumpeleka kwenye fallback.
-    _sess = user.session_state or {}
-    if crop and not intent and _sess.get('awaiting_crop'):
-        saved_name = _sess.get('saved_intent', '')
-        if saved_name:
-            try:
-                intent = Intent.objects.get(intent_name=saved_name)
-            except Intent.DoesNotExist:
-                intent = None
-        _cleared = dict(_sess)
-        _cleared.pop('awaiting_crop', None)
-        _cleared.pop('saved_intent', None)
-        user.session_state = _cleared
-        user.save(update_fields=['session_state'])
-
-    # ── Update user session ───────────────────────────
-    updates = {}
-    if crop:
-        user.last_crop_id = crop.id
-        updates['last_crop_id'] = crop.id
-    if intent:
-        user.last_intent = intent.intent_name
-        updates['last_intent'] = intent.intent_name
-    if location:
-        new_session = dict(session)
-        new_session['last_location'] = location
-        new_session['last_location_at'] = time.time()
-        user.session_state = new_session
-        updates['session_state'] = new_session
-    if updates:
-        user.save(update_fields=list(updates.keys()) + ['last_seen_at'])
-
-    # ── Mzunguko wa mazao kwa kanuni (MHD-006 R4) ──
-    if adv_rotation.wants_rotation(normalized):
-        handled = _rotation_turn(user, raw_message, normalized, start_time, message_id)
-        if handled is not None:
-            return handled
-
-    # ── Swali la udongo lililo wazi ("udongo wangu…") — kabla ya mbegu/kupanda,
-    #    kwa sababu intent ya zamani inaweza kudhani ni swali la mbegu ──
-    if 'udongo' in normalized.split() and not dg.is_problem_message(normalized, None):
-        handled = _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
-        if handled is not None:
-            return handled
-
-    # ── Mkulima ametaja eneo tu ("niko Changaa") → likumbuke na umkaribishe ──
-    _only_loc = resolve_farm_location(normalized)
-    if (_only_loc and _only_loc['level'] in ('ward', 'district') and len(normalized.split()) <= 4
-            and not detect_crop(normalized) and not adv_seed.wants_seed(normalized)
-            and not adv_planting.wants_planting(normalized) and not dg.is_problem_message(normalized, None)):
-        response = _profile_ack(user, _only_loc)
-        _log_all(user, raw_message, normalized, None, None, adv_location.display_name(_only_loc),
-                 adv_location.zone_for(_only_loc), response, True, start_time, message_id=message_id,
-                 trace={'mode': 'profile', 'decision': 'location_saved', 'aez': _only_loc.get('aez_id')})
-        return response
-
-    # ── Eneo tu, ambalo halimo kwenye data ("Ruvuma") → sema ukweli, likumbuke, muulize swali lake ──
-    if (len(normalized.split()) <= 3 and not _only_loc and not detect_crop(normalized)
-            and not dg.is_problem_message(normalized, None) and not adv_planting.wants_planting(normalized)
-            and not adv_seed.wants_seed(normalized)):
-        _place = _place_without_data(user, normalized) if detect_location(normalized) else ''
-        if _place:
-            known = adv_coverage.places_line(limit=6)
-            response = (f"📍 Sawa, nimeona uko *{_place}*. Bado sina taarifa za kanda ya kilimo ya eneo hilo "
-                        "kwenye data yangu, kwa hiyo ushauri unaotegemea eneo (mbegu, wakati wa kupanda) "
-                        "utakuwa wa jumla tu — sitabuni."
-                        + (f"\n\n📍 Maeneo niliyo na taarifa kamili: {known}." if known else '')
-                        + "\n\nNiulize swali lako, mf. _nipande lini?_ au _mahindi yana mashimo, nifanye nini?_")
-            _log_all(user, raw_message, normalized, crop, None, _place, None, response, False, start_time,
-                     message_id=message_id, trace={'mode': 'profile', 'decision': 'location_not_in_data',
-                                                   'place': _place})
-            return response
-
-    # ── Wakati wa kupanda kwa kanuni (MHD-006 + eneo + mbegu) ──
-    if adv_planting.wants_planting(normalized, intent) and not adv_seed.mentioned_variety(normalized):
-        handled = _planting_turn(user, raw_message, normalized, crop, start_time, message_id)
-        if handled is not None:
-            return handled
-
-    # ── Ushauri wa mbegu kwa kanuni (MHD-003A + eneo la MHD-001) ──
-    if adv_seed.wants_seed(normalized, intent):
-        handled = _seed_turn(user, raw_message, normalized, crop, start_time, message_id)
-        if handled is not None:
-            return handled
-
-    # ── Ushauri wa udongo kwa kanuni (MHD-004) ──
-    if adv_soil.wants_soil(normalized) and not dg.is_problem_message(normalized, None):
-        handled = _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
-        if handled is not None:
-            return handled
-
-    # ── AI router: ujumbe bila neno la moduli → AI inachagua moduli (orodha funge) ──
-    if intent is None and len(normalized.split()) >= 4 and not dg.is_problem_message(normalized, None):
-        _rs = {}
-        module = adv_profile.route(raw_message, _rs)
-        handled = None
-        if module == 'diagnosis':
-            handled = _start_diagnostic(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
-        elif module == 'seed':
-            handled = _seed_turn(user, raw_message, normalized, crop, start_time, message_id, state=_rs)
-        elif module == 'planting':
-            handled = _planting_turn(user, raw_message, normalized, crop, start_time, message_id, state=_rs)
-        elif module == 'soil':
-            handled = _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id,
-                                 state=_rs)
-        elif module == 'rotation':
-            handled = _rotation_turn(user, raw_message, normalized, start_time, message_id, state=_rs)
-        if handled is not None:
-            return handled
-
-    # ── Neno moja lisilotambulika ("Katoro") → uliza, usijifanye umeelewa ──
-    if (len(normalized.split()) == 1 and not detect_crop(normalized) and not intent
-            and not detect_location(normalized) and not rx.parse_answer(normalized) in ('yes', 'no')):
-        response = (f"Samahani, sijaelewa \"*{raw_message.strip()[:40]}*\" peke yake. 🙏 Kama ni jina la eneo lako, "
-                    "bado halimo kwenye data yangu ya maeneo.\n\nNiandikie swali lako kamili, mf. "
+def _unclear(user, raw_message, normalized, frame, start_time, message_id):
+    """Hatukuelewa: swali MOJA la kufafanua — tofauti likijirudia (kigezo 1)."""
+    sess = dict(user.session_state or {})
+    repeat = time.time() - float(sess.get('unclear_at', 0)) < 600
+    sess['unclear_at'] = time.time()
+    crop = frame.get('crop')
+    words = normalized.split()
+    if len(words) == 1 and not crop:
+        response = (f"Samahani, sijaelewa \"*{raw_message.strip()[:40]}*\" peke yake. 🙏 Kama ni jina la eneo "
+                    "lako, bado halimo kwenye data yangu ya maeneo.\n\nNiandikie swali lako kamili, mf. "
                     "_nipande lini mahindi?_ au _mbegu gani inafaa eneo langu?_")
-        _log_all(user, raw_message, normalized, None, None, '', None, response, False, start_time,
-                 message_id=message_id, trace={'mode': 'profile', 'decision': 'single_unknown_word'})
-        return response
-
-    # ── Ombi pana: uliza lengo kwanza, usitoe ushauri ──
-    _fresh_c = detect_crop(normalized)
-    _fresh_l = detect_location(normalized)
-    if dg.is_broad_request(normalized, _fresh_c, intent, _fresh_l):
-        _gs = dict(user.session_state or {})
-        _gs['goal_pending'] = True
-        user.session_state = _gs
-        user.save(update_fields=['session_state'])
-        response = dg.build_goal_question()
-        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
-                 start_time, message_id=message_id,
-                 trace={'mode': 'goal_question', 'reason': 'broad_request'})
-        return response
-
-    # ── Tatizo la zao: anza mtiririko wa uchunguzi ────
-    # Hata kama template ipo, tatizo la mmea halijibiwi mara moja:
-    # taarifa muhimu zikusanywe kwanza (kanuni ya usalama).
-    if dg.is_problem_message(normalized, intent):
-        return _start_diagnostic(user, raw_message, normalized, _fresh_c,
-                                 start_time, message_id)
-
-    # ── Prompt for crop if missing ────────────────────
-    if needs_crop_prompt(crop, intent):
-        # Hifadhi swali ili mkulima akitaja zao tuendelee palepale,
-        # badala ya kuanza upya na kumuuliza tena.
-        new_session = dict(user.session_state or {})
-        new_session['awaiting_crop'] = True
-        new_session['saved_intent'] = intent.intent_name if intent else ''
-        user.session_state = new_session
-        user.save(update_fields=['session_state'])
-        response = build_crop_prompt(intent)
-        _log_all(user, raw_message, normalized, None, intent, location, zone, response, False,
-                 start_time, message_id=message_id)
-        return response
-
-    # ── Prompt for location if intent inahitaji eneo ──
-    # Tunauliza KABLA ya kutafuta jibu — hivyo hatupotezi muda wa Groq
-    # kwa jibu ambalo tungelitupa hata hivyo.
-    if needs_location_prompt(intent, location):
-        new_session = dict(user.session_state or {})
-        new_session['awaiting_location'] = True
-        new_session['saved_intent'] = intent.intent_name if intent else ''
-        new_session['location_attempts'] = 0
-        user.session_state = new_session
-        user.save(update_fields=['session_state'])
-        response = build_location_prompt(crop, intent)
-        _log_all(user, raw_message, normalized, crop, intent, '', None, response, False,
-                 start_time, message_id=message_id)
-        return response
-
-    # ── Special: symptom_analysis needs follow-up ────
-    if intent and intent.intent_name == 'symptom_analysis' and crop:
-        if not any(w in normalized for w in ['njano', 'kahawia', 'madoa', 'meupe', 'mashimo', 'kufa', 'kukauka']):
-            response = build_symptom_followup(crop.crop_name_sw)
-            _log_all(user, raw_message, normalized, crop, intent, location, zone, response, False,
-                     start_time, message_id=message_id)
-            return response
-
-    # ── MODULE 9 & 10: Knowledge Retrieval ───────────
-    answer_data = get_answer_from_db(crop, intent, zone)
-
-    # ── MODULE 11: Answer Template Engine ────────────
-    response = format_response(answer_data, crop, intent, location)
-
-    # ── If no template found → Groq AI, kisha fallback ─
-    from_template = bool(response)
-    used_fallback = False
-    if not response and not crop and not intent:
-        # Hakuna zao wala lengo linalojulikana — AI ingebuni jibu la
-        # jumla. Badala yake tunauliza mkulima anahitaji nini.
-        _gs = dict(user.session_state or {})
-        _gs['goal_pending'] = True
-        user.session_state = _gs
-        user.save(update_fields=['session_state'])
-        response = dg.build_goal_question()
-        from_template = True
-    elif not response:
-        response, used_fallback = _get_ai_or_fallback(
-            raw_message, crop, intent, location, zone, user
-        )
-        if crop:
-            response, _vr = dg.validate_output(response, crop.crop_name_sw, allow_chemical=False)
-
-    # Bei za soko: onyo la lazima
-    if (intent and intent.intent_name == 'market_question' and 'thibitisha' not in response.lower()
-            and 'sitabuni' not in response):
-        response += (
-            "\n\n⚠️ _Bei hubadilika kila siku kulingana na msimu na soko. "
-            "Taarifa hii si bei ya leo — thibitisha kwenye soko la karibu "
-            "au kwa wafanyabiashara kabla ya kuuza au kununua._"
-        )
-    # success = tumeweza kumpa mkulima jibu la maana (template au AI),
-    # SI tu kwamba tulirudisha maandishi fulani.
-    success = from_template or not used_fallback
-
-    # ── Log unresolved if needed ──────────────────────
-    # Kila swali lisilopata jibu la template linarekodiwa ili msimamizi
-    # aweze kuongeza template. Fallback kamili ni MUHIMU zaidi kurekodiwa.
-    if not from_template:
-        _log_unresolved(user, raw_message, normalized, crop, intent, response)
-
-    # ── Log conversation + analytics ─────────────────
-    _log_all(
-        user, raw_message, normalized, crop, intent, location, zone,
-        response, success, start_time,
-        answer_data.get('answer_reference', '') if answer_data else '',
-        message_id=message_id,
-    )
-
+        decision = 'single_unknown_word'
+    elif crop:
+        sess['goal_pending'] = True
+        response = ("Samahani, sijaelewa vizuri swali lako. 🙏\n\n" if repeat else '') + \
+            dg.build_crop_menu(crop.crop_name_sw)
+        decision = 'crop_menu'
+    else:
+        sess['goal_pending'] = True
+        response = (dg.build_goal_question(opener="Bado sijaelewa unachohitaji. 🙏 Tafadhali chagua:")
+                    if repeat else
+                    dg.build_goal_question(opener="Samahani, sijaelewa vizuri unachohitaji. 🙏"))
+        decision = 'goal_menu'
+    user.session_state = sess
+    user.save(update_fields=['session_state'])
+    _log_all(user, raw_message, normalized, crop, None, '', None, response, False, start_time,
+             message_id=message_id, trace={'mode': 'understand', 'decision': decision,
+                                           'frame': understanding.as_trace(frame)})
+    _log_unresolved(user, raw_message, normalized, crop, None, response)
     return response
 
 
@@ -1327,52 +651,6 @@ def _log_unresolved(user, raw_message, normalized, crop, intent, response):
         )
     except Exception as e:
         logger.error(f"UnresolvedQuery error: {e}")
-
-
-INTENT_TOPICS = {
-    'spacing': 'nafasi za kupanda', 'fertilizer_planting': 'mbolea', 'fertilizer_top_dressing': 'mbolea',
-    'fertilizer_amount': 'mbolea', 'harvest_time': 'kuvuna', 'storage_advice': 'kuhifadhi mazao',
-    'market_question': 'bei na masoko', 'weather_planting_decision': 'hali ya hewa',
-    'pest_identification': 'wadudu', 'disease_identification': 'magonjwa',
-}
-
-
-def _no_data_answer(crop, intent):
-    """Hali ya data pekee: hakuna jibu kwenye dataset → sema ukweli, usitunge."""
-    topic = INTENT_TOPICS.get(intent.intent_name, '') if intent else ''
-    extra = ''
-    if intent and intent.intent_name == 'harvest_time' and crop:
-        return gap_answer('kuvuna', crop)
-    if intent and intent.intent_name in ('pest_identification', 'disease_identification'):
-        extra = ("\n\nKama mmea wako una tatizo, nieleze *dalili* unazoona (mf. majani yana mashimo) "
-                 "nami nitakuuliza maswali ya uchunguzi.")
-    if topic:
-        return knowledge_gap_message(topic) + extra
-    return build_fallback_message(crop, intent, '')
-
-
-def _get_ai_or_fallback(raw_message, crop, intent, location, zone, user=None) -> str:
-    """Tumia Groq AI (dataset + historia ya mazungumzo) kama template haipatikani."""
-    if _strict():
-        # AI ni ya lugha tu: haitungi majibu ya kitaalamu yasiyo kwenye dataset
-        return _no_data_answer(crop, intent), True
-    try:
-        from bot.groq_ai import get_groq_response
-        ai_response = get_groq_response(
-            user_message=raw_message,
-            crop=crop,
-            intent=intent,
-            location=location or '',
-            zone=zone,
-            user=user,
-        )
-        if ai_response:
-            return ai_response, False
-    except Exception as e:
-        logger.error(f"Groq AI fallback error: {e}")
-
-    # Groq imeshindwa — hii ni fallback ya kweli.
-    return build_fallback_message(crop, intent, location), True
 
 
 def _log_all(user, raw_message, normalized, crop, intent, location, zone,
@@ -1624,7 +902,7 @@ def _handle_planting_pending(user, raw_message, normalized, start_time, message_
             return _planting_turn(user, raw_message, normalized, crop, start_time, message_id,
                                   text=pend.get('text', ''), attempts=pend.get('attempts', 0) + 1)
         attempts = pend.get('attempts', 0) + 1
-        if attempts >= 2 or detect_intent(normalized, detect_crop(normalized), '') or dg.is_problem_message(normalized, None):
+        if attempts >= 2 or dg.is_problem_message(normalized, None):
             _set_adv(user, None)
             return None
         place = _place_without_data(user, normalized)
@@ -1737,7 +1015,7 @@ def _handle_advisory_pending(user, raw_message, normalized, start_time, message_
             return _seed_turn(user, raw_message, normalized, crop, start_time, message_id,
                               text=pend.get('text', ''), attempts=pend.get('attempts', 0) + 1)
         attempts = pend.get('attempts', 0) + 1
-        if attempts >= 2 or detect_intent(normalized, detect_crop(normalized), '') or dg.is_problem_message(normalized, None):
+        if attempts >= 2 or dg.is_problem_message(normalized, None):
             _set_adv(user, None)
             return None
         place = _place_without_data(user, normalized)
@@ -1852,7 +1130,8 @@ STRICT_GAPS = [
     (re.compile(r'\b(vifaa|zana|jembe|trekta|kuandaa shamba|maandalizi ya shamba|kulima shamba)\b'),
      'maandalizi ya shamba na zana'),
     (re.compile(r'\b(umwagiliaji|kumwagilia|nimwagilie)\b'), 'umwagiliaji'),
-    (re.compile(r'\b(nafasi ya kupanda|nafasi za kupanda|umbali wa kupanda|spacing)\b'), 'nafasi za kupanda'),
+    (re.compile(r'\b(nafasi ya kupanda|nafasi za kupanda|umbali wa kupanda|spacing|hatua za kupanda|jinsi ya kupanda'
+                r'|namna ya kupanda|mbinu za kupanda)\b'), 'nafasi za kupanda'),
 ]
 
 
@@ -1864,9 +1143,11 @@ TOPIC_NAMES = {'planting_advisor': 'wakati wa kupanda', 'seed_advisor': 'mbegu b
 
 
 def _last_topic(user):
-    last = (Conversation.objects.filter(user=user, message_direction='inbound').exclude(trace=None)
-            .order_by('-id').first())
-    mode = (last.trace or {}).get('mode') if last else ''
+    for last in Conversation.objects.filter(user=user, message_direction='outbound').order_by('-id')[:6]:
+        mode = (last.trace or {}).get('mode')
+        if mode in TOPIC_NAMES:
+            return TOPIC_NAMES[mode]
+    mode = ''
     return TOPIC_NAMES.get(mode, '')
 
 
@@ -1901,13 +1182,20 @@ def _handle_resume_or_crop_only(user, raw_message, normalized, start_time, messa
     words = normalized.split()
     if len(words) > 6 or rx.get_state(sess):
         return None
-    adv = sess.get('adv') or {}
-    if adv.get('stage') in ('crop', 'location'):
-        return None                              # "mahindi"/"kondoa" ni jibu la swali linalosubiriwa
     crop = detect_crop(normalized)
+    if NEW_TOPIC.search(normalized) and not crop and (fresh or len(words) <= 5):
+        _clear_pending(user)
+        response = ("Sawa, karibu! 🌿 Uliza swali lako — kuhusu *tatizo shambani*, *mbegu bora*, "
+                    "*wakati wa kupanda*, *udongo* au *mzunguko wa mazao*.")
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True, start_time,
+                 message_id=message_id, trace={'mode': 'goal_question', 'decision': 'new_topic'})
+        return response
+    adv = sess.get('adv') or {}
+    if adv.get('stage') in ('crop', 'location') and not fresh:
+        return None                              # "mahindi"/"kondoa" ni jibu la swali linalosubiriwa
     leftover = [w for w in words if not CROP_SWITCH.match(w) and not RESUME.match(w)
                 and not (crop and (w in crop.crop_name_sw.lower().split() or w in crop.crop_name_en.lower().split()))]
-    if fresh and NEW_TOPIC.search(normalized) and not crop:
+    if NEW_TOPIC.search(normalized) and not crop and (fresh or len(words) <= 5):
         response = ("Sawa, karibu! 🌿 Uliza swali lako — kuhusu *tatizo shambani*, *mbegu bora*, "
                     "*wakati wa kupanda*, *udongo* au *mzunguko wa mazao*.")
         _log_all(user, raw_message, normalized, None, None, '', None, response, True, start_time,
@@ -1939,65 +1227,65 @@ def _clear_pending(user, keep_rx=False):
     user.save(update_fields=['session_state'])
 
 
-def _route_by_frame(user, raw_message, normalized, frame, start_time, message_id):
-    """
-    Peleka ujumbe kwenye moduli sahihi kwa mujibu wa fomu ya AI.
-    None = acha njia ya kawaida ishughulikie (mf. jibu la swali linalosubiriwa).
-    """
-    goal, pending = frame['goal'], frame.get('pending', '')
+def _route_goal(user, raw_message, normalized, frame, start_time, message_id):
+    """Kidhibiti kimoja kwa kila lengo. Kila tawi linarudisha jibu (halirudishi None)."""
+    goal = frame['goal']
     crop = frame['crop'] or detect_crop(normalized)
     ctx_crop = crop or _recent_crop(user) or (
         Crop.objects.filter(id=user.last_crop_id).first() if user.last_crop_id else None)
-    sess = user.session_state or {}
-    in_rx = bool(rx.get_state(sess))
+    in_rx = bool(rx.get_state(user.session_state or {}))
     trace = {'mode': 'understand', 'frame': understanding.as_trace(frame)}
 
-    def log(response, success=True, c=None):
+    def log(response, success=True, c=None, decision=None):
         _log_all(user, raw_message, normalized, c or crop, None, frame.get('place') or '', None, response,
-                 success, start_time, message_id=message_id, trace={**trace, 'decision': goal})
+                 success, start_time, message_id=message_id, trace={**trace, 'decision': decision or goal})
         return response
 
-    if goal in ('answer', 'unclear', 'greeting'):
-        if goal == 'answer' and in_rx and frame.get('answer'):
-            st = dict(sess)
-            st[rx.STATE_KEY] = {**st[rx.STATE_KEY], 'answer_hint': frame['answer']}
-            user.session_state = st
-            user.save(update_fields=['session_state'])
-        return None
+    def unclear():
+        return _unclear(user, raw_message, normalized, frame, start_time, message_id)
+
+    if goal == 'greeting':
+        return log(build_greeting(is_returning=user.message_count > 1,
+                                  last_crop=ctx_crop.crop_name_sw if ctx_crop else ''))
     if goal == 'diagnosis':
-        if in_rx:
-            return None                    # maelezo zaidi ndani ya uchunguzi unaoendelea
         _clear_pending(user)
         return _start_diagnostic(user, raw_message, normalized, crop, start_time, message_id)
     if goal == 'followup':
         response = _diagnosis_followup(user, normalized, force=True)
-        return log(response) if response else None
+        if response:
+            return log(response)
+        if dg.is_problem_message(normalized, None):
+            _clear_pending(user)
+            return _start_diagnostic(user, raw_message, normalized, crop, start_time, message_id)
+        return unclear()
     if goal == 'abiotic':
         _clear_pending(user)
         return _abiotic_reply(user, raw_message, normalized, ctx_crop, start_time, message_id)
     if goal == 'challenge':
-        if not understanding.advice_recent(user):
-            return None                     # hakuna ushauri wa kupinga — si changamoto
-        _clear_pending(user)
-        if ctx_crop:
+        # Changamoto ya wazi kwa maneno ("kwa nini umenishauri…") inakubaliwa; ya AI peke yake
+        # inahitaji ushauri halisi kwenye majibu ya karibuni (live: "jua ni kali…" haikuwa changamoto)
+        if ctx_crop and (frame['source'] != 'ai' or understanding.advice_recent(user)):
+            _clear_pending(user)
             return _self_correction(user, raw_message, normalized, ctx_crop, start_time, message_id)
-        return None
+        goal = 'complaint'
     if goal == 'complaint':
         _clear_pending(user)
         question = frame.get('question') or ''
-        if question and question.strip().lower() != raw_message.strip().lower():
-            inner = understanding.understand(question, user, normalized=apply_synonyms(normalize_text(question)),
-                                             use_ai=True)
-            if inner['source'] == 'ai' and inner['goal'] not in ('complaint', 'challenge', 'answer', 'unclear'):
+        if question and question.strip().lower() != raw_message.strip().lower() and understanding_enabled():
+            q_norm = apply_synonyms(normalize_text(question))
+            inner = understanding.understand(question, user, normalized=q_norm, use_ai=True)
+            if inner['goal'] not in ('complaint', 'challenge', 'answer', 'unclear'):
                 st = dict(user.session_state or {})
                 st['apologize'] = True
                 user.session_state = st
                 user.save(update_fields=['session_state'])
-                handled = _route_by_frame(user, raw_message, apply_synonyms(normalize_text(question)), inner,
-                                          start_time, message_id)
-                if handled is not None:
-                    return handled
-        return None                         # njia ya kawaida: "Samahani, nadhani nilikuelewa vibaya…"
+                return _route_goal(user, raw_message, q_norm, inner, start_time, message_id)
+        st = dict(user.session_state or {})
+        st.pop('apologize', None)
+        st['goal_pending'] = True
+        user.session_state = st
+        user.save(update_fields=['session_state'])
+        return log(dg.build_goal_question(opener="Samahani, nadhani nilikuelewa vibaya. 🙏 Niambie unahitaji nini:"))
     if goal == 'gap':
         _clear_pending(user)
         response = gap_answer(frame['topic'], ctx_crop)
@@ -2019,16 +1307,29 @@ def _route_by_frame(user, raw_message, normalized, frame, start_time, message_id
         return log(adv_coverage.coverage_message())
     if goal in ('seed', 'planting', 'soil', 'rotation'):
         _clear_pending(user)
+        if crop and user.last_crop_id != crop.id:
+            user.last_crop_id = crop.id
+            user.save(update_fields=['last_crop_id'])
+        mcrop = crop or (ctx_crop if goal != 'rotation' else None)
         if goal == 'seed':
-            return _seed_turn(user, raw_message, normalized, crop, start_time, message_id)
-        if goal == 'planting':
-            return _planting_turn(user, raw_message, normalized, crop, start_time, message_id)
-        if goal == 'soil':
-            return _soil_turn(user, raw_message, normalized, crop, start_time, message_id)
-        return _rotation_turn(user, raw_message, normalized, start_time, message_id)
-    if pending and pending != 'after_diagnosis':
-        return None                         # "sawa" n.k. katikati ya swali — njia ya kawaida
-    if goal == 'thanks':
+            handled = _seed_turn(user, raw_message, normalized, mcrop, start_time, message_id)
+        elif goal == 'planting':
+            handled = _planting_turn(user, raw_message, normalized, mcrop, start_time, message_id)
+        elif goal == 'soil':
+            handled = _soil_turn(user, raw_message, normalized, mcrop, start_time, message_id)
+        else:
+            handled = _rotation_turn(user, raw_message, normalized, start_time, message_id)
+        if handled is not None:
+            return handled
+        return _module_no_data(user, raw_message, normalized, goal, mcrop, start_time, message_id)
+    if goal == 'crop_only' and crop:
+        return _crop_menu_reply(user, raw_message, normalized, crop, start_time, message_id,
+                                'resume' if user.last_crop_id == crop.id else 'crop_switch')
+    if goal == 'location_only':
+        handled = _location_only(user, raw_message, normalized, crop, start_time, message_id)
+        if handled is not None:
+            return handled
+    if goal == 'thanks' and not in_rx:
         return log(build_acknowledgement(ctx_crop.crop_name_sw if ctx_crop else ''))
     if goal == 'identity':
         return log(build_identity_message())
@@ -2036,7 +1337,7 @@ def _route_by_frame(user, raw_message, normalized, frame, start_time, message_id
         return log(build_capability_message())
     if goal == 'offtopic':
         return log(build_offtopic_message())
-    return None
+    return unclear()
 
 
 def _self_correction(user, raw_message, normalized, crop, start_time, message_id):
@@ -2284,10 +1585,10 @@ def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_i
             return _soil_turn(user, raw_message, normalized, _gcrop, start_time, message_id)
         if route == 'rotation':
             return _rotation_turn(user, raw_message, normalized, start_time, message_id)
-        if route:
-            sess['forced_intent'] = route
-            user.session_state = sess
-            user.save(update_fields=['session_state'])
+        if route in ('seed_selection', 'planting_time'):
+            return _module_no_data(user, raw_message, normalized,
+                                   'seed' if route == 'seed_selection' else 'planting', _gcrop,
+                                   start_time, message_id)
         return None
 
     # ── Uchunguzi unaoendelea ──

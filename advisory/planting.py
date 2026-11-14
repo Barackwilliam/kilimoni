@@ -62,11 +62,17 @@ def _norm(text):
 # "nilime au niache kwanza?", "nipande au nisubiri?" — uamuzi wa kupanda sasa
 DECIDE_RE = re.compile(r'\b(nilime|nipande|tulime|tupande|nianze kulima|nianze kupanda)\b.*'
                        r'\b(niache|nisubiri|tusubiri|tuache|kwanza|sasa hivi)\b')
+# Kitenzi cha kupanda + muda/mvua: "mvua bado hazijaanza nipande?", "nikipanda sasa itakuwa sawa?",
+# "msimu wa mvua nianze lini kupanda"
+PLANT_VERB = re.compile(r'\b(nipande|nikipanda|tupande|tukipanda|kupanda|kupandwa|yanapandwa|nianze|nilime)\b')
+PLANT_WHEN = re.compile(r'\b(lini|sasa|mvua|msimu|mwezi|wiki hii|mwaka huu|mapema|kuchelewa|itakuwa sawa)\b')
 
 
 def wants_planting(text, intent=None):
     low = _norm(text)
     if any(s in low for s in PLANT_STEMS) or DECIDE_RE.search(low):
+        return True
+    if PLANT_VERB.search(low) and PLANT_WHEN.search(low) and not re.search(r'\b(mbegu|jinsi|namna|hatua)\b', low):
         return True
     return getattr(intent, 'intent_name', '') in ('planting_time', 'weather_planting_decision')
 

@@ -410,7 +410,9 @@ class StrictDataModeTests(CoverageTests):
     def ask(self, phone, *msgs):
         from unittest import mock
         from bot.engine import process_message
-        with mock.patch('bot.groq_ai.get_groq_response', side_effect=AssertionError('AI ya bure haitumiki')):
+        import bot
+        self.assertFalse(hasattr(bot, 'groq_ai') and hasattr(bot.groq_ai, 'get_groq_response'))  # imeondolewa
+        with mock.patch('diagnosis.ai_layer._chat', return_value=None):
             return [process_message(phone, m) for m in msgs]
 
     def setUp(self):

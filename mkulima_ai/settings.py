@@ -246,10 +246,6 @@ GROQ_UNDERSTAND_MODEL = config('GROQ_UNDERSTAND_MODEL', default='')
 # Model mbadala (kwa mpangilio) model ya kwanza ikifika kikomo cha maombi (429). Kila model
 # ina vikomo vyake kwenye akaunti moja. Tenganisha kwa koma; tupu = hakuna mbadala.
 GROQ_FALLBACK_MODELS = config('GROQ_FALLBACK_MODELS', default='openai/gpt-oss-20b')
-# Hali ya data pekee (makubaliano na mteja): majibu yanatoka kwenye dataset za MHD tu.
-# AI inatumika kwa lugha tu — haitungi majibu ya bure, na majibu ya demo ya awali
-# (scripts/seed_data.py: bei za 2024, majina ya dawa n.k.) hayatumwi kwa wakulima.
-STRICT_DATA_MODE = config('STRICT_DATA_MODE', default=True, cast=bool)
 # Kuelewa kwanza: kila ujumbe unasomwa na AI (lugha tu) kujaza fomu kabla ya kwenda kwenye
 # dataset. False = njia ya zamani ya maneno tu.
 UNDERSTAND_FIRST = config('UNDERSTAND_FIRST', default=True, cast=bool)

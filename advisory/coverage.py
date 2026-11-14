@@ -88,7 +88,7 @@ def coverage_message():
 
 
 # ── "Mahindi hustawi wapi Tanzania?" ──
-GROWS = re.compile(r'\b(stawi|hustawi|linastawi|linalostawi|yanastawi|yanayostawi|inastawi|inayostawi|hulimwa'
+GROWS = re.compile(r'\b(\w*stawi|stawi|hustawi|linastawi|linalostawi|yanastawi|yanayostawi|inastawi|inayostawi|hulimwa'
                    r'|linalimwa|yanalimwa|inalimwa|linafaa|yanafaa|inafaa)\b')
 WHERE = re.compile(r'\b(wapi|maeneo|mikoa|mkoa gani|sehemu gani|sehemu zipi)\b')
 LIST_PLACES = re.compile(r'\b(taja|orodhesha|nitajie|nipe)\b.*\b(maeneo|mikoa|sehemu)\b')
