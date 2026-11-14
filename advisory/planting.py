@@ -312,6 +312,24 @@ def _explain(decision, values):
     return '', None
 
 
+def zone_overview(crop=None):
+    """
+    Muhtasari wa kitaifa kutoka data (AEZ_Master + kalenda ya zao): mkulima asiyetaja eneo,
+    au ambaye eneo lake halipo kwenye data, apate jibu la jumla badala ya swali tu.
+    """
+    lines = []
+    cals = {c.aez_id: c for c in CropCalendar.objects.filter(crop=crop, is_active=True)} if crop else {}
+    for a in Aez.objects.filter(is_active=True).order_by('source_id'):
+        cal = cals.get(a.id)
+        window = a.planting_window_sw or (cal.normal_window if cal else '')
+        if window:
+            lines.append(f"• {a.name_sw}: *{window}*")
+    if not lines:
+        return ''
+    head = (f"Kwa ujumla, madirisha ya kupanda kwa kila kanda ya kilimo nchini (kutoka taarifa zangu):")
+    return head + '\n' + '\n'.join(lines)
+
+
 def advise(crop, loc, text, state=None, today=None, rain=None, irrigated=None):
     """
     Rudisha (jibu, trace). trace['decision'] ni mojawapo ya maamuzi ya dataset, au
@@ -328,6 +346,12 @@ def advise(crop, loc, text, state=None, today=None, rain=None, irrigated=None):
             msg = (f"Mkoa wa *{loc['region']}* una kanda za kilimo zaidi ya moja, kwa hiyo misimu inatofautiana. "
                    "Tafadhali taja *wilaya au kata* yako.")
         trace.update({'decision': 'need_location', 'rules_used': [x.source_id for x in (r, cr) if x]})
+        overview = zone_overview(crop) if not loc else ''
+        if overview:
+            trace['overview'] = True
+            return (f"🗓️ Wakati wa kupanda{(' ' + crop.crop_name_sw) if crop else ''} unategemea kanda ya kilimo.\n\n"
+                    f"{overview}\n\nIli nikupe tarehe sahihi kulingana na mvua za mwaka huu, nitajie *wilaya au "
+                    f"kata* yako.\n_Mfano: Kondoa, au kata ya Changaa_"), trace
         return f"🗓️ Sawa, nitakusaidia kujua wakati wa kupanda.\n\n{msg}\n_Mfano: Kondoa, au kata ya Changaa_", trace
     if crop is None:
         cr = _arule('CALRULE-002')

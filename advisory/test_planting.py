@@ -126,7 +126,7 @@ class PlantingBotTests(PlantingBase):
             r1 = process_message('255733000001', 'nipande lini mahindi?')
             r2 = process_message('255733000001', 'niko changaa')
             r3 = process_message('255733000001', 'ndiyo zimeanza')
-        self.assertIn('taja mkoa, wilaya au kata', r1)
+        self.assertIn('wilaya au', r1)                          # muhtasari wa kitaifa + kuuliza eneo
         self.assertIn('mara 2–3', r2)
         self.assertIn('Unaweza kupanda, kwa tahadhari', r3)
         self.assertNotIn('❓', r3)
