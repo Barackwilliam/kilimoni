@@ -253,10 +253,12 @@ SCENARIOS = [
         ],
     },
     {
-        'name': 'T7 — Bei ya soko inaonya kwamba si bei ya leo',
+        'name': 'T7 — Bei ya soko: haibuni bei (hakuna dataset ya masoko bado)',
         'turns': ['bei ya mahindi Dodoma ikoje'],
         'checks': [
-            ('Onyo la bei lipo', lambda r, t: 'thibitisha' in r[-1].lower()),
+            ('Haitoi namba za bei, inasema wazi au inaonya',
+             lambda r, t: ('sitabuni' in r[-1].lower() or 'thibitisha' in r[-1].lower())
+             and not re.search(r'tzs|shilingi|\\d{3,}\\s*/\\s*kg', r[-1].lower())),
         ],
     },
 ]

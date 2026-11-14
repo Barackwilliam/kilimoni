@@ -73,12 +73,19 @@ def build_greeting(is_returning: bool = False, last_crop: str = '') -> str:
     return (
         "🌿 *Karibu Kilimoni AI*\n\n"
         "Mimi ni msaidizi wako wa kilimo. Naweza kukusaidia kuhusu "
-        "mbegu, wakati wa kupanda, mbolea, wadudu na magonjwa, "
-        "kuvuna, na bei za sokoni.\n\n"
+        + _services_line() + ".\n\n"
         "Uliza tu kwa Kiswahili cha kawaida.\n"
         f"_Mfano: {_seed_example()}_\n\n"
         "Ukihitaji mwongozo wakati wowote, andika *0*."
     )
+
+
+def _services_line():
+    from django.conf import settings
+    if getattr(settings, 'STRICT_DATA_MODE', True):
+        # Tunaahidi tu kile chenye data iliyothibitishwa
+        return "matatizo ya mazao (wadudu, magonjwa, dalili), mbegu bora, wakati wa kupanda, udongo na mzunguko wa mazao"
+    return "mbegu, wakati wa kupanda, mbolea, wadudu na magonjwa, kuvuna, na bei za sokoni"
 
 
 # ── Kuomba zao ────────────────────────────────────────
@@ -280,6 +287,14 @@ def _planting_example():
 
 
 # ── Mwongozo ──────────────────────────────────────────
+def _help_extra():
+    from django.conf import settings
+    if getattr(settings, 'STRICT_DATA_MODE', True):
+        return "• _Udongo wangu ni mfinyanzi, unafaa mahindi?_\n\n"
+    return ("• _Mbolea ya kupandia mahindi ni ipi?_\n• _Mahindi yanavunwa lini?_\n"
+            "• _Bei ya mahindi Mbeya ikoje?_\n\n")
+
+
 def build_help_message() -> str:
     return (
         "📋 *Jinsi ya kunitumia*\n\n"
@@ -287,10 +302,8 @@ def build_help_message() -> str:
         "afisa ugani. Mifano:\n\n"
         f"• _{_seed_example()}_\n"
         f"• _{_planting_example()}_\n"
-        "• _Mbolea ya kupandia mahindi ni ipi?_\n"
         "• _Mahindi yana viwavi, nifanye nini?_\n"
-        "• _Mahindi yanavunwa lini?_\n"
-        "• _Bei ya mahindi Mbeya ikoje?_\n\n"
+        + _help_extra() +
         "💡 Ukitaja *zao* na *eneo* lako, jibu linakuwa sahihi zaidi.\n\n"
         "Unaweza pia kujibu kwa neno moja — nitakumbuka tuliyoongea."
     )
@@ -373,13 +386,23 @@ def build_identity_message() -> str:
     return (
         "Mimi ni *Kilimoni AI* 🌿\n\n"
         "Msaidizi wa kilimo kwa wakulima wa Tanzania. Nasaidia kuhusu "
-        "mbegu, wakati wa kupanda, mbolea, wadudu na magonjwa, "
-        "kuvuna, na bei za sokoni.\n\n"
+        + _services_line() + ".\n\n"
         "Una swali lolote la shamba lako?"
     )
 
 
 def build_capability_message() -> str:
+    from django.conf import settings
+    if getattr(settings, 'STRICT_DATA_MODE', True):
+        return (
+            "Nasaidia mambo ya shamba 🌿\n\n"
+            "• Matatizo ya mazao — wadudu, magonjwa na dalili (kwa maswali ya uchunguzi)\n"
+            "• Mbegu bora kwa eneo lako\n"
+            "• Wakati sahihi wa kupanda\n"
+            "• Udongo na ufaafu wake kwa zao\n"
+            "• Mzunguko wa mazao\n\n"
+            f"_Mfano: {_seed_example()}_"
+        )
     return (
         "Nasaidia mambo ya shamba 🌿\n\n"
         "• Mbegu bora kwa eneo lako\n"
