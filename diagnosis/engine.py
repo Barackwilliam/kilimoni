@@ -186,6 +186,10 @@ YES_WORDS = {'ndiyo', 'ndio', 'naam', 'yes', 'ee', 'eeh', 'nimeona', 'naona', 'i
              'zipo', 'wapo', 'yupo', 'yapo', 'kuna', 'nimewaona', 'nimeiona', 'sawa'}
 NO_WORDS = {'hapana', 'sijaona', 'hakuna', 'hamna', 'siyo', 'sio', 'no', 'sioni',
             'haipo', 'hazipo', 'hawapo', 'hayapo', 'la'}
+UNKNOWN_WORDS = {'sijui', 'sielewi', 'sikumbuki'}
+# Kifungu chenye neno la kukana hakihesabiwi kama dalili ("sijaona wadudu wala funza")
+NEGATION_WORDS = {'sijaona', 'sioni', 'hakuna', 'hamna', 'hapana', 'hayapo', 'hazipo', 'hawapo', 'haipo',
+                  'hayana', 'haina', 'hazina', 'hawana', 'sina', 'wala', 'sijawaona', 'sijauona'}
 UNKNOWN_PHRASES = ('sijui', 'sina uhakika', 'sielewi', 'sikumbuki', 'haijulikani')
 CANCEL_WORDS = ('acha', 'ghairi', 'basi', 'sitaki', 'stop', 'swali jingine', 'swali lingine')
 SPREAD_STEMS = ('inaenea', 'yanaenea', 'zinaenea', 'linaenea', 'kuenea', 'haraka', 'ghafla')
@@ -212,6 +216,12 @@ def _words(text):
 
 def _tokens(text):
     return {w for w in _words(text) if len(w) >= 4 and w not in STOPWORDS}
+
+
+def strip_negated(text):
+    """Ondoa vifungu vilivyokanushwa: "sijaona wadudu wala funza. Ila mvua ni shida" → "Ila mvua ni shida"."""
+    clauses = re.split(r'[.,;:!?\n]+|\b(?:ila|lakini|bali|ingawa)\b', text or '')
+    return '. '.join(c for c in clauses if c and c.strip() and not (set(_words(c)) & NEGATION_WORDS))
 
 
 def _same(a, b):
@@ -346,11 +356,23 @@ TYPO_TARGETS = (('hapana', 'no'), ('sijaona', 'no'), ('hakuna', 'no'), ('ndiyo',
 
 
 def parse_answer(text):
+    """
+    Neno la jibu linalokuja KWANZA ndilo jibu: "Ndiyo, nimeona kinyesi kama vumbi la mbao"
+    ni ndiyo (live: 'la' ndani ya "vumbi la mbao" lilisomwa kama "hapana" na kukataa FAW).
+    """
     low = (text or '').lower()
+    seq = _words(low)
+    for i, w in enumerate(seq[:6]):
+        if w in UNKNOWN_WORDS:
+            return 'unknown'
+        if w in NO_WORDS and (w != 'la' or i == 0):
+            return 'no'
+        if w in YES_WORDS and w not in ('kuna', 'sawa'):
+            return 'yes'
     if any(p in low for p in UNKNOWN_PHRASES):
         return 'unknown'
-    words = set(_words(low))
-    if words & NO_WORDS:
+    words = set(seq)
+    if words & (NO_WORDS - {'la'}):
         return 'no'
     if words & YES_WORDS:
         return 'yes'
@@ -411,7 +433,7 @@ def match_candidates(crop, text, stage=None, own_text=None):
     Rudisha (candidates, matches). candidates = {cause_id: {...}}.
     Kila kisababishi kinapata score ya mwanzo kutoka chanzo kimoja tu.
     """
-    farmer = _tokens(text)
+    farmer = _tokens(strip_negated(text))
     min_ratio = get_setting('symptom_match_ratio')
     found = {}   # cid -> list ya (priority, score, source_id, matched_words)
 
@@ -420,7 +442,7 @@ def match_candidates(crop, text, stage=None, own_text=None):
             found.setdefault(cid, []).append((priority, score, source, words))
 
     # Maneno mahususi aliyoyasema mkulima mwenyewe (bila maneno yaliyoongezwa na AI)
-    own = _farmer_specific(own_text) if own_text is not None else None
+    own = _farmer_specific(strip_negated(own_text)) if own_text is not None else None
 
     def matches(phrase):
         hit, ratio = _overlap(farmer, phrase)

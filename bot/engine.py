@@ -751,6 +751,22 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
         if handled is not None:
             return handled
 
+    # ── Swali kuhusu maji/ukame/mbolea kama chanzo cha tatizo ──
+    if is_abiotic_question(normalized):
+        crop = detect_crop(normalized) or _recent_crop(user) or (
+            Crop.objects.filter(id=user.last_crop_id).first() if user.last_crop_id else None)
+        return _abiotic_reply(user, raw_message, normalized, crop, start_time, message_id)
+
+    # ── Swali la kufuatilia utambuzi uliotolewa karibuni ("si dalili za FAW? nifanye nini?") ──
+    _dx = _diagnosis_followup(user, normalized)
+    if _dx:
+        response = _dx
+        _log_all(user, raw_message, normalized, None, None, '', None, response, True,
+                 start_time, message_id=message_id,
+                 trace={'mode': 'rules_engine', 'decision': 'diagnosis_followup',
+                        'diagnosis': (user.session_state or {}).get('last_dx', {}).get('cid')})
+        return response
+
     # ── Malalamiko bila swali jipya ("Mbona sijauliza swali hilo?") ──
     # Live ilijibiwa "Hilo silijui vizuri 😅" kana kwamba si swali la kilimo.
     if _is_complaint(normalized) and not _is_new_question(normalized):
@@ -1559,6 +1575,8 @@ def _rx_reply(user, state, raw_message, normalized, response, trace, done,
     """Hifadhi hali ya uchunguzi, rekodi trace, rudisha jibu."""
     crop = Crop.objects.filter(id=state.get('crop_id')).first() if state.get('crop_id') else None
     _save_rx(user, None if done else state)
+    if done and trace.get('decision') == 'diagnosed':
+        _remember_diagnosis(user, state, trace, response)
     if crop and user.last_crop_id != crop.id:
         user.last_crop_id = crop.id
         user.save(update_fields=['last_crop_id'])
@@ -1648,6 +1666,114 @@ def knowledge_gap_message(topic):
 RECENT_CROP_MINUTES = 30
 
 
+# ── Maji / ukame / mbolea (hali za mazingira) ──
+# Live 14 Nov: "ardhi imekauka, mbolea sikuweka — hiyo inaweza kuwa sababu?" ilipuuzwa na bot
+# ikaendelea na maswali ya wadudu, kisha "mbona hunijibu swali langu?" ikajibiwa kwa mfano wa mbegu.
+# MHD-007 haina kanuni za hali hizi, kwa hiyo tunajibu swali kwa ukweli bila kubuni utambuzi.
+ABIOTIC = re.compile(
+    r'\b(ukame|hakuna mvua|mvua (hakuna|haipo|imekata|imegoma|ni shida|kidogo|zimezingua|imezingua|haijanyesha)'
+    r'|ardhi (imekauka|kavu|ni kavu)|udongo (umekauka|mkavu|ni mkavu)|ukosefu wa maji|maji (hakuna|kidogo|ni shida)'
+    r'|sikuweka mbolea|sijaweka mbolea|hatukuweka mbolea|bila mbolea|mbolea (pia )?(sikuweka|sijaweka|hatukuweka)'
+    r'|virutubisho|upungufu wa (mbolea|naitrojeni|nitrojeni|virutubisho))\b')
+ABIOTIC_ASK = re.compile(
+    r'\?|\b(inaweza|yaweza|huenda|sababu|chanzo|unadhani|au ni|ni hiyo|ndiyo inasababisha|inasababisha'
+    r'|nifanyeje|nifanye nini)\b')
+
+
+def is_abiotic_question(normalized):
+    return bool(ABIOTIC.search(normalized) and ABIOTIC_ASK.search(normalized))
+
+
+def _abiotic_reply(user, raw_message, normalized, crop, start_time, message_id):
+    name = crop.crop_name_sw if crop else 'mimea'
+    sess = dict(user.session_state or {})
+    repeat = time.time() - float(sess.get('abiotic_at', 0)) < RECENT_CROP_MINUTES * 60
+    sess['abiotic_at'] = time.time()
+    user.session_state = sess
+    user.save(update_fields=['session_state'])
+    if repeat:
+        # Asirudishiwe jibu lilelile (kigezo 1): jibu fupi, la moja kwa moja
+        response = ("Samahani kama jibu langu halikuwa wazi. 🙏 Kwa ufupi:\n\n"
+                    "• Kwa uliyoniambia, sioni ushahidi wa wadudu au magonjwa niliyo na taarifa zake.\n"
+                    "• Ukame na kukosa mbolea *vinaweza* kuwa chanzo, lakini data yangu haina kanuni za kuthibitisha "
+                    "hilo — kwa hiyo sitakupa jibu la kubahatisha.\n"
+                    "• Usinyunyizie dawa ya wadudu kwa sasa.\n\n"
+                    "📞 Afisa ugani akikagua shamba na udongo atakupa uhakika na ushauri wa mbolea na maji.")
+        _log_all(user, raw_message, normalized, crop, None, '', None, response, True, start_time,
+                 message_id=message_id, trace={'mode': 'profile', 'decision': 'abiotic_question', 'repeat': True})
+        return response
+    opener = ("Samahani kwa kutokujibu swali lako moja kwa moja. 🙏" if _is_complaint(normalized)
+              else "Swali zuri, asante kwa kunieleza hali ya shamba lako. 🙏")
+    lines = [opener, '',
+             "Hali kama *ukame* au *kutoweka mbolea* inaweza kuchangia majani kuwa ya njano. Lakini kwa "
+             "uaminifu: taarifa zangu za uchunguzi zilizothibitishwa kwa sasa zinahusu *wadudu na magonjwa* tu "
+             "— hazina kanuni za upungufu wa maji au virutubisho. Kwa hiyo *siwezi kuthibitisha* kama hicho "
+             "ndicho chanzo, na sitakisia."]
+    profile = None
+    if crop:
+        from crops.models import CropProfile
+        profile = CropProfile.objects.filter(crop=crop).exclude(fertilizer_top_dressing='').first()
+    if profile:
+        lines += ['', f"*Kuhusu mbolea ya kukuzia {name}* (kutoka taarifa zangu):", profile.fertilizer_top_dressing]
+    lines += ['', "*Hatua salama za sasa:*",
+              "• Kagua mimea sehemu tofauti za shamba: kama huoni wadudu, funza wala mistari/madoa, "
+              "huenda tatizo si la wadudu au magonjwa",
+              "• *Usinyunyizie dawa ya wadudu* kabla tatizo halijathibitishwa",
+              '', "📞 *Afisa ugani* wa kata yako anaweza kukagua shamba na udongo, na kukushauri kuhusu "
+              "maji na mbolea inayofaa."]
+    response = '\n'.join(lines)
+    _log_all(user, raw_message, normalized, crop, None, '', None, response, True, start_time,
+             message_id=message_id, trace={'mode': 'profile', 'decision': 'abiotic_question',
+                                           'data_used': 'CropProfile.fertilizer_top_dressing' if profile else ''})
+    _log_unresolved(user, raw_message, normalized, crop, None, response)
+    return response
+
+
+# ── Kufuatilia utambuzi uliotolewa ──
+FOLLOWUP = re.compile(r'\b(nifanye nini|nifanyeje|hatua gani|dawa gani|nitumie dawa|nitumie nini|nichanganye'
+                      r'|kiasi gani cha dawa|mililita|ml ngapi|nitibu|tiba yake)\b')
+DOSAGE = re.compile(r'\b(dawa gani|nitumie dawa|nichanganye|mililita|ml ngapi|kiasi gani cha dawa|bomba la lita)\b')
+
+
+def _remember_diagnosis(user, state, trace, response):
+    actions = ''
+    if '*Hatua za kuchukua:*' in response:
+        actions = response.split('*Hatua za kuchukua:*', 1)[1].split(rx.DISCLAIMER)[0].strip()
+    sess = dict(user.session_state or {})
+    sess['last_dx'] = {'cid': trace.get('diagnosis'), 'crop_id': state.get('crop_id'), 'at': time.time(),
+                       'confidence': trace.get('confidence'), 'actions': actions}
+    user.session_state = sess
+    user.save(update_fields=['session_state'])
+
+
+def _diagnosis_followup(user, normalized):
+    dx = (user.session_state or {}).get('last_dx')
+    if not dx or time.time() - float(dx.get('at', 0)) > RECENT_CROP_MINUTES * 60:
+        return ''
+    cause = rx._cause(dx['cid'])
+    if cause is None:
+        return ''
+    name = rx._cause_name(cause)
+    low = normalized.lower()
+    name_words = [w for w in re.findall(r'[a-z]+', name.lower()) if len(w) >= 5]
+    mentions = any(w in low for w in name_words)
+    # Maelezo ya dalili mpya bila kutaja tatizo lililotambuliwa = uchunguzi mpya, si kufuatilia
+    new_symptoms = not rx.is_vague(low)
+    if not (mentions or (FOLLOWUP.search(low) and not new_symptoms)):
+        return ''
+    conf = dx.get('confidence')
+    lines = [("Ndiyo. " if mentions else '') + f"Kwa majibu uliyonipa, tatizo linaloendana zaidi ni *{name}*"
+             + (f" (uhakika {round(conf * 100)}%)." if conf else '.')]
+    if dx.get('actions'):
+        lines += ['', '*Hatua za kuchukua:*', dx['actions']]
+    if DOSAGE.search(low):
+        lines += ['', "*Kuhusu dawa na kiasi cha kuchanganya:* sitoi jina la dawa wala kipimo chake. "
+                      "Ukihitaji dawa, nunua iliyosajiliwa kwa duka la pembejeo, fuata maelekezo ya *kibandiko* "
+                      "chake, na mshirikishe *afisa ugani* kwanza."]
+    lines += ['', rx.DISCLAIMER]
+    return '\n'.join(lines)
+
+
 def _recent_crop(user):
     """Zao la ujumbe wa mwisho wa mkulima, ikiwa ulikuwa ndani ya dakika 30."""
     from datetime import timedelta
@@ -1732,6 +1858,12 @@ def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_i
                  start_time, message_id=message_id,
                  trace={'mode': 'rules_engine', 'decision': 'cancelled'})
         return response
+
+    # Mkulima anauliza kama ni maji/ukame/mbolea → mjibu swali lake (live: "mbona hunijibu swali langu?")
+    if state['phase'] != 'crop' and is_abiotic_question(normalized):
+        _save_rx(user, None)
+        crop = Crop.objects.filter(id=state.get('crop_id')).first() if state.get('crop_id') else None
+        return _abiotic_reply(user, raw_message, normalized, crop, start_time, message_id)
 
     # Mkulima amebadilisha mada ("jinsi ya kupanda mahindi…") au analalamika
     # ("nimeuliza hatua za kupanda") → acha uchunguzi, shughulikia ujumbe wake.
