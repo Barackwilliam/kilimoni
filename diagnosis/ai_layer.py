@@ -57,7 +57,7 @@ def available():
         return False
 
 
-def _chat(system, user, max_tokens=900):
+def _chat(system, user, max_tokens=900, timeout=20):
     """Wito mmoja kwa Groq (JSON mode). Rudisha dict au None. Tests hu-patch hii."""
     import requests
     from decouple import config
@@ -73,11 +73,11 @@ def _chat(system, user, max_tokens=900):
     }
     headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
     try:
-        resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=20)
+        resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=timeout)
         if resp.status_code == 400:
             # Model isiyokubali JSON mode — jaribu tena bila hiyo (prompt inaomba JSON)
             body.pop('response_format', None)
-            resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=20)
+            resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=timeout)
         resp.raise_for_status()
         content = (resp.json()['choices'][0]['message'].get('content') or '').strip()
         if not content:

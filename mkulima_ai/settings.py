@@ -244,6 +244,9 @@ GROQ_REASONING = config('GROQ_REASONING', default='low')
 # AI inatumika kwa lugha tu — haitungi majibu ya bure, na majibu ya demo ya awali
 # (scripts/seed_data.py: bei za 2024, majina ya dawa n.k.) hayatumwi kwa wakulima.
 STRICT_DATA_MODE = config('STRICT_DATA_MODE', default=True, cast=bool)
+# Kuelewa kwanza: kila ujumbe unasomwa na AI (lugha tu) kujaza fomu kabla ya kwenda kwenye
+# dataset. False = njia ya zamani ya maneno tu.
+UNDERSTAND_FIRST = config('UNDERSTAND_FIRST', default=True, cast=bool)
 
 # ─────────────────────────────────────────────
 #  Malipo — JamiiTek Digital Agency
