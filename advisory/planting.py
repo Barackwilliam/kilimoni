@@ -59,9 +59,14 @@ def _norm(text):
     return ' '.join(re.findall(r"[a-z0-9']+", (text or '').lower()))
 
 
+# "nilime au niache kwanza?", "nipande au nisubiri?" — uamuzi wa kupanda sasa
+DECIDE_RE = re.compile(r'\b(nilime|nipande|tulime|tupande|nianze kulima|nianze kupanda)\b.*'
+                       r'\b(niache|nisubiri|tusubiri|tuache|kwanza|sasa hivi)\b')
+
+
 def wants_planting(text, intent=None):
     low = _norm(text)
-    if any(s in low for s in PLANT_STEMS):
+    if any(s in low for s in PLANT_STEMS) or DECIDE_RE.search(low):
         return True
     return getattr(intent, 'intent_name', '') in ('planting_time', 'weather_planting_decision')
 

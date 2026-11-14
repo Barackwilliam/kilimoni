@@ -226,7 +226,8 @@ def _prompt(text, pending, turns, crops):
         "[bot imeuliza swali] \"sijaona wadudu, ila mvua haijanyesha mwezi mzima, ndio sababu?\" → goal abiotic, answer no\n"
         "\"mbegu ipi inavumilia ukame?\" → goal seed\n"
         "\"nataka kujua bei ya maharage\" → goal gap, topic \"bei na masoko\"\n"
-        "\"umenishauri nichome mimea bila kuniuliza chochote\" → goal challenge\n"
+        "\"umenishauri nichome mimea bila kuniuliza chochote\" → goal challenge (TU kama bot imetoa ushauri)\n"
+        "\"jua ni kali sana, nilime au niache kwanza?\" → goal planting\n"
         "[bot imetoa utambuzi] \"sawa nimeelewa\" → goal thanks\n\n"
         'JSON: {"goal": "...", "topic": null, "crop": null, "place": null, "answer": null, '
         '"affirmed": [], "denied": [], "question": null}'
@@ -297,7 +298,20 @@ def ai_frame(text, pending='', turns=(), normalized=None):
 RULE_UNSURE = {'unclear', 'offtopic'}
 
 
-def context_check(f, pending):
+ADVICE_MARKERS = ('hatua za kuchukua', 'tatizo linalowezekana', 'ondoa mimea', 'ichome', 'nyunyiz',
+                  'mbegu zinazofaa', 'unaweza kupanda', 'subiri kwanza', 'ningependekeza', 'pendekez')
+
+
+def advice_recent(user, limit=3):
+    """Bot imetoa ushauri kwenye majibu yake ya karibuni? ('challenge' inahitaji ushauri wa kupinga.)"""
+    from bot.models import Conversation
+    if not user:
+        return False
+    rows = Conversation.objects.filter(user=user, message_direction='outbound').order_by('-id')[:limit]
+    return any(m in (r.raw_message or '').lower() for r in rows for m in ADVICE_MARKERS)
+
+
+def context_check(f, pending, advice=True):
     """
     AI ilichanganya goals za muktadha (live eval): 'answer' ambapo bot haikuuliza chochote,
     'followup' bila utambuzi uliotangulia. Goal lisilowezekana kwa muktadha huu → 'unclear'.
@@ -306,6 +320,10 @@ def context_check(f, pending):
         f['goal'] = 'unclear'
     if f['goal'] == 'followup' and pending != 'after_diagnosis':
         f['goal'] = 'answer' if pending in ANSWER_PENDING else 'unclear'
+    if f['goal'] == 'challenge' and not advice:
+        # Live 15 Nov: "jua ni kali sana nilime au niache kwanza" ilisomwa kama changamoto
+        # na bot ikaomba radhi kwa ushauri ambao haikuwahi kutoa
+        f['goal'] = 'unclear'
     return f
 
 
@@ -339,7 +357,7 @@ def understand(text, user=None, pending=None, normalized=None, use_ai=True):
         try:
             ai = ai_frame(text, pending, recent_turns(user), normalized)
             if ai is not None:
-                ai = context_check(ai, pending)
+                ai = context_check(ai, pending, advice=advice_recent(user) if user else True)
         except Exception as e:                     # AI isiangushe mazungumzo
             logger.error("[understand] AI error: %s", e)
             ai = None
