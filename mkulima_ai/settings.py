@@ -246,6 +246,11 @@ GROQ_UNDERSTAND_MODEL = config('GROQ_UNDERSTAND_MODEL', default='')
 # Model mbadala (kwa mpangilio) model ya kwanza ikifika kikomo cha maombi (429). Kila model
 # ina vikomo vyake kwenye akaunti moja. Tenganisha kwa koma; tupu = hakuna mbadala.
 GROQ_FALLBACK_MODELS = config('GROQ_FALLBACK_MODELS', default='openai/gpt-oss-20b')
+# AI kama mwandishi wa majibu ya data (bot/writer.py) — maelezo ya kawaida badala ya fomu.
+AI_WRITER = config('AI_WRITER', default=True, cast=bool)
+GROQ_WRITER_MODEL = config('GROQ_WRITER_MODEL', default='')
+# 'ai_first' = AI inasoma kila ujumbe kwanza (kanuni ni akiba); 'rules_first' = kanuni kwanza.
+UNDERSTAND_MODE = config('UNDERSTAND_MODE', default='ai_first')
 # Kuelewa kwanza: kila ujumbe unasomwa na AI (lugha tu) kujaza fomu kabla ya kwenda kwenye
 # dataset. False = njia ya zamani ya maneno tu.
 UNDERSTAND_FIRST = config('UNDERSTAND_FIRST', default=True, cast=bool)

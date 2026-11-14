@@ -47,11 +47,8 @@ def build_greeting(is_returning: bool = False, last_crop: str = '') -> str:
     tunamkumbuka na kuendelea pale tulipoishia.
     """
     if is_returning:
-        opening = _pick([
-            "Karibu tena! 🌿",
-            "Habari yako! 🌿",
-            "Shikamoo, karibu tena. 🌿",
-        ])
+        # Bot haitoi salamu za heshima/rika ("Shikamoo") — inakaribisha tu
+        opening = "Karibu tena! 🌿"
         if last_crop:
             return (
                 f"{opening}\n\n"

@@ -61,7 +61,7 @@ class UnderstandTests(TestCase):
         llm = FrameLLM({msg: fr('diagnosis', crop='Kahawa ya Brazil', affirmed=['majani yana mashimo', 'mmea umedumaa'])})
         with patch('diagnosis.ai_layer._chat', llm):
             f = understand.understand(msg, None, pending='')
-        self.assertEqual(f['source'], 'rules+ai')                         # kanuni: diagnosis; AI: dalili
+        self.assertEqual(f['source'], 'ai')                               # AI inasoma kwanza (ai_first)
         self.assertIsNone(f['crop'])
         self.assertEqual(f['affirmed'], ['majani yana mashimo'])          # "umedumaa" hakulisema
 
@@ -222,3 +222,88 @@ class CombineTests(TestCase):
         rules = understand.empty('rules')                                           # kanuni hazijaelewa
         ai = understand.empty('ai'); ai.update(goal='soil')
         self.assertEqual(understand.combine(ai, rules)['goal'], 'soil')
+
+
+class WriterTests(TestCase):
+    """AI kama mwandishi: maelezo ya kawaida, lakini hakuna ukweli mpya."""
+
+    DRAFT = ("🌽 *Mbegu za Mahindi — Kondoa*\n\nNingependekeza kwanza SC 403 kwa sababu hukomaa mapema "
+             "(siku 75–90).\n\n⚠️ Thibitisha upatikanaji wa mbegu dukani.\n\n"
+             "_Ushauri huu unatokana na taarifa za kitaalamu za Kilimoni AI; si mbadala wa afisa ugani._")
+    TRACE = {'mode': 'seed_advisor', 'decision': 'recommended'}
+
+    def test_validation_rejects_new_facts(self):
+        from bot.writer import validate
+        ok = "Kwa Kondoa, mbegu inayofaa zaidi ni *SC 403* kwa sababu hukomaa mapema, ndani ya siku 75 hadi 90."
+        self.assertIsNone(validate(ok, self.DRAFT))
+        self.assertIn('namba mpya', validate(ok + " Itakupa magunia 30 kwa ekari.", self.DRAFT))
+        self.assertIsNotNone(validate(ok + " Au tumia DK 8031.", self.DRAFT))
+        self.assertIn('mwezi mpya', validate(ok + " Panda mwezi Februari kwa uhakika.", self.DRAFT))
+        self.assertIsNotNone(validate(ok + " Nyunyizia dawa ya kuua wadudu.", self.DRAFT))
+
+    @override_settings(GROQ_API_KEY='x')
+    def test_writes_naturally_and_keeps_warnings(self):
+        from bot import writer
+        good = {'text': "Kwa shamba lako la Kondoa, ningekushauri uanze na *SC 403*. Inakomaa mapema — "
+                        "kati ya siku 75 na 90 — kwa hiyo inafaa mvua zikiwa chache."}
+        with patch('diagnosis.ai_layer._chat', return_value=good):
+            text, info = writer.write(self.DRAFT, 'mbegu gani nipande kondoa', self.TRACE)
+        self.assertEqual(info['writer'], 'ai')
+        self.assertIn('ningekushauri', text)
+        self.assertIn('⚠️ Thibitisha', text)                               # tahadhari ya rasimu inabaki
+        self.assertIn('Ushauri huu unatokana', text)
+
+    @override_settings(GROQ_API_KEY='x')
+    def test_invented_reply_falls_back_to_draft(self):
+        from bot import writer
+        bad = {'text': "Panda SC 403 au DK 8031, utapata magunia 40 kwa ekari ukiweka DAP gramu 50."}
+        with patch('diagnosis.ai_layer._chat', return_value=bad):
+            text, info = writer.write(self.DRAFT, 'mbegu gani', self.TRACE)
+        self.assertEqual(text, self.DRAFT)
+        self.assertIn('writer_rejected', info)
+
+    @override_settings(GROQ_API_KEY='x')
+    def test_menus_and_questions_are_never_rewritten(self):
+        from bot import writer
+        with patch('diagnosis.ai_layer._chat', return_value={'text': 'x' * 100}) as chat:
+            text, info = writer.write('Tafadhali taja wilaya yako', 'mbegu', {'mode': 'seed_advisor',
+                                                                            'decision': 'need_location'})
+        self.assertEqual(text, 'Tafadhali taja wilaya yako')
+        chat.assert_not_called()
+
+
+class GreetingTests(TestCase):
+    def test_bot_never_says_shikamoo(self):
+        from bot.messages import build_greeting
+        for _ in range(20):
+            self.assertNotIn('Shikamoo', build_greeting(is_returning=True, last_crop='Mahindi'))
+
+
+@override_settings(GROQ_API_KEY='x')
+class AIFirstEndToEndTests(UnderstandTests):
+    """AI inasoma kwanza → moduli ya data → AI inaandika jibu kutoka kwenye rasimu ya data."""
+
+    def test_reads_first_then_writes_from_data(self):
+        from bot import writer
+        msg = 'rafiki, nisaidie kujua mbegu itakayonifaa huku kikore'
+        calls = {'understand': 0, 'write': 0}
+
+        def fake(system, user, max_tokens=900, **kw):
+            if system == understand.SYSTEM:
+                calls['understand'] += 1
+                return fr('seed', crop='Mahindi', place='Kikore')
+            if system == writer.SYSTEM:
+                calls['write'] += 1
+                draft = user.split('RASIMU (ukweli wote unaoruhusiwa):\n', 1)[1]
+                name = re.search(r'SC \d+', draft).group(0)
+                return {'text': f"Kwa shamba lako la Kikore, mbegu ninayokushauri kwanza ni *{name}*, kwa sababu "
+                                "inaendana na mvua na hali ya kanda yako kama data yangu inavyoonyesha."}
+            return None
+        with patch('diagnosis.ai_layer._chat', fake):
+            r = self.ask(fake, '255700002001', msg)[0]
+        self.assertEqual(calls, {'understand': 1, 'write': 1})
+        self.assertIn('Kwa shamba lako la Kikore', r)
+        from bot.models import Conversation
+        last = Conversation.objects.filter(message_direction='outbound').latest('id')
+        self.assertEqual(last.raw_message, r)
+        self.assertEqual(last.trace['writer'], 'ai')
