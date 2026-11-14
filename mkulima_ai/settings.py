@@ -240,6 +240,10 @@ GREENAPI_TOKEN = config('GREENAPI_TOKEN', default='')
 GROQ_API_KEY = config('GROQ_API_KEY', default='')
 GROQ_MODEL = config('GROQ_MODEL', default='openai/gpt-oss-120b')
 GROQ_REASONING = config('GROQ_REASONING', default='low')
+# Hali ya data pekee (makubaliano na mteja): majibu yanatoka kwenye dataset za MHD tu.
+# AI inatumika kwa lugha tu — haitungi majibu ya bure, na majibu ya demo ya awali
+# (scripts/seed_data.py: bei za 2024, majina ya dawa n.k.) hayatumwi kwa wakulima.
+STRICT_DATA_MODE = config('STRICT_DATA_MODE', default=True, cast=bool)
 
 # ─────────────────────────────────────────────
 #  Malipo — JamiiTek Digital Agency

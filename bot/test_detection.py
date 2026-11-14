@@ -401,3 +401,45 @@ class LiveRound4Tests(CoverageTests):
         from bot.engine import detect_location
         for text in ('nimeanza mwanzo', 'nataka kusoma', 'kahawa yangu'):
             self.assertEqual(detect_location(text), '')
+
+
+class StrictDataModeTests(CoverageTests):
+    """Live (maswali ya kuvuna/kuhifadhi/bei/mbolea/kupalilia): majibu ya demo na AI ya bure yalibuni
+    bei za 2024, majina ya dawa (Actellic, Racumin) na mbinu. Sasa: data ya MHD tu, au ukweli."""
+
+    def ask(self, phone, *msgs):
+        from unittest import mock
+        from bot.engine import process_message
+        with mock.patch('bot.groq_ai.get_groq_response', side_effect=AssertionError('AI ya bure haitumiki')):
+            return [process_message(phone, m) for m in msgs]
+
+    def setUp(self):
+        from crops.models import AnswerTemplate, Crop, Intent
+        intent = Intent.objects.create(intent_name='storage_advice')
+        AnswerTemplate.objects.create(answer_reference='maize_storage', intent=intent,
+                                      crop=Crop.objects.get(crop_name_en='Maize'),
+                                      answer_text_sw='Nyunyiza Actellic Super', active_status='active')
+
+    def test_live_questions_get_data_or_honest_gap(self):
+        msgs = ['Jinsi ya kupalilia nitumie mbinu gani?', 'Jinsi ya kuvuna mahindi', 'Jinsi ya kuhifadhi mahindi',
+                'Naomba kufahamu hali ya masoko', 'Bei za soko za mahindi', 'Hali ya hewa ikoje?',
+                'Vifaa gani vya kutumia wakati wa kuandaa shamba?', 'Hapa busokelo nitumie mbolea gani?']
+        r = self.ask('255753000011', *msgs)
+        for reply in r:
+            self.assertNotIn('Actellic', reply)
+            self.assertNotRegex(reply.lower(), r'tzs|\d+\s*-\s*\d+\s*/kg|gramu')
+        self.assertIn('siku', r[1])                                   # muda wa kukomaa kutoka MHD-003A
+        for i in (0, 2, 3, 4, 5, 6, 7):
+            self.assertIn('sitabuni', r[i], msgs[i])
+
+    def test_kufahamu_is_not_a_plant_problem(self):
+        from bot import diagnostic as dg
+        self.assertFalse(dg.is_problem_message('naomba kufahamu hali ya masoko', None))
+        self.assertTrue(dg.is_problem_message('mimea inakufa', None))
+
+    def test_menu_offers_only_services_with_data(self):
+        from bot import diagnostic as dg
+        menu = dg.build_goal_question()
+        self.assertNotIn('Bei ya soko', menu)
+        self.assertIn('Udongo', menu)
+        self.assertEqual(dg.parse_goal_reply('4'), 'soil')

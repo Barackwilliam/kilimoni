@@ -9,6 +9,7 @@ Response → Log → Analytics
 import re
 import time
 import logging
+from django.conf import settings
 from django.utils import timezone
 from crops.models import (
     Crop, Zone, LocationMapping, CropProfile,
@@ -457,7 +458,27 @@ def detect_intent(text: str, crop=None, location: str = ''):
 # ═══════════════════════════════════════════════════════
 # MODULE 9: KNOWLEDGE RETRIEVAL ENGINE
 # ═══════════════════════════════════════════════════════
+# Majibu ya demo yaliyowekwa na scripts/seed_data.py mwanzoni mwa mradi — si data ya mteja
+# (yana bei za "2024", majina ya dawa kama Actellic/Racumin, makampuni n.k.).
+DEMO_SEED_REFS = {
+    'maize_central_zone_varieties', 'maize_disease_identification', 'maize_fertilizer_planting',
+    'maize_fertilizer_top_dressing', 'maize_harvest_time', 'maize_lake_zone_varieties',
+    'maize_market_general', 'maize_pest_identification', 'maize_planting_time_central',
+    'maize_southern_highlands_varieties', 'maize_spacing_general', 'maize_storage',
+}
+
+
+def _strict():
+    return getattr(settings, 'STRICT_DATA_MODE', True)
+
+
 def get_answer_from_db(crop, intent, zone) -> dict:
+    if _strict():
+        return _answer_from_templates(crop, intent, zone, exclude=DEMO_SEED_REFS, profiles=False)
+    return _answer_from_templates(crop, intent, zone)
+
+
+def _answer_from_templates(crop, intent, zone, exclude=(), profiles=True) -> dict:
     """
     Tafuta jibu sahihi kutoka database kwa utaratibu:
     1. crop + intent + zone (specific)
@@ -489,11 +510,11 @@ def get_answer_from_db(crop, intent, zone) -> dict:
     # 0. Jaribu intent halisi, kisha zinazofanana nayo
     for candidate in intents_to_try:
         if crop and zone:
-            answer = AnswerTemplate.objects.filter(
+            answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
                 crop=crop, intent=candidate, zone=zone, active_status='active'
             ).first()
         if not answer and crop:
-            answer = AnswerTemplate.objects.filter(
+            answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
                 crop=crop, intent=candidate, active_status='active'
             ).first()
         if answer:
@@ -501,19 +522,19 @@ def get_answer_from_db(crop, intent, zone) -> dict:
 
     # 1. Most specific: crop + intent + zone
     if not answer and crop and intent and zone:
-        answer = AnswerTemplate.objects.filter(
+        answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
             crop=crop, intent=intent, zone=zone, active_status='active'
         ).first()
 
     # 2. crop + intent (no zone)
     if not answer and crop and intent:
-        answer = AnswerTemplate.objects.filter(
+        answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
             crop=crop, intent=intent, active_status='active'
         ).first()
 
     # 3. intent only
     if not answer and intent:
-        answer = AnswerTemplate.objects.filter(
+        answer = AnswerTemplate.objects.exclude(answer_reference__in=exclude).filter(
             intent=intent, active_status='active'
         ).first()
 
@@ -549,7 +570,7 @@ def get_answer_from_db(crop, intent, zone) -> dict:
         if not profile:
             profile = CropProfile.objects.filter(crop=crop).first()
 
-        if profile and intent:
+        if profile and intent and profiles:
             field_map = {
                 'planting_time': profile.planting_window_simple,
                 'spacing': profile.spacing,
@@ -926,7 +947,7 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
     # "sielewi", na linaandikwa kama pengo (UnresolvedQuery) ili mteja aone mada za kuongezea data.
     _gap = knowledge_gap_topic(normalized)
     if _gap:
-        response = knowledge_gap_message(_gap)
+        response = gap_answer(_gap, detect_crop(normalized) or crop)
         _log_all(user, raw_message, normalized, detect_crop(normalized), None, '', None, response,
                  False, start_time, message_id=message_id,
                  trace={'mode': 'profile', 'decision': 'knowledge_gap', 'topic': _gap})
@@ -1146,7 +1167,8 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
             response, _vr = dg.validate_output(response, crop.crop_name_sw, allow_chemical=False)
 
     # Bei za soko: onyo la lazima
-    if intent and intent.intent_name == 'market_question' and 'thibitisha' not in response.lower():
+    if (intent and intent.intent_name == 'market_question' and 'thibitisha' not in response.lower()
+            and 'sitabuni' not in response):
         response += (
             "\n\n⚠️ _Bei hubadilika kila siku kulingana na msimu na soko. "
             "Taarifa hii si bei ya leo — thibitisha kwenye soko la karibu "
@@ -1229,8 +1251,33 @@ def _log_unresolved(user, raw_message, normalized, crop, intent, response):
         logger.error(f"UnresolvedQuery error: {e}")
 
 
+INTENT_TOPICS = {
+    'spacing': 'nafasi za kupanda', 'fertilizer_planting': 'mbolea', 'fertilizer_top_dressing': 'mbolea',
+    'fertilizer_amount': 'mbolea', 'harvest_time': 'kuvuna', 'storage_advice': 'kuhifadhi mazao',
+    'market_question': 'bei na masoko', 'weather_planting_decision': 'hali ya hewa',
+    'pest_identification': 'wadudu', 'disease_identification': 'magonjwa',
+}
+
+
+def _no_data_answer(crop, intent):
+    """Hali ya data pekee: hakuna jibu kwenye dataset → sema ukweli, usitunge."""
+    topic = INTENT_TOPICS.get(intent.intent_name, '') if intent else ''
+    extra = ''
+    if intent and intent.intent_name == 'harvest_time' and crop:
+        return gap_answer('kuvuna', crop)
+    if intent and intent.intent_name in ('pest_identification', 'disease_identification'):
+        extra = ("\n\nKama mmea wako una tatizo, nieleze *dalili* unazoona (mf. majani yana mashimo) "
+                 "nami nitakuuliza maswali ya uchunguzi.")
+    if topic:
+        return knowledge_gap_message(topic) + extra
+    return build_fallback_message(crop, intent, '')
+
+
 def _get_ai_or_fallback(raw_message, crop, intent, location, zone, user=None) -> str:
     """Tumia Groq AI (dataset + historia ya mazungumzo) kama template haipatikani."""
+    if _strict():
+        # AI ni ya lugha tu: haitungi majibu ya kitaalamu yasiyo kwenye dataset
+        return _no_data_answer(crop, intent), True
     try:
         from bot.groq_ai import get_groq_response
         ai_response = get_groq_response(
@@ -1693,11 +1740,44 @@ KNOWLEDGE_GAPS = [
 ]
 
 
+# Hali ya data pekee: mada ambazo dataset za MHD hazina bado. Zamani zilijibiwa na majibu ya demo
+# au AI ya bure (live: "bei za takriban 2024", "Actellic Super", "maji ya baridi 15-20 °C kupalilia").
+STRICT_GAPS = [
+    (re.compile(r'\b(kuvuna|mavuno|kuvunwa|nivune|tuvune|ukomavu)\b'), 'kuvuna'),
+    (re.compile(r'\b(kuhifadhi|uhifadhi|kuhifadhiwa|ghala|nihifadhi)\b'), 'kuhifadhi mazao'),
+    (re.compile(r'\b(bei|soko|masoko|sokoni|kuuza|nauza|niuze)\b'), 'bei na masoko'),
+    (re.compile(r'\b(hali ya hewa|utabiri|hewa ikoje)\b'), 'hali ya hewa'),
+    (re.compile(r'\b(mbolea|dap|urea|can|npk|samadi)\b'), 'mbolea'),
+    (re.compile(r'\b(vifaa|zana|jembe|trekta|kuandaa shamba|maandalizi ya shamba|kulima shamba)\b'),
+     'maandalizi ya shamba na zana'),
+    (re.compile(r'\b(umwagiliaji|kumwagilia|nimwagilie)\b'), 'umwagiliaji'),
+    (re.compile(r'\b(nafasi ya kupanda|nafasi za kupanda|umbali wa kupanda|spacing)\b'), 'nafasi za kupanda'),
+]
+
+
 def knowledge_gap_topic(normalized):
     for rx_, topic in KNOWLEDGE_GAPS:
         if rx_.search(normalized):
             return topic
+    if _strict() and not dg.is_problem_message(normalized, None):
+        for rx_, topic in STRICT_GAPS:
+            if rx_.search(normalized):
+                return topic
     return ''
+
+
+def gap_answer(topic, crop):
+    """Jibu la mada isiyo na data — pamoja na kipande chochote kilichopo kwenye dataset."""
+    if topic == 'kuvuna' and crop:
+        from advisory.models import VarietyAgronomy
+        rows = [v for v in VarietyAgronomy.objects.filter(crop=crop, is_active=True)
+                if v.maturity_days_min and v.maturity_days_max][:5]
+        if rows:
+            items = '\n'.join(f"• {v.name}: siku *{v.maturity_days_min}–{v.maturity_days_max}*" for v in rows)
+            return (f"🌾 Muda wa kukomaa wa mbegu za {crop.crop_name_sw} (kutoka taarifa zangu za mbegu):\n"
+                    f"{items}\n\nHesabu kuanzia siku ya kupanda. Kuhusu dalili za kukomaa na jinsi ya kuvuna, "
+                    "bado sina taarifa zilizothibitishwa — kwa hiyo sitabuni. 📞 Afisa ugani atakusaidia.")
+    return knowledge_gap_message(topic)
 
 
 def knowledge_gap_message(topic):
@@ -1757,7 +1837,7 @@ def _abiotic_reply(user, raw_message, normalized, crop, start_time, message_id):
              "— hazina kanuni za upungufu wa maji au virutubisho. Kwa hiyo *siwezi kuthibitisha* kama hicho "
              "ndicho chanzo, na sitakisia."]
     profile = None
-    if crop:
+    if crop and not _strict():
         from crops.models import CropProfile
         profile = CropProfile.objects.filter(crop=crop).exclude(fertilizer_top_dressing='').first()
     if profile:
@@ -1887,6 +1967,10 @@ def _handle_diagnostic_turn(user, raw_message, normalized, start_time, message_i
         if route == 'diagnosis':
             return _start_diagnostic(user, raw_message, normalized,
                                      detect_crop(normalized), start_time, message_id)
+        if route == 'soil':
+            return _soil_turn(user, raw_message, normalized, detect_crop(normalized), start_time, message_id)
+        if route == 'rotation':
+            return _rotation_turn(user, raw_message, normalized, start_time, message_id)
         if route:
             sess['forced_intent'] = route
             user.session_state = sess

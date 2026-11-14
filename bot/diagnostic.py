@@ -78,7 +78,7 @@ CROP_ALIASES = {
 _PREFIX = r'(?:ya|ma|ki|vi|ku|wa|zi|li|mi|me|na|ta|ka|ji|ni|si|ha|hu|i|a|u|m|n)*'
 # Mashina mafupi yenye maana nyingine yakiendelea: kufaa/kufanya, kutumia/kutunza, umwagilia
 _STEM_GUARD = {
-    'kufa': r'(?!a|ny|ny)',
+    'kufa': r'(?![a-z])',          # kufaa, kufanya, kufahamu, kufanikiwa
     'kutu': r'(?![a-z])',
     'umwa': r'(?!g)',
     'doa': r'(?![a-z])',
@@ -137,6 +137,20 @@ def is_broad_request(text: str, crop, intent, location) -> bool:
 
 
 def build_goal_question() -> str:
+    from django.conf import settings
+    if getattr(settings, 'STRICT_DATA_MODE', True):
+        # Menyu inaonyesha tu huduma zenye data iliyothibitishwa (si mbolea/kuvuna/bei bado)
+        return (
+            "Karibu, nitafurahi kukusaidia. 🌿\n\n"
+            "Ili nikupe ushauri sahihi, niambie unahitaji msaada gani:\n\n"
+            "*1.* Tatizo shambani (ugonjwa, wadudu, dalili)\n"
+            "*2.* Mbegu bora\n"
+            "*3.* Wakati wa kupanda\n"
+            "*4.* Udongo\n"
+            "*5.* Mzunguko wa mazao\n\n"
+            "Jibu kwa namba, na ukiweza taja *zao* na *eneo* lako.\n"
+            "_Mfano: 1, mahindi, Kondoa_"
+        )
     return (
         "Karibu, nitafurahi kukusaidia. 🌿\n\n"
         "Ili nikupe ushauri sahihi, niambie unahitaji msaada gani:\n\n"
@@ -161,6 +175,10 @@ GOAL_ROUTES = {
 }
 
 
+STRICT_GOAL_ROUTES = {'1': 'diagnosis', '2': 'seed_selection', '3': 'planting_time',
+                      '4': 'soil', '5': 'rotation'}
+
+
 def parse_goal_reply(text: str):
     """
     Rudisha 'diagnosis', jina la intent, au None.
@@ -169,6 +187,9 @@ def parse_goal_reply(text: str):
     t = (text or '').strip().lower()
     m = re.match(r'^\s*([1-6])\b', t)
     if m:
+        from django.conf import settings
+        if getattr(settings, 'STRICT_DATA_MODE', True):
+            return STRICT_GOAL_ROUTES.get(m.group(1))
         return GOAL_ROUTES[m.group(1)]
     if _has_stem(t, PROBLEM_STEMS):
         return 'diagnosis'
