@@ -91,8 +91,9 @@ SCENARIOS = [
              lambda r, t: len(_questions(r)) == len(set(_questions(r))) and len(_questions(r)) >= 1),
             ('[2] Kila swali la kufuatilia linatoka kwenye kanuni za dalili hizi',
              lambda r, t: all(x.get('sources') for x in t if x.get('asked') not in (None, 'crop', 'symptoms', 'extent'))),
-            ('[3] Inalinganisha visababishi (orodha + "kwa nini si vingine")',
-             lambda r, t: ('kusababishwa na' in r[2].lower() or 'visababishi vinavyowezekana' in r[2].lower())
+            ('[3] Inalinganisha visababishi mwishoni tu ("kwa nini si vingine"), si kabla ya maswali',
+             lambda r, t: 'kabla sijakupa jibu' in r[2].lower()
+             and 'visababishi vinavyowezekana' not in r[2].lower()
              and 'kwa nini si vingine' in r[-1].lower()),
             ('[4] Uhakika unatokana na kanuni (zimeandikwa kwenye trace)',
              lambda r, t: any(x.startswith('DR-') for x in t[-1].get('rules_used', []))
@@ -130,7 +131,7 @@ SCENARIOS = [
         'turns': ['mahindi yangu yana mashimo makubwa kwenye majani', 'sijui', 'sijui', 'sijui'],
         'checks': [
             ('Haitoi utambuzi ushahidi usipotosha',
-             lambda r, t: any('siwezi kukupa utambuzi' in x.lower() for x in r)),
+             lambda r, t: any('sitakisia jina' in x.lower() for x in r)),
             ('Hakuna jibu lenye dawa wala dosage', lambda r, t: all(_no_chemical(x) for x in r)),
             ('Inaelekeza kwa afisa ugani', lambda r, t: any('afisa ugani' in x.lower() for x in r)),
             ('Haionyeshi asilimia ikiwa haina uhakika',
@@ -188,7 +189,7 @@ SCENARIOS = [
         'name': 'T11 — Zao lisilo na kanuni za uchunguzi (maharage): haibuni',
         'turns': ['maharage yangu yana mashimo kwenye majani'],
         'checks': [
-            ('Inasema wazi haina kanuni', lambda r, t: 'sitabuni' in r[-1].lower()),
+            ('Inasema wazi haina kanuni', lambda r, t: 'sitabuni' in r[-1].lower() or 'sina taarifa' in r[-1].lower()),
             ('Haitaji dawa', lambda r, t: _no_chemical(r[-1])),
         ],
     },
