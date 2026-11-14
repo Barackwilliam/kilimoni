@@ -140,7 +140,7 @@ def rule_frame(text, pending='', normalized=None):
         return done('greeting')
     if E.CHALLENGE.search(low):
         return done('challenge')
-    if E.is_abiotic_question(low):
+    if E.is_abiotic_question(low) and not seed.wants_seed(low):
         return done('abiotic')
     if E._is_complaint(low) and not E._is_new_question(low):
         return done('complaint')
@@ -155,11 +155,11 @@ def rule_frame(text, pending='', normalized=None):
         return done('where_grows')
     if coverage.wants_coverage(low):
         return done('coverage')
+    if rotation.wants_rotation(low):
+        return done('rotation')
     gap = E.knowledge_gap_topic(low)
     if gap:
         return done('gap', gap)
-    if rotation.wants_rotation(low):
-        return done('rotation')
     if ('udongo' in words or soil.wants_soil(low)) and not dg.is_problem_message(low, None):
         return done('soil')
     if planting.wants_planting(low) and not seed.mentioned_variety(low):
@@ -291,18 +291,59 @@ def ai_frame(text, pending='', turns=(), normalized=None):
     return f
 
 
+# Goals za kanuni zinazoaminika zikigundua kitu mahususi (kipimo: benki ya majaribio,
+# 15 Nov — kanuni zikisema goal mahususi zilikuwa sahihi mara nyingi kuliko AI; AI ilikuwa
+# bora pale kanuni zilipokosa: 'unclear' / 'offtopic').
+RULE_UNSURE = {'unclear', 'offtopic'}
+
+
+def context_check(f, pending):
+    """
+    AI ilichanganya goals za muktadha (live eval): 'answer' ambapo bot haikuuliza chochote,
+    'followup' bila utambuzi uliotangulia. Goal lisilowezekana kwa muktadha huu → 'unclear'.
+    """
+    if f['goal'] == 'answer' and pending not in ANSWER_PENDING:
+        f['goal'] = 'unclear'
+    if f['goal'] == 'followup' and pending != 'after_diagnosis':
+        f['goal'] = 'answer' if pending in ANSWER_PENDING else 'unclear'
+    return f
+
+
+def combine(ai, rules):
+    """
+    Fomu ya mwisho: goal la kanuni likiwa mahususi linashinda; vinginevyo goal la AI.
+    Sehemu nyingine zinajazwa na chanzo chochote chenye taarifa.
+    """
+    if ai is None:
+        return rules
+    f = dict(rules) if rules['goal'] not in RULE_UNSURE else dict(ai)
+    f['source'] = 'rules+ai' if rules['goal'] not in RULE_UNSURE else 'ai'
+    if f['goal'] == 'gap' and not f.get('topic'):
+        f['topic'] = ai.get('topic') or rules.get('topic') or ''
+    f['crop'] = rules['crop'] or ai['crop']
+    f['place'] = rules['place'] or ai['place']
+    f['answer'] = ai['answer'] or rules['answer']
+    for key in ('affirmed', 'denied', 'question'):
+        f[key] = ai.get(key) or rules.get(key) or ([] if key != 'question' else '')
+    return f
+
+
 def understand(text, user=None, pending=None, normalized=None, use_ai=True):
-    """Fomu ya ujumbe: AI kwanza (ikipatikana), kanuni kama akiba."""
+    """Fomu ya ujumbe: kanuni + AI (ikipatikana), zikiunganishwa kwa combine()."""
     pending = pending_kind(user) if pending is None else pending
-    f = None
-    if use_ai:
+    rules = rule_frame(text, pending, normalized)
+    ai = None
+    if use_ai and rules['goal'] in RULE_UNSURE | {'answer', 'diagnosis', 'complaint'}:
+        # AI inaitwa tu pale inapoongeza kitu: kanuni hazijaelewa, au tunahitaji
+        # jibu/dalili/swali la ndani (huokoa maombi — vikomo vya maombi)
         try:
-            f = ai_frame(text, pending, recent_turns(user), normalized)
+            ai = ai_frame(text, pending, recent_turns(user), normalized)
+            if ai is not None:
+                ai = context_check(ai, pending)
         except Exception as e:                     # AI isiangushe mazungumzo
             logger.error("[understand] AI error: %s", e)
-            f = None
-    if f is None:
-        f = rule_frame(text, pending, normalized)
+            ai = None
+    f = combine(ai, rules)
     f['pending'] = pending
     return f
 
