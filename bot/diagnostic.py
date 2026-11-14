@@ -175,6 +175,21 @@ GOAL_ROUTES = {
 }
 
 
+def build_crop_menu(crop_name: str, last_topic: str = '') -> str:
+    """Mkulima ametaja/amerudi kwenye zao bila swali: muulize anataka nini kuhusu zao hilo."""
+    hint = f"Mara ya mwisho uliuliza kuhusu *{last_topic}*.\n\n" if last_topic else ''
+    return (
+        f"Sawa, tuongelee *{crop_name}*. 🌿\n\n{hint}"
+        f"Unataka kujua nini kuhusu {crop_name}?\n\n"
+        "*1.* Tatizo shambani (ugonjwa, wadudu, dalili)\n"
+        "*2.* Mbegu bora\n"
+        "*3.* Wakati wa kupanda\n"
+        "*4.* Udongo\n"
+        "*5.* Mzunguko wa mazao\n\n"
+        "Jibu kwa namba, au andika swali lako moja kwa moja."
+    )
+
+
 STRICT_GOAL_ROUTES = {'1': 'diagnosis', '2': 'seed_selection', '3': 'planting_time',
                       '4': 'soil', '5': 'rotation'}
 
