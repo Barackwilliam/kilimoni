@@ -406,7 +406,7 @@ def _mentioned_parts(text):
 
 # ─────────────────────────── 1–2. Visababishi ───────────────────────────
 
-def match_candidates(crop, text, stage=None):
+def match_candidates(crop, text, stage=None, own_text=None):
     """
     Rudisha (candidates, matches). candidates = {cause_id: {...}}.
     Kila kisababishi kinapata score ya mwanzo kutoka chanzo kimoja tu.
@@ -419,9 +419,16 @@ def match_candidates(crop, text, stage=None):
         if cid and score is not None:
             found.setdefault(cid, []).append((priority, score, source, words))
 
+    # Maneno mahususi aliyoyasema mkulima mwenyewe (bila maneno yaliyoongezwa na AI)
+    own = _farmer_specific(own_text) if own_text is not None else None
+
     def matches(phrase):
         hit, ratio = _overlap(farmer, phrase)
-        return hit if ratio >= min_ratio and len(hit) >= min(2, len(_tokens(phrase))) else None
+        if not (ratio >= min_ratio and len(hit) >= min(2, len(_tokens(phrase)))):
+            return None
+        if own is not None and not any(_same(w, f) for w in hit for f in own):
+            return None   # kinathibitishwa na maneno ya AI tu, si ya mkulima
+        return hit
 
     # 007D: Diagnosis Decision Rules
     for r in m.DiagnosisRule.objects.filter(crop=crop, is_active=True):
@@ -781,8 +788,21 @@ COVERAGE_NOTE = ("_Kumbuka: taarifa zangu za uchunguzi kwa sasa zinahusu *wadudu
                  "data yangu — kama unashuku hivyo, afisa ugani anaweza kukagua._")
 
 
-def _reason_words(c):
-    return [w for w in c.get('matched', []) if w not in REASON_STOP and len(w) > 2][:4]
+# Maneno ya jumla yasiyothibitisha dalili yoyote peke yake
+GENERIC_SYMPTOM_WORDS = REASON_STOP | {'kuwa', 'yanaanza', 'imeanza', 'bado', 'chini', 'juu', 'wakati',
+                                       'shamba', 'mmea', 'mimea', 'majani', 'jani', 'tatizo', 'nina', 'huko',
+                                       'gani', 'kilimoni', 'wiki', 'ekari', 'nilipanda', 'zilizopita'}
+
+
+def _farmer_specific(text):
+    return {w for w in _tokens(text) if w not in GENERIC_SYMPTOM_WORDS}
+
+
+def _reason_words(c, farmer_text=''):
+    """'umetaja:' = maneno ambayo mkulima ALIYASEMA kweli, si maneno ya dataset."""
+    own = _tokens(farmer_text)
+    return [w for w in c.get('matched', []) if w not in REASON_STOP and len(w) > 2
+            and any(_same(w, f) for f in own)][:4]
 
 
 def question_message(state, spec, number):
@@ -792,7 +812,7 @@ def question_message(state, spec, number):
         lines = ["Kutokana na dalili ulizotaja, visababishi vinavyowezekana (kuanzia kinacholingana zaidi):"
                  if len(ranked) > 1 else "Kutokana na dalili ulizotaja, kisababishi kinachowezekana ni:"]
         for cid, c in ranked[:4]:
-            why = _reason_words(c)
+            why = _reason_words(c, state.get('symptom_text', ''))
             lines.append(f"• *{_cause_name(_cause(cid))}*" + (f" — umetaja: {', '.join(why)}" if why else ''))
         lines += ['', COVERAGE_NOTE, '',
                   "Nitakuuliza maswali mafupi ili kuvitofautisha. 🔍" if len(ranked) > 1 else
@@ -1083,9 +1103,20 @@ def step(state, text, crop=None):
             state['crop_age_weeks'] = parse_age_weeks(state['symptom_text'])
         state['growth_stage'] = (_stage_from_weeks(state.get('crop_age_weeks')) or _detect_stage(state['symptom_text'])
                                  or (understood or {}).get('growth_stage'))
-        cands, symptoms = match_candidates(crop, match_text, state['growth_stage'])
-        if not cands and state['growth_stage']:
-            cands, symptoms = match_candidates(crop, match_text)
+        # Maneno ya mkulima mwenyewe yakitosha kupata visababishi, AI haiongezi vingine
+        # (live 14 Nov: "majani ya njano" → AI iliongeza Fall Armyworm na Stem Borer kupitia
+        # "mmea unadumaa", ambalo mkulima hakulisema). AI inasaidia tu pale maneno yake
+        # yanapotofautiana kabisa na ya dataset ("yametobolewa" → "majani yana mashimo").
+        own = state['symptom_text']
+        cands, symptoms = {}, []
+        for own_text in (own, None):
+            for stage in ([state['growth_stage'], None] if state['growth_stage'] else [None]):
+                cands, symptoms = match_candidates(crop, match_text, stage, own_text=own_text)
+                if cands:
+                    trace['grounding'] = 'farmer_words' if own_text else 'ai_language'
+                    break
+            if cands:
+                break
         state['candidates'], state['symptoms'] = cands, symptoms
         trace['initial'] = {cid: {'score': c['score'], 'rules': list(c['rules'])} for cid, c in cands.items()}
         state['initial'] = trace['initial']
