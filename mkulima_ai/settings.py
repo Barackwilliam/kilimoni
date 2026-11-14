@@ -240,6 +240,9 @@ GREENAPI_TOKEN = config('GREENAPI_TOKEN', default='')
 GROQ_API_KEY = config('GROQ_API_KEY', default='')
 GROQ_MODEL = config('GROQ_MODEL', default='openai/gpt-oss-120b')
 GROQ_REASONING = config('GROQ_REASONING', default='low')
+# Model ya hatua ya KUELEWA (kila ujumbe). Tupu = GROQ_MODEL. Model ndogo/ya haraka ina
+# vikomo vikubwa vya maombi kwa dakika — weka hapa kama 429 zinaonekana mara kwa mara.
+GROQ_UNDERSTAND_MODEL = config('GROQ_UNDERSTAND_MODEL', default='')
 # Hali ya data pekee (makubaliano na mteja): majibu yanatoka kwenye dataset za MHD tu.
 # AI inatumika kwa lugha tu — haitungi majibu ya bure, na majibu ya demo ya awali
 # (scripts/seed_data.py: bei za 2024, majina ya dawa n.k.) hayatumwi kwa wakulima.

@@ -147,3 +147,29 @@ class EvalBankTests(TestCase):
         live = [c for c in CASES if c['src'] != 'variant']
         passed = sum(1 for c in live if not check(c, understand.rule_frame(c['msg'], c.get('pending', ''))))
         self.assertGreaterEqual(passed, 45, f'{passed}/{len(live)}')
+
+
+@override_settings(GROQ_API_KEY='x')
+class RateLimitTests(TestCase):
+    """Live: 429 Too Many Requests. AI ikikataa, tusiendelee kuiomba — kanuni zichukue nafasi mara moja."""
+
+    def tearDown(self):
+        from diagnosis import ai_layer
+        ai_layer._COOLDOWN['until'] = 0.0
+
+    def test_429_starts_cooldown_and_skips_further_calls(self):
+        from unittest.mock import MagicMock
+        from diagnosis import ai_layer
+        resp = MagicMock(status_code=429, headers={'retry-after': '30'})
+        with patch('requests.post', return_value=resp) as post:
+            self.assertIsNone(ai_layer._chat('s', 'u'))
+            self.assertTrue(ai_layer.rate_limited())
+            self.assertIsNone(ai_layer._chat('s', 'u'))
+        self.assertEqual(post.call_count, 1)                         # ombi la pili halikutumwa
+
+    def test_understanding_falls_back_to_rules_while_limited(self):
+        import time
+        from diagnosis import ai_layer
+        ai_layer._COOLDOWN['until'] = time.time() + 60
+        f = understand.understand('Jinsi ya kuvuna', None, pending='')
+        self.assertEqual((f['source'], f['goal']), ('rules', 'gap'))
