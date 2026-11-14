@@ -198,7 +198,8 @@ class ExtensionOfficerFlowTests(TestCase):
 
     def test_numbered_answer_with_age_continues_diagnosis(self):
         r = self.ask('255700000702', self.TITO, '2, wiki 6')
-        self.assertIn('Funza jeshi vamizi', r[1])
+        self.assertNotIn('Funza jeshi', r[1])                    # hakuna kisababishi kabla ya maswali
+        self.assertIn('Kabla sijakupa jibu lolote', r[1])
         self.assertIn('Swali 1', r[1])
 
     def test_age_and_choice_parsing(self):
@@ -270,12 +271,27 @@ class ClientTestRound2(TestCase):
         self.assertIn('Chagua namba', r[1])
         self.assertNotIn('ichome', r[1])
 
-    def test_differential_shows_reasons_and_data_limits(self):
+    CAUSES = ('MLN', 'Streak', 'Fall Armyworm', 'Stem Borer', 'Funza', 'Kipekecha', 'Ugonjwa', 'Panzi')
+
+    def test_no_cause_is_named_before_questions(self):
+        """Agizo la mteja (14 Nov): visababishi ni hatua ya mwisho, baada ya maswali."""
         r = self.ask('255700000802', self.T3)[0]
-        self.assertIn('umetaja:', r)
-        self.assertIn('wadudu na magonjwa', r)
-        self.assertIn('Upungufu wa virutubisho', r)               # haibuni, lakini inasema mipaka
+        for name in self.CAUSES:
+            self.assertNotIn(name, r)
+        self.assertNotIn('umetaja:', r)
+        self.assertIn('Kabla sijakupa jibu lolote', r)
         self.assertIn('Swali 1', r)
+
+    def test_uncertain_end_names_no_unconfirmed_cause(self):
+        r = self.ask('255700000804', self.T3, 'sijui', 'sijui', 'sijui', 'sijui', 'sijui', 'sijui')
+        ends = [x for x in r if 'sitakisia jina' in x]
+        self.assertTrue(ends, r)
+        last = ends[0]
+        if True:                   # haikuthibitisha → haitaji majina
+            for name in self.CAUSES:
+                self.assertNotIn(name, last)
+            self.assertIn('wadudu na magonjwa', last)             # inasema mipaka ya data
+            self.assertIn('afisa ugani', last)
 
     def test_ai_cannot_add_symptoms_the_farmer_never_said(self):
         """Live 14 Nov: AI iliongeza 'mmea unadumaa', 'mistari ya mashimo' → FAW na Stem Borer,
@@ -289,11 +305,16 @@ class ClientTestRound2(TestCase):
             'growth_stage': None, 'extent_pct': None, 'spreading': False}
         with mock.patch('diagnosis.ai_layer.understand_symptoms', return_value=picked):
             r = self.ask('255700000803', self.T3)[0]
-        self.assertNotIn('Fall Armyworm', r)
-        self.assertNotIn('Stem Borer', r)
-        for invented in ('unadumaa', 'hukauka', 'kushindwa', 'mishipa', 'meupe', 'mistari'):
-            self.assertNotIn(invented, r.split('Kumbuka')[0].split('umetaja:', 1)[-1])
-        self.assertIn('umetaja: njano', r)
+        for name in self.CAUSES:
+            self.assertNotIn(name, r)
+        self.assertIn('Swali 1', r)
+        from bot.models import Conversation  # noqa: F401  (trace inahifadhiwa kwa admin)
+        from diagnosis import engine as E
+        from crops.models import Crop
+        st = E.new_state()
+        with mock.patch('diagnosis.ai_layer.understand_symptoms', return_value=picked):
+            E.step(st, self.T3, Crop.objects.get(crop_name_en='Maize'))
+        self.assertNotIn('PST001', st['candidates'])              # FAW haikuingizwa na AI
 
     def test_age_in_words(self):
         from diagnosis.engine import parse_age_weeks

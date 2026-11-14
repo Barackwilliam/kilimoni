@@ -788,6 +788,10 @@ COVERAGE_NOTE = ("_Kumbuka: taarifa zangu za uchunguzi kwa sasa zinahusu *wadudu
                  "data yangu — kama unashuku hivyo, afisa ugani anaweza kukagua._")
 
 
+FIRST_QUESTION_INTRO = ("Asante kwa maelezo. 🙏 Kabla sijakupa jibu lolote, nitakuuliza maswali machache "
+                        "ili nijihakikishie tatizo halisi. 🔍")
+
+
 # Maneno ya jumla yasiyothibitisha dalili yoyote peke yake
 GENERIC_SYMPTOM_WORDS = REASON_STOP | {'kuwa', 'yanaanza', 'imeanza', 'bado', 'chini', 'juu', 'wakati',
                                        'shamba', 'mmea', 'mimea', 'majani', 'jani', 'tatizo', 'nina', 'huko',
@@ -806,18 +810,9 @@ def _reason_words(c, farmer_text=''):
 
 
 def question_message(state, spec, number):
-    ranked = [(cid, c) for cid, c in _ranked(state['candidates']) if not c['rejected']]
-    intro = ''
-    if number == 1 and ranked:
-        lines = ["Kutokana na dalili ulizotaja, visababishi vinavyowezekana (kuanzia kinacholingana zaidi):"
-                 if len(ranked) > 1 else "Kutokana na dalili ulizotaja, kisababishi kinachowezekana ni:"]
-        for cid, c in ranked[:4]:
-            why = _reason_words(c, state.get('symptom_text', ''))
-            lines.append(f"• *{_cause_name(_cause(cid))}*" + (f" — umetaja: {', '.join(why)}" if why else ''))
-        lines += ['', COVERAGE_NOTE, '',
-                  "Nitakuuliza maswali mafupi ili kuvitofautisha. 🔍" if len(ranked) > 1 else
-                  "Nitakuuliza maswali mafupi ili kuthibitisha. 🔍", '', '']
-        intro = '\n'.join(lines)
+    # Hakuna kisababishi kinachotajwa kabla ya maswali: jibu linatolewa mwishoni tu,
+    # baada ya kuthibitisha kwa majibu ya mkulima (agizo la mteja, 14 Nov).
+    intro = (FIRST_QUESTION_INTRO + '\n\n') if number == 1 else ''
     return f"{_ack(state) if number > 1 else ''}{intro}*Swali {number}:* {_plain_q(spec['text'])}\n{ANSWER_HINT}"
 
 
@@ -973,18 +968,22 @@ def action_lines(state, cid, gate):
 
 
 def uncertain_message(state, crop_name):
-    err = m.ErrorHandlingRule.objects.filter(error_code='LOW_CONFIDENCE', is_active=True).first()
     lines = [f"🔍 *Uchunguzi — {crop_name.capitalize()}*", '']
-    lines.append(_farmer(state, err.user_message_sw) if err else "Sina uhakika wa kutosha.")
-    lines.append("Siwezi kukupa utambuzi wa uhakika kwa taarifa zilizopo.")
-    ranked = [(cid, c) for cid, c in _ranked(state['candidates']) if not c['rejected']]
-    if ranked:
-        # Bila asilimia: "90%" kando ya "sina uhakika" kingemchanganya mkulima.
-        # Score ziko kwenye trace kwa ajili ya admin.
-        lines += ['', '*Visababishi vinavyowezekana (havijathibitishwa):*']
-        for cid, c in ranked[:3]:
-            lines.append(f"• {_cause_name(_cause(cid))}")
-    lines += ['', '*Hatua salama za sasa:*', SAFE_FIRST_STEPS, '', REFER_EXTENSION, '', DISCLAIMER]
+    if not any(not c['rejected'] for c in state['candidates'].values()):
+        # Majibu ya mkulima yameondoa kila kisababishi kilicho kwenye data
+        lines.append("Asante kwa majibu yako. Kutokana na majibu hayo, tatizo hili *halilingani* na "
+                     "wadudu au magonjwa ya " + crop_name + " niliyo na taarifa zake zilizothibitishwa — "
+                     "kwa hiyo sitakisia jina la tatizo.")
+    else:
+        err = m.ErrorHandlingRule.objects.filter(error_code='LOW_CONFIDENCE', is_active=True).first()
+        msg = _farmer(state, err.user_message_sw) if err else ''
+        # Mazungumzo yanaishia hapa, kwa hiyo hatuombi "maswali ya ziada"
+        msg = re.sub(r'\s*Tafadhali jibu maswali ya ziada\.?', '', msg or '').strip()
+        lines.append(msg or "Sina uhakika wa kutosha.")
+        lines.append("Kwa majibu uliyonipa, siwezi kuthibitisha tatizo kwa uhakika, kwa hiyo sitakisia jina lake.")
+    # Bila kutaja visababishi visivyothibitishwa — majina yako kwenye trace kwa admin tu.
+    lines += ['', COVERAGE_NOTE, '', '*Hatua salama za sasa:*', SAFE_FIRST_STEPS, '',
+              REFER_EXTENSION, '', DISCLAIMER]
     return '\n'.join(lines)
 
 
@@ -1167,6 +1166,10 @@ def _next(state, crop_name, trace):
     qs = build_questions(state)
     decision, top = decide(state)
     asked_count = sum(1 for ev in state['evidence'] if ev['via'] == 'question')
+    # Jibu ni hatua ya mwisho: hata maelezo ya mkulima yakionekana kuthibitisha tatizo,
+    # tunauliza angalau swali moja la kuhakikisha kabla ya kutoa utambuzi.
+    if decision == 'diagnosed' and asked_count == 0 and choose_question(state, qs):
+        decision = 'continue'
     if decision == 'continue' and asked_count < int(get_setting('max_questions')):
         key = choose_question(state, qs)
         if key:
