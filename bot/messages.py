@@ -199,8 +199,23 @@ def has_farming_signal(text: str) -> bool:
 CREATOR_RE = re.compile(
     r'\b(nani|ninani|ni nani)\b.*\b(amekutengeneza|alikutengeneza|amekuunda|alikuunda|aliyekuunda|aliyekutengeneza'
     r'|amekujenga|alikujenga|amekuprogram|kuunda|kutengeneza)\b'
-    r'|\b(umeundwa|umetengenezwa|ulitengenezwa|uliundwa|umejengwa|imeundwa|imetengenezwa|imejengwa)\b.*\bna nani\b'
+    r'|\b(umeundwa|umetengenezwa|ulitengenezwa|uliundwa|umejengwa|imeundwa|imetengenezwa|imejengwa)\b.*\b(na ?nani|nani)\b'
     r'|\b(developer|mtengenezaji|muundaji|aliyekuunda|aliyekutengeneza|nani mmiliki|mmiliki wako)\b')
+
+
+def whatsapp_format(text: str) -> str:
+    """
+    Markdown (ya AI) → muundo wa WhatsApp: **bold** → *bold*, __x__ → _x_, vichwa "### x" → *x*,
+    vitone "- x" → "• x". Live: "**KILIMONI LABS**" ilionekana na nyota kwenye WhatsApp.
+    """
+    if not text:
+        return text
+    t = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    t = re.sub(r'__(.+?)__', r'_\1_', t)
+    t = re.sub(r'(?m)^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$', r'*\1*', t)
+    t = re.sub(r'(?m)^(\s*)[-*]\s+(?=\S)', r'\1• ', t)
+    t = re.sub(r'\*{2,}', '*', t)                     # nyota zilizobaki mfululizo
+    return t
 
 
 def asks_creator(text: str) -> bool:

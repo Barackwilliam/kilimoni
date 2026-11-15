@@ -47,6 +47,8 @@ def check_reply(reply, previous, decision):
         errs.append('repeat')
     if len(reply or '') > 4000:
         errs.append('too_long')
+    if '**' in (reply or ''):
+        errs.append('markdown: "**" inaonekana kama nyota kwenye WhatsApp')
     return errs
 
 
