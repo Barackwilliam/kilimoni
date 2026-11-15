@@ -127,3 +127,18 @@ class BuiltByTests(TestCase):
         from bot import agent
         self.assertIsNotNone(agent.check_creator("Mimi ni Kilimoni AI, nimejengwa na JamiiTek.", "wewe ni nani"))
         self.assertIsNone(agent.check_creator("Mfumo wangu umejengwa na JamiiTek Digital Agency.", "nani amekuunda"))
+
+
+class WhatsAppFormatTests(TestCase):
+    def test_markdown_bold_becomes_whatsapp_bold(self):
+        from bot.messages import whatsapp_format
+        self.assertEqual(whatsapp_format("**Kilimoni AI** ni huduma ya **KILIMONI LABS**."),
+                         "*Kilimoni AI* ni huduma ya *KILIMONI LABS*.")
+        self.assertEqual(whatsapp_format("### Hatua\n- moja"), "*Hatua*\n• moja")
+        self.assertEqual(whatsapp_format("• *SC 403* — siku 75"), "• *SC 403* — siku 75")   # WhatsApp sahihi haiguswi
+
+    def test_creator_question_with_typo(self):
+        from bot.engine import process_message
+        r = process_message('255700004101', 'Umetengenezwa nanani')
+        self.assertIn('JamiiTek Digital Agency', r)
+        self.assertNotIn('**', r)

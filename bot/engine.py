@@ -392,6 +392,8 @@ def process_message(phone_number: str, raw_message: str, whatsapp_type: str = 't
     prefix = _apology_prefix(user) if user and response else ''
     if prefix:
         final = prefix + final
+    from bot.messages import whatsapp_format
+    final = whatsapp_format(final)
     if previous and final == previous:
         final = _not_again(final)            # kigezo 1: mkulima asipate jibu lilelile mara mbili mfululizo
     if final != response and user:
