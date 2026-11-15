@@ -177,7 +177,8 @@ FARMING_SIGNALS = {
 IDENTITY_PATTERNS = {
     'unaitwa nani', 'jina lako', 'wewe ni nani', 'u nani',
     'wewe ni nini', 'nani wewe', 'unaitwaje', 'mtu au roboti', 'wewe ni roboti', 'ni roboti',
-    'wewe ni mtu', 'binadamu au', 'wewe ni ai',
+    'wewe ni mtu', 'binadamu au', 'wewe ni ai', 'taarifa unatoa wapi', 'unatoa wapi taarifa',
+    'unapata wapi taarifa', 'taarifa zako zinatoka', 'chanzo cha taarifa', 'unajuaje',
 }
 
 CAPABILITY_PATTERNS = {
@@ -230,6 +231,8 @@ def build_identity_message() -> str:
         "Mimi ni *Kilimoni AI* 🌿\n\n"
         "Msaidizi wa kilimo kwa wakulima wa Tanzania. Nasaidia kuhusu "
         + _services_line() + ".\n\n"
+        "Taarifa zangu zinatoka kwenye dataset za kitaalamu zilizoandaliwa na kuthibitishwa na timu ya "
+        "*KILIMONI LABS*. Kitu kisichokuwemo kwenye data hiyo, nakwambia wazi — sibuni.\n\n"
         "Una swali lolote la shamba lako?"
     )
 

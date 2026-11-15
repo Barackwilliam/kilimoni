@@ -87,7 +87,8 @@ SOCIAL = (
     _one('greet', ["Hi", "Hello", "habari", "mambo", "sasa", "sasa vipi", "habari za asubuhi", "shikamoo"],
          any=('karibu', 'habari', 'kilimoni', 'msaada')) +
     _one('thanks', ["asante", "asante sana", "sawa nimeelewa", "poa", "sawa"]) +
-    _one('identity', ["unaitwa nani", "wewe ni nani", "wewe ni mtu au roboti?"], any=('kilimoni',)) +
+    _one('identity', ["unaitwa nani", "wewe ni nani", "wewe ni mtu au roboti?", "Taarifa unatoa wapi wewe",
+                       "unapata wapi taarifa zako"], any=('kilimoni',)) +
     _one('capability', ["unaweza kunisaidia nini", "unasaidia nini"], any=('mbegu', 'shamba', 'nasaidia')) +
     _one('offtopic', ["habari za mpira jana", "nani atashinda uchaguzi", "niambie utani"]) +
     _one('coverage', ["Uko na taarifa za mikoa gani", "unajua mazao gani", "una data ya maeneo gani"],
