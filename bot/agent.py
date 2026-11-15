@@ -219,7 +219,14 @@ def about():
         f"Mazao yenye data: {crops}. Maeneo yenye taarifa kamili: {places}. "
         f"Bado haina data ya: {', '.join(NO_DATA_TOPICS)}. Haitoi majina ya dawa wala vipimo vyake. "
         "Si mbadala wa afisa ugani."
+        + (f" Mfumo wake umejengwa na {_built_by()} — TAJA hili TU mkulima akiuliza moja kwa moja nani "
+           "aliyekuunda/aliyekutengeneza, kwa sentensi: \"Kilimoni AI ni huduma ya KILIMONI LABS. Mfumo wake "
+           f"umejengwa na {_built_by()}.\"" if _built_by() else '')
     )
+
+
+def _built_by():
+    return (getattr(settings, 'BUILT_BY', '') or '').strip()
 
 
 def system_prompt():
@@ -272,6 +279,15 @@ def check(text, evidence):
             return f'jina la tatizo lisilotoka kwenye zana: {name}'
     if 'shikamoo' in low_t:
         return 'shikamoo'
+    return None
+
+
+def check_creator(text, question):
+    """Aliyejenga mfumo anatajwa tu mtu akiuliza nani aliunda bot."""
+    from bot.messages import asks_creator
+    by = _built_by().lower()
+    if by and by.split()[0] in (text or '').lower() and not asks_creator(question):
+        return 'ametaja aliyejenga mfumo bila kuulizwa'
     return None
 
 
@@ -337,7 +353,7 @@ def run(user, raw_message):
                 messages.append({'role': 'tool', 'tool_call_id': call.get('id', name), 'content': content})
             continue
         text = (msg.get('content') or '').strip()
-        why = check(text, '\n'.join(evidence))
+        why = check(text, '\n'.join(evidence)) or check_creator(text, raw_message)
         if why is None:
             return ('reply', text, trace)
         trace.setdefault('rejected', []).append({'why': why, 'text': text[:400]})

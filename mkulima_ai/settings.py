@@ -256,6 +256,9 @@ UNDERSTAND_MODE = config('UNDERSTAND_MODE', default='ai_first')
 # False = mfumo wa kanuni (fomu ya kuelewa + moduli) pekee.
 AGENT_MODE = config('AGENT_MODE', default='test' not in sys.argv, cast=bool)  # tests: zima, isipokuwa test za wakala
 GROQ_AGENT_MODEL = config('GROQ_AGENT_MODEL', default='')
+# Aliyejenga mfumo — inatajwa na bot TU mtu akiuliza moja kwa moja nani aliiunda.
+# Chapa ya mteja (KILIMONI LABS) inabaki ya kwanza. Tupu = haitajwi kabisa.
+BUILT_BY = config('BUILT_BY', default='JamiiTek Digital Agency')
 # Kuelewa kwanza: kila ujumbe unasomwa na AI (lugha tu) kujaza fomu kabla ya kwenda kwenye
 # dataset. False = njia ya zamani ya maneno tu.
 UNDERSTAND_FIRST = config('UNDERSTAND_FIRST', default=True, cast=bool)

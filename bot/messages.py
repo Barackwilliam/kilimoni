@@ -1,3 +1,4 @@
+import re
 import random
 
 # ═══════════════════════════════════════════════════════
@@ -194,6 +195,27 @@ def has_farming_signal(text: str) -> bool:
     return bool(words & FARMING_SIGNALS)
 
 
+# "Nani amekutengeneza?", "mfumo huu umeundwa na nani?"
+CREATOR_RE = re.compile(
+    r'\b(nani|ninani|ni nani)\b.*\b(amekutengeneza|alikutengeneza|amekuunda|alikuunda|aliyekuunda|aliyekutengeneza'
+    r'|amekujenga|alikujenga|amekuprogram|kuunda|kutengeneza)\b'
+    r'|\b(umeundwa|umetengenezwa|ulitengenezwa|uliundwa|umejengwa|imeundwa|imetengenezwa|imejengwa)\b.*\bna nani\b'
+    r'|\b(developer|mtengenezaji|muundaji|aliyekuunda|aliyekutengeneza|nani mmiliki|mmiliki wako)\b')
+
+
+def asks_creator(text: str) -> bool:
+    return bool(CREATOR_RE.search((text or '').lower()))
+
+
+def build_creator_message() -> str:
+    from django.conf import settings
+    built_by = (getattr(settings, 'BUILT_BY', '') or '').strip()
+    line = "Kilimoni AI ni huduma ya *KILIMONI LABS*."
+    if built_by:
+        line += f" Mfumo wake umejengwa na *{built_by}*."
+    return line + "\n\nUna swali lolote la shamba lako? 🌿"
+
+
 def detect_offtopic_kind(text: str) -> str:
     """
     Rudisha aina ya swali lisilo la kilimo:
@@ -201,7 +223,7 @@ def detect_offtopic_kind(text: str) -> str:
     """
     t = (text or '').lower().strip()
 
-    if any(p in t for p in IDENTITY_PATTERNS):
+    if asks_creator(t) or any(p in t for p in IDENTITY_PATTERNS):
         return 'identity'
 
     if any(p in t for p in CAPABILITY_PATTERNS):
