@@ -489,7 +489,12 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
     if handled is not None:
         return handled
 
-    # ── KUELEWA KWANZA: fomu ya ujumbe (kanuni + AI ya lugha, iliyothibitishwa) ──
+    # ── WAKALA: AI inapokea na kuelewa, inachunguza dataset kwa zana, inajibu (bot/agent.py) ──
+    handled = _agent_turn(user, raw_message, normalized, start_time, message_id)
+    if handled is not None:
+        return handled
+
+    # ── AKIBA: fomu ya kuelewa (kanuni + AI) → kidhibiti kimoja kwa kila lengo ──
     frame = understanding.understand(raw_message, user, normalized=normalized,
                                      use_ai=understanding_enabled())
     # Malalamiko yenye swali jipya ("mbona hunijibu… nimeuliza bei") → jibu la swali lianze kwa radhi
@@ -511,6 +516,34 @@ def _process_message(phone_number: str, raw_message: str, whatsapp_type: str = '
 
 # Malengo ambayo ni majibu yanayowezekana kwa swali linalosubiriwa
 ANSWERISH = {'answer', 'diagnosis', 'unclear', 'thanks', 'crop_only', 'location_only', 'greeting'}
+
+
+def _agent_turn(user, raw_message, normalized, start_time, message_id):
+    """
+    Wakala wa AI unajibu ujumbe usio jibu la swali linalosubiriwa. None = AI haipo, imefika
+    kikomo, au jibu lake halikupita ukaguzi → mfumo wa kanuni hapa chini unajibu.
+    """
+    from bot import agent
+    sess = user.session_state or {}
+    if rx.get_state(sess) or sess.get('goal_pending') or sess.get('adv') or not agent.enabled():
+        return None                     # maswali ya uchunguzi/menyu yanajibiwa kwa kanuni
+    if resolve_farm_location(normalized):
+        remember_farm_location(user, normalized)
+    out = agent.run(user, raw_message)
+    if out is None:
+        return None
+    kind, payload, trace = out
+    if kind == 'diagnosis':
+        crop = payload or detect_crop(normalized)
+        _clear_pending(user)
+        return _start_diagnostic(user, raw_message, normalized, crop, start_time, message_id)
+    crop = detect_crop(normalized)
+    if crop and user.last_crop_id != crop.id:
+        user.last_crop_id = crop.id
+        user.save(update_fields=['last_crop_id'])
+    _log_all(user, raw_message, normalized, crop, None, '', None, payload, True, start_time,
+             message_id=message_id, trace=trace)
+    return payload
 
 
 def _dispatch(user, raw_message, normalized, frame, start_time, message_id):

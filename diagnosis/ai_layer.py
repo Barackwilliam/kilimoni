@@ -183,6 +183,47 @@ def _chat_once(model, system, user, max_tokens, timeout):
         return 'error', None
 
 
+def chat_tools(messages, tools, max_tokens=1200, timeout=20, model=None):
+    """
+    Wito wa mazungumzo yenye zana (function calling) — kwa wakala wa bot (bot/agent.py).
+    Rudisha message dict ya AI ({'content':…, 'tool_calls': [...]}) au None.
+    Inatumia orodha ileile ya model mbadala na mapumziko ya 429. Tests hu-patch hii.
+    """
+    for m in model_chain(model):
+        if _cooling(m):
+            continue
+        status, data = _tools_once(m, messages, tools, max_tokens, timeout)
+        if status == 'ok':
+            return data
+        if status == 'error':
+            return None
+    return None
+
+
+def _tools_once(model, messages, tools, max_tokens, timeout):
+    import requests
+    from decouple import config
+    body = {"model": model, "max_tokens": max_tokens, "temperature": 0.2, "messages": messages,
+            "tools": tools, "tool_choice": "auto"}
+    if 'gpt-oss' in model:
+        body["reasoning_effort"] = config('GROQ_REASONING', default='low')
+    headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
+    try:
+        resp = requests.post(GROQ_API_URL, headers=headers, json=body, timeout=timeout)
+        if resp.status_code == 429:
+            _note_429(model, resp)
+            return 'limited', None
+        if _bad_model(resp):
+            _rest(model, 3600, resp.status_code)
+            return 'limited', None
+        resp.raise_for_status()
+        msg = resp.json()['choices'][0]['message']
+        return 'ok', {'content': (msg.get('content') or '').strip(), 'tool_calls': msg.get('tool_calls') or []}
+    except Exception as exc:
+        logger.warning(f"[AI agent] {model}: imeshindwa: {exc}")
+        return 'error', None
+
+
 def _log(state, step, given, got, accepted, note=''):
     if state is None:
         return

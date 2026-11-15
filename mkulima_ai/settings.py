@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -251,6 +252,10 @@ AI_WRITER = config('AI_WRITER', default=True, cast=bool)
 GROQ_WRITER_MODEL = config('GROQ_WRITER_MODEL', default='')
 # 'ai_first' = AI inasoma kila ujumbe kwanza (kanuni ni akiba); 'rules_first' = kanuni kwanza.
 UNDERSTAND_MODE = config('UNDERSTAND_MODE', default='ai_first')
+# Wakala (bot/agent.py): AI inapokea ujumbe, inachunguza dataset kwa zana na kujibu kwa maelezo.
+# False = mfumo wa kanuni (fomu ya kuelewa + moduli) pekee.
+AGENT_MODE = config('AGENT_MODE', default='test' not in sys.argv, cast=bool)  # tests: zima, isipokuwa test za wakala
+GROQ_AGENT_MODEL = config('GROQ_AGENT_MODEL', default='')
 # Kuelewa kwanza: kila ujumbe unasomwa na AI (lugha tu) kujaza fomu kabla ya kwenda kwenye
 # dataset. False = njia ya zamani ya maneno tu.
 UNDERSTAND_FIRST = config('UNDERSTAND_FIRST', default=True, cast=bool)
