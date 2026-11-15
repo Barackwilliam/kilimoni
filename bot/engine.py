@@ -407,7 +407,9 @@ def _not_again(text):
     """Jibu lilelile la pili mfululizo → toleo fupi linalokiri kwamba tumeshalisema."""
     first = (text or '').strip().split('\n\n')[0]
     first = re.sub(r'^[^\w*_]+', '', first)
-    return ("Kama nilivyokueleza hapo juu 👆 — " + first[:1].lower() + first[1:] +
+    word = first.split(' ', 1)[0]
+    keep = word[:1].isupper() and (word.isupper() or word in ('Kilimoni', 'Mahindi', 'Mpunga') or '*' in word)
+    return ("Kama nilivyokueleza hapo juu 👆 — " + (first if keep else first[:1].lower() + first[1:]) +
             "\n\nUkiwa na swali jingine, niulize tu. Au andika *0* kuona ninachoweza kukusaidia.")
 
 
@@ -1374,7 +1376,9 @@ def _route_goal(user, raw_message, normalized, frame, start_time, message_id):
     if goal == 'thanks' and not in_rx:
         return log(build_acknowledgement(ctx_crop.crop_name_sw if ctx_crop else ''))
     if goal == 'identity':
-        return log(build_identity_message())
+        from bot.messages import asks_creator, build_creator_message
+        return log(build_creator_message() if asks_creator(normalized) or asks_creator(raw_message)
+                   else build_identity_message())
     if goal == 'capability':
         return log(build_capability_message())
     if goal == 'offtopic':

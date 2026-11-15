@@ -103,3 +103,27 @@ class AgentTests(TestCase):
     def test_ai_unavailable_falls_back_to_rules(self):
         r = self.ask(lambda *a, **k: None, '255700003007', 'Ni mbegu gani ya mahindi nipande Kondoa?')[0]
         self.assertIn('Mbegu', r)
+
+
+class BuiltByTests(TestCase):
+    """Aliyejenga mfumo anatajwa TU akiulizwa; chapa ya KILIMONI LABS inabaki ya kwanza."""
+
+    def ask(self, *msgs):
+        from bot.engine import process_message
+        return [process_message('255700004001', m) for m in msgs]
+
+    def test_named_only_when_asked(self):
+        r = self.ask('nani amekutengeneza?', 'wewe ni nani', 'mfumo huu umeundwa na nani')
+        self.assertTrue(r[0].startswith('Kilimoni AI ni huduma ya *KILIMONI LABS*'))
+        self.assertIn('JamiiTek Digital Agency', r[0])
+        self.assertNotIn('JamiiTek', r[1])
+        self.assertIn('JamiiTek Digital Agency', r[2])
+
+    @override_settings(BUILT_BY='')
+    def test_can_be_switched_off(self):
+        self.assertNotIn('JamiiTek', self.ask('nani amekutengeneza?')[0])
+
+    def test_agent_may_not_volunteer_it(self):
+        from bot import agent
+        self.assertIsNotNone(agent.check_creator("Mimi ni Kilimoni AI, nimejengwa na JamiiTek.", "wewe ni nani"))
+        self.assertIsNone(agent.check_creator("Mfumo wangu umejengwa na JamiiTek Digital Agency.", "nani amekuunda"))
